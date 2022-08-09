@@ -36,7 +36,7 @@ import qualified Text.Show
 data Exp a
   = V {name :: a}
   | Lam {body :: Scope () Exp a}
-  | App {fn :: Exp a, args :: Exp a}
+  | App {fn :: Exp a, args :: [Exp a]}
   deriving stock (Functor, Foldable, Traversable)
 
 instance Applicative Exp where
@@ -46,7 +46,7 @@ instance Applicative Exp where
 instance Monad Exp where
   V {..} >>= f = f name
   Lam {..} >>= f = Lam {body = body >>>= f}
-  App {..} >>= f = App {fn = fn >>= f, args = args >>= f}
+  App {..} >>= f = App {fn = fn >>= f, args = (>>= f) <$> args}
 
 deriveEq1 ''Exp
 deriveShow1 ''Exp
@@ -68,4 +68,4 @@ prettyExp V {..} = return $ pretty name
 prettyExp Lam {..} = do
   x <- freshName
   return $ "\\" <+> pretty x <+> "->" <+> pretty (instantiate1 (V x) body)
-prettyExp App {..} = return $ pretty fn <+> pretty args
+prettyExp App {..} = return $ pretty fn <+> hsep (pretty <$> args)

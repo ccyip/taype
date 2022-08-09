@@ -19,7 +19,7 @@ import Taype.Syntax
 
 test :: IO ()
 test = do
-  let term = App (lam "x" (V "x")) (V "y") :: Exp Text
+  let term = App (lam "x" (V "x")) [V "y"] :: Exp Text
   print term
   putDoc (pretty term)
   putStrLn ""
