@@ -6,3 +6,4 @@
 - Preserve user-given names
 - Equality check ignoring locations and user names
 - Parser
+- Scrap my boilerplate: instances for Monad, Eq1, etc
