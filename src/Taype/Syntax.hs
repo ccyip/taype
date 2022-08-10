@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DuplicateRecordFields  #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -22,6 +23,9 @@ module Taype.Syntax
     Label,
     AppKind,
     MetaInfo (..),
+    Def (..),
+    Attribute (..),
+    LabelPolyStrategy (..),
 
     -- * Smart constructors
     lam,
@@ -94,7 +98,7 @@ data Expr a
     Case
       { maybeTyp :: Maybe (Typ a),
         cond :: Expr a,
-        alts :: NonEmpty (Text, Scope Int Expr a)
+        alts :: NonEmpty (Name, Scope Int Expr a)
       }
   | -- | Product type
     Prod {left :: Typ a, right :: Typ a}
@@ -159,6 +163,22 @@ data AppKind = FunApp | CtorApp | BuiltinApp | TypeApp
 -- | Meta information of an expression such as location
 data MetaInfo = MetaInfo {lineNo :: Int, columnNo :: Int}
   deriving stock (Eq, Show)
+
+data Def a
+  = -- Function
+    FunDef {attr :: Attribute, typ :: Typ a, label :: Maybe Label, expr :: Expr a}
+  | -- | Algebraic data type
+    ADTDef {ctors :: [Text]}
+  | -- | Oblivious algebraic data type. Only support one argument for now
+    OADTDef {typ :: Typ a, body :: Scope () Expr a}
+  | -- | Constructor
+    CtorDef {paraTyps :: [Typ a], dataType :: Text}
+  | -- | Builtin operation
+    BuiltinDef {paraTyps :: [Typ a], resType :: Typ a, strategy :: LabelPolyStrategy}
+
+data Attribute = SectionAttr | RetractionAttr | SafeAttr | LeakyAttr
+
+data LabelPolyStrategy = JoinStrategy | TopStrategy
 
 instance Applicative Expr where
   pure = V
