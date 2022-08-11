@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -22,7 +23,6 @@ module Taype.Syntax
     Type,
     Label,
     AppKind,
-    MetaInfo (..),
     Def (..),
     Attribute (..),
     LabelPolyStrategy (..),
@@ -146,8 +146,8 @@ data Expr a
     Promote {expr :: Expr a}
   | -- | Tape, the key operation in taype
     Tape {expr :: Expr a}
-  | -- | Add meta-information, e.g., location, to expressions
-    Meta {info :: MetaInfo, expr :: Expr a}
+  | -- | Add location information
+    Loc {loc :: Int, expr :: Expr a}
   deriving stock (Functor, Foldable, Traversable)
 
 -- | A type in taype is also an expression
@@ -158,10 +158,6 @@ type Label = Bool
 
 -- | Application kinds
 data AppKind = FunApp | CtorApp | BuiltinApp | TypeApp
-  deriving stock (Eq, Show)
-
--- | Meta information of an expression such as location
-data MetaInfo = MetaInfo {lineNo :: Int, columnNo :: Int}
   deriving stock (Eq, Show)
 
 data Def a
@@ -256,7 +252,7 @@ instance Monad Expr where
   Asc {..} >>= f = Asc {typ = typ >>= f, expr = expr >>= f, ..}
   Promote {..} >>= f = Promote {expr = expr >>= f, ..}
   Tape {..} >>= f = Tape {expr = expr >>= f, ..}
-  Meta {..} >>= f = Meta {expr = expr >>= f, ..}
+  Loc {..} >>= f = Loc {expr = expr >>= f, ..}
 
 deriveEq1 ''Expr
 deriveShow1 ''Expr
