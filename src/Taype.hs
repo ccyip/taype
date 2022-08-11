@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
 -- SPDX-License-Identifier: MIT
@@ -13,13 +11,16 @@ module Taype
   )
 where
 
-import Prettyprinter
-import Prettyprinter.Render.Text
-import Taype.Syntax
+-- import Prettyprinter
+-- import Prettyprinter.Render.Text
 
-test :: IO ()
-test = do
-  let term = App Nothing (lam "x" Nothing Nothing (V "x")) [V "y"] :: Expr Text
-  print term
-  putDoc (pretty term)
-  putStrLn ""
+import Taype.Lexer
+import Taype.Syntax
+import Text.Megaparsec.Error (errorBundlePretty)
+
+test :: FilePath -> IO ()
+test file = do
+  content <- readFileBS file
+  case lex file $ decodeUtf8 content of
+    Left bundle -> putStr (errorBundlePretty bundle)
+    Right tokens -> print tokens

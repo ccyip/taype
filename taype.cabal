@@ -29,6 +29,7 @@ common common-options
 
   mixins:              base hiding (Prelude)
                      , relude (Relude as Prelude)
+                     , relude
 
   ghc-options:         -Wall
                        -Wcompat
@@ -56,15 +57,19 @@ library
   exposed-modules:     Taype
                        Taype.Syntax
                        Taype.Fresh
+                       Taype.Lexer
   build-depends:       bound
                      , deriving-compat
                      , prettyprinter
+                     , megaparsec
+                     , Earley
 
 executable taype
   import:              common-options
   hs-source-dirs:      app
   main-is:             Main.hs
   build-depends:       taype
+                     , optparse-applicative
   ghc-options:         -threaded
                        -rtsopts
                        -with-rtsopts=-N
