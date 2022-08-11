@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -9,11 +10,11 @@
 -- Portability: portable
 --
 -- Lexer for taype.
-module Taype.Lexer (Token (..), lex) where
+module Taype.Lexer (Token (..), LocatedToken (..), lex) where
 
 import Data.Char
 import qualified Data.Text as T
-import Text.Megaparsec hiding (Token)
+import Text.Megaparsec hiding (Token, token)
 import qualified Text.Megaparsec.Char as C
 import qualified Text.Megaparsec.Char.Lexer as L
 
@@ -58,6 +59,10 @@ data Token
     Infix1 Text
   | Infix2 Text
   | Infix3 Text
+  deriving stock (Eq, Show)
+
+-- | Token with location information
+data LocatedToken = LocatedToken {token :: Token, offset :: Int}
   deriving stock (Eq, Show)
 
 type Parser = Parsec Void Text
@@ -146,9 +151,17 @@ pIdent = lexeme $ do
   xs <- takeWhileP Nothing isIdent
   return $ Ident $ mayObliv <> T.cons x xs
 
-pTokens :: Parser [Token]
-pTokens = space *> manyTill pToken eof
+-- | Parse a token with offset
+pLocatedToken :: Parser LocatedToken
+pLocatedToken = do
+  offset <- getOffset
+  token <- pToken
+  return LocatedToken {..}
+
+-- | Parse all tokens
+pTokens :: Parser [LocatedToken]
+pTokens = space *> manyTill pLocatedToken eof
 
 -- | Taype lexer
-lex :: FilePath -> Text -> Either (ParseErrorBundle Text Void) [Token]
+lex :: FilePath -> Text -> Either (ParseErrorBundle Text Void) [LocatedToken]
 lex = parse pTokens
