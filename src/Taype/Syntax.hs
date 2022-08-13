@@ -32,6 +32,7 @@ module Taype.Syntax
     -- * Helper functions
     abstract1Binder,
     instantiate1Binder,
+
     -- * Smart constructors
     lam,
   )
@@ -42,8 +43,8 @@ import Control.Monad
 import Data.Deriving
 import Data.Functor.Classes
 import Prettyprinter
-import Taype.Fresh
 import Taype.Error
+import Taype.Fresh
 import qualified Text.Show
 
 -- | Taype expression, including the surface and the core syntax
