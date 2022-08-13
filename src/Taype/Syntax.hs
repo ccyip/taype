@@ -20,7 +20,7 @@
 module Taype.Syntax
   ( -- * Syntax
     Expr (..),
-    Type,
+    Typ,
     Label,
     AppKind,
     Def (..),
@@ -54,7 +54,7 @@ data Expr a
       }
   | -- | Lambda abstraction
     Lam
-      { maybeTyp :: Maybe (Typ a),
+      { maybeType :: Maybe (Typ a),
         label :: Maybe Label,
         body :: Scope () Expr a
       }
@@ -66,7 +66,7 @@ data Expr a
       }
   | -- | Let binding
     Let
-      { maybeTyp :: Maybe (Typ a),
+      { maybeType :: Maybe (Typ a),
         label :: Maybe Label,
         binding :: Expr a,
         body :: Scope () Expr a
@@ -96,7 +96,7 @@ data Expr a
   | -- | (Dependent) case analysis.
     --  Do not support empty type, i.e. 'alts' must be non empty
     Case
-      { maybeTyp :: Maybe (Typ a),
+      { maybeType :: Maybe (Typ a),
         cond :: Expr a,
         alts :: NonEmpty (Name, Scope Int Expr a)
       }
@@ -106,7 +106,7 @@ data Expr a
     Pair {left :: Expr a, right :: Expr a}
   | -- | Case analysis for product
     PCase
-      { maybeTyp :: Maybe (Typ a),
+      { maybeType :: Maybe (Typ a),
         cond :: Expr a,
         bBody :: Scope Bool Expr a
       }
@@ -123,13 +123,13 @@ data Expr a
     OSum {left :: Typ a, right :: Typ a}
   | -- | Oblivious injection
     OInj
-      { maybeTyp :: Maybe (Typ a),
+      { maybeType :: Maybe (Typ a),
         tag :: Bool,
         inj :: Expr a
       }
   | -- | Case analysis for oblivious sum type
     OCase
-      { maybeTyp :: Maybe (Typ a),
+      { maybeType :: Maybe (Typ a),
         cond :: Expr a,
         lBody :: Scope () Expr a,
         rBody :: Scope () Expr a
@@ -184,11 +184,11 @@ instance Monad Expr where
   V {..} >>= f = f name
   GV {..} >>= _ = GV {..}
   Pi {..} >>= f = Pi {typ = typ >>= f, body = body >>>= f, ..}
-  Lam {..} >>= f = Lam {maybeTyp = (>>= f) <$> maybeTyp, body = body >>>= f, ..}
+  Lam {..} >>= f = Lam {maybeType = (>>= f) <$> maybeType, body = body >>>= f, ..}
   App {..} >>= f = App {fn = fn >>= f, args = (>>= f) <$> args, ..}
   Let {..} >>= f =
     Let
-      { maybeTyp = (>>= f) <$> maybeTyp,
+      { maybeType = (>>= f) <$> maybeType,
         binding = binding >>= f,
         body = body >>>= f,
         ..
@@ -210,7 +210,7 @@ instance Monad Expr where
       }
   Case {..} >>= f =
     Case
-      { maybeTyp = (>>= f) <$> maybeTyp,
+      { maybeType = (>>= f) <$> maybeType,
         cond = cond >>= f,
         alts = second (>>>= f) <$> alts,
         ..
@@ -219,7 +219,7 @@ instance Monad Expr where
   Pair {..} >>= f = Pair {left = left >>= f, right = right >>= f, ..}
   PCase {..} >>= f =
     PCase
-      { maybeTyp = (>>= f) <$> maybeTyp,
+      { maybeType = (>>= f) <$> maybeType,
         cond = cond >>= f,
         bBody = bBody >>>= f,
         ..
@@ -233,10 +233,10 @@ instance Monad Expr where
         ..
       }
   OSum {..} >>= f = OSum {left = left >>= f, right = right >>= f, ..}
-  OInj {..} >>= f = OInj {maybeTyp = (>>= f) <$> maybeTyp, inj = inj >>= f, ..}
+  OInj {..} >>= f = OInj {maybeType = (>>= f) <$> maybeType, inj = inj >>= f, ..}
   OCase {..} >>= f =
     OCase
-      { maybeTyp = (>>= f) <$> maybeTyp,
+      { maybeType = (>>= f) <$> maybeType,
         cond = cond >>= f,
         lBody = lBody >>>= f,
         rBody = rBody >>>= f,
@@ -263,7 +263,7 @@ instance Show a => Show (Expr a) where showsPrec = showsPrec1
 
 -- | A smart constructor for 'Lam'
 lam :: Eq a => a -> Maybe (Typ a) -> Maybe Label -> Expr a -> Expr a
-lam x maybeTyp label b = Lam {body = abstract1 x b, ..}
+lam x maybeType label b = Lam {body = abstract1 x b, ..}
 
 -- | Pretty printer for Taype expressions
 instance Pretty (Expr Text) where
