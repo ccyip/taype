@@ -170,8 +170,8 @@ data Binder = Anon | Named Text
 data Def a
   = -- Function
     FunDef {attr :: Attribute, typ :: Typ a, label :: Maybe Label, expr :: Expr a}
-  | -- | Algebraic data type
-    ADTDef {ctors :: [Text]}
+  | -- | Algebraic data type. Do not support empty type
+    ADTDef {ctors :: NonEmpty Text}
   | -- | Oblivious algebraic data type. Only support one argument for now
     OADTDef {typ :: Typ a, body :: Scope () Expr a}
   | -- | Constructor
