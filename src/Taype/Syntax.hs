@@ -96,7 +96,8 @@ data Expr a
     ILit {iLit :: Int}
   | -- | (Dependent) if conditional
     Ite
-      { cond :: Expr a,
+      { maybeType :: Maybe (Typ a),
+        cond :: Expr a,
         ifTrue :: Expr a,
         ifFalse :: Expr a
       }
