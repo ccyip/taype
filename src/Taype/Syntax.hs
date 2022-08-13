@@ -74,7 +74,7 @@ data Expr a
     Let
       { maybeType :: Maybe (Typ a),
         label :: Maybe Label,
-        binding :: Expr a,
+        rhs :: Expr a,
         body :: Scope () Expr a
       }
   | -- | Unit type
@@ -205,7 +205,7 @@ instance Monad Expr where
   Let {..} >>= f =
     Let
       { maybeType = (>>= f) <$> maybeType,
-        binding = binding >>= f,
+        rhs = rhs >>= f,
         body = body >>>= f,
         ..
       }
