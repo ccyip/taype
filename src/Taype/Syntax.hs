@@ -175,9 +175,9 @@ data Def a
   | -- | Oblivious algebraic data type. Only support one argument for now
     OADTDef {typ :: Typ a, body :: Scope () Expr a}
   | -- | Constructor
-    CtorDef {paraTyps :: [Typ a], dataType :: Text}
+    CtorDef {paraTypes :: [Typ a], dataType :: Text}
   | -- | Builtin operation
-    BuiltinDef {paraTyps :: [Typ a], resType :: Typ a, strategy :: LabelPolyStrategy}
+    BuiltinDef {paraTypes :: [Typ a], resType :: Typ a, strategy :: LabelPolyStrategy}
   deriving stock (Functor, Foldable, Traversable)
 
 data NamedDef a = NamedDef {name :: Text, loc :: Int, def :: Def a}
