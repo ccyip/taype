@@ -107,6 +107,12 @@ data Expr a
         cond :: Expr a,
         alts :: NonEmpty (Name, Scope Int Expr a)
       }
+  | -- | Oblivious and leaky if conditional
+    OIte
+      { cond :: Expr a,
+        ifTrue :: Expr a,
+        ifFalse :: Expr a
+      }
   | -- | Product type
     Prod {left :: Typ a, right :: Typ a}
   | -- | Normal pair
