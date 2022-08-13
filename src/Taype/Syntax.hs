@@ -273,6 +273,13 @@ instance Eq a => Eq (Expr a) where (==) = eq1
 
 instance Show a => Show (Expr a) where showsPrec = showsPrec1
 
+deriving stock instance Eq a => Eq (Def a)
+
+deriving stock instance Show a => Show (Def a)
+
+deriving stock instance Eq a => Eq (NamedDef a)
+
+deriving stock instance Show a => Show (NamedDef a)
 -- | A smart constructor for 'Lam'
 lam :: Eq a => a -> Maybe (Typ a) -> Maybe Label -> Expr a -> Expr a
 lam x maybeType label b = Lam {body = abstract1 x b, ..}
