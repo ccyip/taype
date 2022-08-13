@@ -55,6 +55,7 @@ library
   import:              common-options
   hs-source-dirs:      src
   exposed-modules:     Taype
+                       Taype.Error
                        Taype.Syntax
                        Taype.Fresh
                        Taype.Lexer
