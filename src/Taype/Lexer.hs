@@ -21,6 +21,7 @@ import qualified Text.Megaparsec.Char.Lexer as L
 -- | Taype tokens
 data Token
   = Lambda
+  | Underscore
   | Arrow
   | Equals
   | Colon
@@ -149,7 +150,8 @@ pIdent = lexeme $ do
   mayObliv <- option "" $ symbol "~"
   x <- satisfy isIdent0
   xs <- takeWhileP Nothing isIdent
-  return $ Ident $ mayObliv <> T.cons x xs
+  let ident = mayObliv <> T.cons x xs
+  return $ if ident == "_" then Underscore else Ident ident
 
 -- | Parse a token with offset
 pLocatedToken :: Parser LocatedToken
