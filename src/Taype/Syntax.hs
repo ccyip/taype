@@ -227,16 +227,23 @@ instance Monad Expr where
   ILit {..} >>= _ = ILit {..}
   Ite {..} >>= f =
     Ite
-      { cond = cond >>= f,
+      { maybeType = (>>= f) <$> maybeType,
+        cond = cond >>= f,
         ifTrue = ifTrue >>= f,
-        ifFalse = ifFalse >>= f,
-        ..
+        ifFalse = ifFalse >>= f
       }
   Case {..} >>= f =
     Case
       { maybeType = (>>= f) <$> maybeType,
         cond = cond >>= f,
         alts = second (>>>= f) <$> alts,
+        ..
+      }
+  OIte {..} >>= f =
+    OIte
+      { cond = cond >>= f,
+        ifTrue = ifTrue >>= f,
+        ifFalse = ifFalse >>= f,
         ..
       }
   Prod {..} >>= f = Prod {left = left >>= f, right = right >>= f, ..}
