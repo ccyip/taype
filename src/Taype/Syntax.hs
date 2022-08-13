@@ -29,6 +29,9 @@ module Taype.Syntax
     Attribute (..),
     LabelPolyStrategy (..),
 
+    -- * Helper functions
+    abstract1Binder,
+    instantiate1Binder,
     -- * Smart constructors
     lam,
   )
@@ -40,6 +43,7 @@ import Data.Deriving
 import Data.Functor.Classes
 import Prettyprinter
 import Taype.Fresh
+import Taype.Error
 import qualified Text.Show
 
 -- | Taype expression, including the surface and the core syntax
@@ -280,6 +284,15 @@ deriving stock instance Show a => Show (Def a)
 deriving stock instance Eq a => Eq (NamedDef a)
 
 deriving stock instance Show a => Show (NamedDef a)
+
+abstract1Binder :: (Monad f) => Binder -> f Text -> Scope () f Text
+abstract1Binder Anon = abstract $ const Nothing
+abstract1Binder (Named name) = abstract1 name
+
+instantiate1Binder :: (Monad f) => Binder -> Scope n f Text -> f Text
+instantiate1Binder Anon = instantiate1 (oops "Instantiating an anonymous binder")
+instantiate1Binder (Named name) = instantiate1 (return name)
+
 -- | A smart constructor for 'Lam'
 lam :: Eq a => a -> Maybe (Typ a) -> Maybe Label -> Expr a -> Expr a
 lam x maybeType label b = Lam {body = abstract1 x b, ..}
