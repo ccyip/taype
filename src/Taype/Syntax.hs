@@ -140,7 +140,7 @@ data Expr a
         tag :: Bool,
         inj :: Expr a
       }
-  | -- | Case analysis for oblivious sum type
+  | -- | (Leaky) case analysis for oblivious sum type
     OCase
       { maybeType :: Maybe (Typ a),
         cond :: Expr a,
