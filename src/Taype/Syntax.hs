@@ -22,8 +22,10 @@ module Taype.Syntax
     Expr (..),
     Typ,
     Label,
-    AppKind,
+    AppKind (..),
+    Binder (..),
     Def (..),
+    NamedDef (..),
     Attribute (..),
     LabelPolyStrategy (..),
 
@@ -160,6 +162,11 @@ type Label = Bool
 data AppKind = FunApp | CtorApp | BuiltinApp | TypeApp
   deriving stock (Eq, Show)
 
+-- | A binder is either anonymous, i.e. \"_\", or a name
+data Binder = Anon | Named Text
+  deriving stock (Eq, Show)
+
+-- | Global definition
 data Def a
   = -- Function
     FunDef {attr :: Attribute, typ :: Typ a, label :: Maybe Label, expr :: Expr a}
@@ -171,10 +178,15 @@ data Def a
     CtorDef {paraTyps :: [Typ a], dataType :: Text}
   | -- | Builtin operation
     BuiltinDef {paraTyps :: [Typ a], resType :: Typ a, strategy :: LabelPolyStrategy}
+  deriving stock (Functor, Foldable, Traversable)
+
+data NamedDef a = NamedDef {name :: Text, loc :: Int, def :: Def a}
 
 data Attribute = SectionAttr | RetractionAttr | SafeAttr | LeakyAttr
+  deriving stock (Eq, Show)
 
 data LabelPolyStrategy = JoinStrategy | TopStrategy
+  deriving stock (Eq, Show)
 
 instance Applicative Expr where
   pure = V
