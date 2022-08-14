@@ -122,7 +122,7 @@ data Expr a
     PCase
       { maybeType :: Maybe (Typ a),
         cond :: Expr a,
-        bBody :: Scope Bool Expr a
+        body2 :: Scope Bool Expr a
       }
   | -- | Oblivious product type
     OProd {left :: Typ a, right :: Typ a}
@@ -131,7 +131,7 @@ data Expr a
   | -- | Case analysis for oblivious product
     OPCase
       { cond :: Expr a,
-        bBody :: Scope Bool Expr a
+        body2 :: Scope Bool Expr a
       }
   | -- | Oblivious sum type
     OSum {left :: Typ a, right :: Typ a}
@@ -252,7 +252,7 @@ instance Monad Expr where
     PCase
       { maybeType = (>>= f) <$> maybeType,
         cond = cond >>= f,
-        bBody = bBody >>>= f,
+        body2 = body2 >>>= f,
         ..
       }
   OProd {..} >>= f = OProd {left = left >>= f, right = right >>= f, ..}
@@ -260,7 +260,7 @@ instance Monad Expr where
   OPCase {..} >>= f =
     OPCase
       { cond = cond >>= f,
-        bBody = bBody >>>= f,
+        body2 = body2 >>>= f,
         ..
       }
   OSum {..} >>= f = OSum {left = left >>= f, right = right >>= f, ..}
