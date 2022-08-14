@@ -110,7 +110,7 @@ data Expr a
     Case
       { maybeType :: Maybe (Typ a),
         cond :: Expr a,
-        alts :: NonEmpty (Name, Scope Int Expr a)
+        alts :: NonEmpty (Text, Scope Int Expr a)
       }
   | -- | Oblivious and leaky if conditional
     OIte
