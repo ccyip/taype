@@ -3,6 +3,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -31,7 +32,11 @@ module Taype.Syntax
 
     -- * Helper functions
     abstract1Binder,
+    abstract2Binders,
+    abstractBinders,
     instantiate1Binder,
+    instantiate2Binders,
+    instantiateBinders,
 
     -- * Smart constructors
     lam,
@@ -39,9 +44,11 @@ module Taype.Syntax
 where
 
 import Bound
+import Bound.Name (instantiate1Name)
 import Control.Monad
 import Data.Deriving
 import Data.Functor.Classes
+import Data.List
 import Prettyprinter
 import Taype.Error
 import Taype.Fresh
@@ -301,12 +308,37 @@ deriving stock instance Eq a => Eq (NamedDef a)
 deriving stock instance Show a => Show (NamedDef a)
 
 abstract1Binder :: (Monad f) => Binder -> f Text -> Scope () f Text
-abstract1Binder Anon = abstract $ const Nothing
-abstract1Binder (Named name) = abstract1 name
+abstract1Binder binder = abstract $ \name ->
+  if Named name == binder
+    then Just ()
+    else Nothing
+
+abstract2Binders :: (Monad f) => Binder -> Binder -> f Text -> Scope Bool f Text
+abstract2Binders left right = abstract $ \name ->
+  if
+      | Named name == left -> Just True
+      | Named name == right -> Just False
+      | otherwise -> Nothing
+
+abstractBinders :: (Monad f) => [Binder] -> f Text -> Scope Int f Text
+abstractBinders binders = abstract $ \name -> elemIndex (Named name) binders
+
+fromBinder :: Binder -> Text
+fromBinder (Named name) = name
+fromBinder Anon = oops "Instantiating an anonymous binder"
 
 instantiate1Binder :: (Monad f) => Binder -> Scope n f Text -> f Text
-instantiate1Binder Anon = instantiate1 (oops "Instantiating an anonymous binder")
-instantiate1Binder (Named name) = instantiate1 (return name)
+instantiate1Binder = instantiate . const . return . fromBinder
+
+instantiate2Binders :: (Monad f) => Binder -> Binder -> Scope Bool f Text -> f Text
+instantiate2Binders left right = instantiate $ \b ->
+  return . fromBinder $ if b then left else right
+
+instantiateBinders :: (Monad f) => [Binder] -> Scope Int f Text -> f Text
+instantiateBinders binders = instantiate $ \i ->
+  case binders !!? i of
+    Just binder -> return $ fromBinder binder
+    Nothing -> oops "Instantiating an out-of-bound binder"
 
 -- | A smart constructor for 'Lam'
 lam :: Eq a => a -> Maybe (Typ a) -> Maybe Label -> Expr a -> Expr a
