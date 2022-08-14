@@ -174,8 +174,8 @@ type Label = Bool
 data AppKind = FunApp | CtorApp | BuiltinApp | TypeApp
   deriving stock (Eq, Show)
 
--- | A binder is either anonymous, i.e. \"_\", or a name
-data Binder = Anon | Named Text
+-- | A binder is either a name, or anonymous, i.e. \"_\"
+data Binder = Named Text | Anon
   deriving stock (Eq, Show)
 
 -- | Global definition
