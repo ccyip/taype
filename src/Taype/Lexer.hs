@@ -78,25 +78,15 @@ symbol = L.symbol space
 pToken :: Parser Token
 pToken =
   choice
-    [ Lambda <$ symbol "\\",
-      Arrow <$ symbol "->",
-      Equals <$ symbol "=",
-      Colon <$ symbol ":",
-      Bar <$ symbol "|",
-      Comma <$ symbol ",",
-      OpenAngle <$ symbol "<",
-      CloseAngle <$ symbol ">",
-      OpenAttr <$ symbol "#[",
-      CloseBrace <$ symbol "]",
-      OpenParen <$ symbol "(",
-      OpenOParen <$ symbol "~(",
-      CloseParen <$ symbol ")",
-      choice
+    [ choice
         [ Infix <$> symbol "<=",
+          Infix <$> symbol "~<=",
           Infix <$> symbol "==",
+          Infix <$> symbol "~=",
           Infix <$> symbol "+",
           Infix <$> symbol "-",
           Infix <$> symbol "~+",
+          Infix <$> symbol "~-",
           Infix <$> symbol "*",
           Infix <$> symbol "~*"
         ]
@@ -132,6 +122,19 @@ pToken =
           ILit <$> lexeme L.decimal
         ]
         <?> "literal",
+      Lambda <$ symbol "\\",
+      Arrow <$ symbol "->",
+      Equals <$ symbol "=",
+      Colon <$ symbol ":",
+      Bar <$ symbol "|",
+      Comma <$ symbol ",",
+      OpenAngle <$ symbol "<",
+      CloseAngle <$ symbol ">",
+      OpenAttr <$ symbol "#[",
+      CloseBrace <$ symbol "]",
+      OpenParen <$ symbol "(",
+      OpenOParen <$ symbol "~(",
+      CloseParen <$ symbol ")",
       -- Identifier parsing has to be the last one
       pIdent <?> "Identifier"
     ]
