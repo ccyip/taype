@@ -37,9 +37,6 @@ module Taype.Syntax
     instantiate1Binder,
     instantiate2Binders,
     instantiateBinders,
-
-    -- * Smart constructors
-    lam,
   )
 where
 
@@ -339,10 +336,6 @@ instantiateBinders binders = instantiate $ \i ->
   case binders !!? i of
     Just binder -> return $ fromBinder binder
     Nothing -> oops "Instantiating an out-of-bound binder"
-
--- | A smart constructor for 'Lam'
-lam :: Eq a => a -> Maybe (Typ a) -> Maybe Label -> Expr a -> Expr a
-lam x maybeType label b = Lam {body = abstract1 x b, ..}
 
 -- | Pretty printer for Taype expressions
 instance Pretty (Expr Text) where
