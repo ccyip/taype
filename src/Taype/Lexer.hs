@@ -56,10 +56,7 @@ data Token
   | Of
   | OInj Bool
   | Ident Text
-  | -- Precedence: BinOp1 < BinOp2 < BinOp3
-    Infix1 Text
-  | Infix2 Text
-  | Infix3 Text
+  | Infix Text
   deriving stock (Eq, Show)
 
 -- | Token with location information
@@ -95,13 +92,13 @@ pToken =
       OpenOParen <$ symbol "~(",
       CloseParen <$ symbol ")",
       choice
-        [ Infix1 <$> symbol "<=",
-          Infix1 <$> symbol "==",
-          Infix2 <$> symbol "+",
-          Infix2 <$> symbol "-",
-          Infix2 <$> symbol "~+",
-          Infix3 <$> symbol "*",
-          Infix3 <$> symbol "~*"
+        [ Infix <$> symbol "<=",
+          Infix <$> symbol "==",
+          Infix <$> symbol "+",
+          Infix <$> symbol "-",
+          Infix <$> symbol "~+",
+          Infix <$> symbol "*",
+          Infix <$> symbol "~*"
         ]
         <?> "infix",
       choice
