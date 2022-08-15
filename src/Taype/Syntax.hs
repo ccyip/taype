@@ -175,7 +175,7 @@ type Typ = Expr
 type Label = Bool
 
 -- | Application kinds
-data AppKind = FunApp | CtorApp | BuiltinApp | TypeApp
+data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
   deriving stock (Eq, Show)
 
 -- | A binder is either a name, or anonymous, i.e. \"_\"
