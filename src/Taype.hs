@@ -14,13 +14,9 @@ where
 -- import Prettyprinter
 -- import Prettyprinter.Render.Text
 
-import Taype.Lexer
-import Taype.Syntax
-import Text.Megaparsec.Error (errorBundlePretty)
+import Taype.Parser
 
 test :: FilePath -> IO ()
 test file = do
   content <- readFileBS file
-  case lex file $ decodeUtf8 content of
-    Left bundle -> putStr (errorBundlePretty bundle)
-    Right tokens -> print tokens
+  parse file $ decodeUtf8 content
