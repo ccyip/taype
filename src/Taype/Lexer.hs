@@ -54,6 +54,7 @@ data Token
   | Case
   | OCase
   | Of
+  | Tape
   | OInj Bool
   | Ident Text
   | Infix Text
@@ -78,7 +79,9 @@ symbol = L.symbol space
 pToken :: Parser Token
 pToken =
   choice
-    [ choice
+    [
+      Arrow <$ symbol "->",
+      choice
         [ Infix <$> symbol "<=",
           Infix <$> symbol "~<=",
           Infix <$> symbol "==",
@@ -105,7 +108,8 @@ pToken =
           OCase <$ symbol "~case",
           Of <$ symbol "of",
           OInj True <$ symbol "~inl",
-          OInj False <$ symbol "~inr"
+          OInj False <$ symbol "~inr",
+          Tape <$ symbol "tape"
         ]
         <?> "keyword",
       choice
@@ -123,7 +127,6 @@ pToken =
         ]
         <?> "literal",
       Lambda <$ symbol "\\",
-      Arrow <$ symbol "->",
       Equals <$ symbol "=",
       Colon <$ symbol ":",
       Bar <$ symbol "|",
