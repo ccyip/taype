@@ -80,7 +80,7 @@ symbol = L.symbol space
 pToken :: Parser Token
 pToken =
   choice
-    [ pIdent <?> "Identifier",
+    [ pIdent <?> "identifier",
       Arrow <$ symbol "->",
       choice
         [ Infix <$> symbol "<=",
