@@ -17,6 +17,7 @@ import qualified Data.Text as T
 import Text.Megaparsec hiding (Token, token)
 import qualified Text.Megaparsec.Char as C
 import qualified Text.Megaparsec.Char.Lexer as L
+import Relude.Extra
 
 -- | Taype tokens
 data Token
@@ -79,7 +80,7 @@ symbol = L.symbol space
 pToken :: Parser Token
 pToken =
   choice
-    [
+    [ pIdent <?> "Identifier",
       Arrow <$ symbol "->",
       choice
         [ Infix <$> symbol "<=",
@@ -131,15 +132,14 @@ pToken =
       Colon <$ symbol ":",
       Bar <$ symbol "|",
       Comma <$ symbol ",",
+      Underscore <$ symbol "_",
       OpenAngle <$ symbol "<",
       CloseAngle <$ symbol ">",
       OpenAttr <$ symbol "#[",
       CloseBrace <$ symbol "]",
       OpenParen <$ symbol "(",
       OpenOParen <$ symbol "~(",
-      CloseParen <$ symbol ")",
-      -- Identifier parsing has to be the last one
-      pIdent <?> "Identifier"
+      CloseParen <$ symbol ")"
     ]
 
 isIdent0 :: Char -> Bool
@@ -149,12 +149,42 @@ isIdent :: Char -> Bool
 isIdent c = isAlphaNum c || c == '_' || c == '\''
 
 pIdent :: Parser Token
-pIdent = lexeme $ do
+pIdent = lexeme . try $ do
   mayObliv <- option "" $ symbol "~"
   x <- satisfy isIdent0
   xs <- takeWhileP Nothing isIdent
   let ident = mayObliv <> T.cons x xs
-  return $ if ident == "_" then Underscore else Ident ident
+  guard (notMember ident reserved)
+  return $ Ident ident
+
+-- | Reserved tokens that cannot be used for identifier
+reserved :: HashSet Text
+reserved =
+  fromList
+    [ "_",
+      "data",
+      "obliv",
+      "fn",
+      "let",
+      "in",
+      "if",
+      "then",
+      "else",
+      "mux",
+      "case",
+      "~case",
+      "of",
+      "~inl",
+      "~inr",
+      "tape",
+      "Unit",
+      "Bool",
+      "~Bool",
+      "Int",
+      "~Int",
+      "True",
+      "False"
+    ]
 
 -- | Parse a token with offset
 pLocatedToken :: Parser LocatedToken
