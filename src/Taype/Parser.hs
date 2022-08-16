@@ -33,7 +33,7 @@ pTerminal match = terminal match'
     match' LocatedToken {..} = match token
 
 pToken :: Token -> Parser r ()
-pToken expected = void $ satisfy match <?> show expected
+pToken expected = void $ satisfy match
   where
     match LocatedToken {..} = expected == token
 
@@ -43,7 +43,7 @@ pLocatedTerminal match = terminal match'
     match' LocatedToken {..} = (offset,) <$> match token
 
 pLocatedToken :: Token -> Parser r Int
-pLocatedToken expected = terminal match <?> show expected
+pLocatedToken expected = terminal match
   where
     match LocatedToken {..}
       | expected == token = Just offset
