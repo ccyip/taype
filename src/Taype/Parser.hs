@@ -250,10 +250,8 @@ grammar = mdo
       -- Application-like
       pApp pFn former = do
         fn <- pFn
-        args <- many pAtomExpr
-        return $ case args of
-          [] -> fn
-          _ -> Loc {loc = getLoc fn, expr = former fn args}
+        args <- some1 pAtomExpr
+        return $ Loc {loc = getLoc fn, expr = former fn $ toList args}
       -- Parenthesized
       pParen pBody = pToken L.OpenParen *> pBody <* pToken L.CloseParen
 
@@ -395,7 +393,9 @@ grammar = mdo
           do
             loc <- pLocatedToken L.Tape
             expr <- pAtomExpr
-            return Loc {expr = Tape {..}, ..}
+            return Loc {expr = Tape {..}, ..},
+          -- Next precedence
+          pAtomExpr
         ]
 
   -- Atomic expression
@@ -438,7 +438,13 @@ grammar = mdo
     rule $ choice [pInfixType "~*" OProd pAppType pOProdType, pAppType]
 
   -- Type application
-  pAppType <- rule $ pApp pAtomType tapp_
+  pAppType <-
+    rule $
+      choice
+        [ pApp pAtomType tapp_,
+          -- Next precedence
+          pAtomType
+        ]
 
   -- Atomic type
   pAtomType <-
