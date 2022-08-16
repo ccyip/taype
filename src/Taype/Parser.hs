@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -499,4 +500,45 @@ renderParserError Report {..} =
   where
     unexpectedToken = listToMaybe unconsumed
     errMsg = maybe "unexpected end of input" showUnexpected unexpectedToken
-    showUnexpected LocatedToken {..} = "unexpected " <> show token
+    showUnexpected LocatedToken {..} = "unexpected " <> renderToken token
+
+renderToken :: Token -> Text
+renderToken = \case
+  L.Lambda -> "lambda abstraction"
+  L.Underscore -> "'_'"
+  L.Arrow -> "\"->\""
+  L.Equals -> "'='"
+  L.Colon -> "':'"
+  L.Bar -> "'|'"
+  L.Comma -> "','"
+  L.OpenAngle -> "'<'"
+  L.CloseAngle -> "'>'"
+  L.OpenAttr -> "\"#[\""
+  L.CloseBrace -> "']'"
+  L.OpenParen -> "'('"
+  L.OpenOParen -> "\"~(\""
+  L.CloseParen -> "')'"
+  L.TUnit -> "Unit"
+  L.TBool -> "Bool"
+  L.OBool -> "~Bool"
+  L.BLit _ -> "boolean literal"
+  L.TInt -> "Int"
+  L.OInt -> "~Int"
+  L.ILit _ -> "integer literal"
+  L.Data -> "data"
+  L.Obliv -> "obliv"
+  L.Fn -> "fn"
+  L.Let -> "let"
+  L.In -> "in"
+  L.If -> "if"
+  L.OIf -> "~if"
+  L.Then -> "then"
+  L.Else -> "else"
+  L.Mux -> "mux"
+  L.Case -> "case"
+  L.OCase -> "~case"
+  L.Of -> "of"
+  L.Tape -> "tape"
+  L.OInj tag -> if tag then "~inl" else "~inr"
+  L.Ident ident -> "identifier \"" <> ident <> "\""
+  L.Infix ident -> "infix \"" <> ident <> "\""
