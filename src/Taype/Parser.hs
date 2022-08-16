@@ -99,6 +99,12 @@ getLoc :: Expr a -> Int
 getLoc Loc {loc} = loc
 getLoc _ = oops "Location not available"
 
+infixToTypeFormer :: Text -> (Typ a -> Typ a -> Typ a)
+infixToTypeFormer "*" = Prod
+infixToTypeFormer "~*" = OProd
+infixToTypeFormer "~+" = OSum
+infixToTypeFormer _ = oops "unknown type infix"
+
 grammar :: Grammar r (Parser r [NamedDef Text])
 grammar = mdo
   -- A program is a list of global definitions
@@ -202,7 +208,7 @@ grammar = mdo
                 Loc {expr = let_ binder maybeType rhs body, ..}
            in foldr go body0 bindings
       -- If-like conditional
-      pIf ifToken pBranch former = do
+      pIf former ifToken pBranch = do
         loc <- pLocatedToken ifToken
         cond <- pExpr
         pToken L.Then
@@ -211,7 +217,7 @@ grammar = mdo
         ifFalse <- pBranch
         return Loc {expr = former cond ifTrue ifFalse, ..}
       -- Product-like elimination
-      pPCase caseToken openParenToken pBody former = do
+      pPCase former caseToken openParenToken pBody = do
         loc <- pLocatedToken caseToken
         cond <- pExpr
         pToken L.Of
@@ -239,7 +245,7 @@ grammar = mdo
         alts <- some1 pAlt
         return Loc {expr = case_ cond alts, ..}
       -- Pair-like
-      pPair openParenToken former = do
+      pPair former openParenToken = do
         pToken openParenToken
         prefix <- some1 $ flip (,) <$> pExpr <*> pLocatedToken L.Comma
         end <- pExpr
@@ -248,12 +254,20 @@ grammar = mdo
           let go (loc, left) right = Loc {expr = former left right, ..}
            in foldr go end prefix
       -- Application-like
-      pApp pFn former = do
+      pApp former pFn = do
         fn <- pFn
         args <- some1 pAtomExpr
         return $ Loc {loc = getLoc fn, expr = former fn $ toList args}
       -- Parenthesized
       pParen pBody = pToken L.OpenParen *> pBody <* pToken L.CloseParen
+      -- Infix
+      pInfix former ops pLeft pRight = do
+        left <- pLeft
+        op <- pLocatedInfix ops
+        right <- pRight
+        return $
+          let (loc, name) = op
+           in Loc {expr = former name left right, ..}
 
   -- Expression
   pExpr <-
@@ -272,13 +286,13 @@ grammar = mdo
           -- Let
           pLet pExpr,
           -- If conditional
-          pIf L.If pExpr ite_,
+          pIf ite_ L.If pExpr,
           -- Oblivious (leaky) if conditional
-          pIf L.OIf pExpr oite_,
+          pIf oite_ L.OIf pExpr,
           -- Product elimination
-          pPCase L.Case L.OpenParen pExpr pcase_,
+          pPCase pcase_ L.Case L.OpenParen pExpr,
           -- Oblivious product elimination
-          pPCase L.OCase L.OpenOParen pExpr opcase_,
+          pPCase opcase_ L.OCase L.OpenOParen pExpr,
           -- Case analysis
           pCase pExpr,
           -- Oblivious (leaky) case analysis
@@ -334,22 +348,16 @@ grammar = mdo
           -- Let
           pLet pType,
           -- If conditional
-          pIf L.If pType ite_,
+          pIf ite_ L.If pType,
           -- Product elimination
-          pPCase L.Case L.OpenParen pType pcase_,
+          pPCase pcase_ L.Case L.OpenParen pType,
           -- Case analysis
           pCase pType,
           -- Next precedence
           pProdType
         ]
 
-  let pInfixExpr ops pLeft pRight = do
-        left <- pLeft
-        op <- pLocatedInfix ops
-        right <- pRight
-        return $
-          let (loc, ref) = op
-           in Loc {expr = iapp_ (GV {..}) [left, right], ..}
+  let pInfixExpr = pInfix $ \ref left right -> iapp_ (GV {..}) [left, right]
 
   -- Comparative infix
   pCompareExpr <-
@@ -369,7 +377,7 @@ grammar = mdo
     rule $
       choice
         [ -- Application
-          pApp pAtomExpr app_,
+          pApp app_ pAtomExpr,
           -- MUX
           do
             loc <- pLocatedToken L.Mux
@@ -412,36 +420,32 @@ grammar = mdo
           -- Variable
           pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
           -- Pair
-          pPair L.OpenParen Pair,
+          pPair Pair L.OpenParen,
           -- Oblivious pair
-          pPair L.OpenOParen OPair,
+          pPair OPair L.OpenOParen,
           -- Parenthesized expression
           pParen pExpr
         ]
 
-  let pInfixType op former pLeft pRight = do
-        left <- pLeft
-        loc <- pLocatedToken $ L.Infix op
-        right <- pRight
-        return $ Loc {expr = former left right, ..}
+  let pInfixType = pInfix infixToTypeFormer
 
   -- Right-associative product type
   pProdType <-
-    rule $ choice [pInfixType "*" Prod pOSumType pProdType, pOSumType]
+    rule $ choice [pInfixType ["*"] pOSumType pProdType, pOSumType]
 
   -- Right-associative oblivious sum type
   pOSumType <-
-    rule $ choice [pInfixType "~+" OSum pOProdType pOSumType, pOProdType]
+    rule $ choice [pInfixType ["~+"] pOProdType pOSumType, pOProdType]
 
   -- Right-associative oblivious product type
   pOProdType <-
-    rule $ choice [pInfixType "~*" OProd pAppType pOProdType, pAppType]
+    rule $ choice [pInfixType ["~*"] pAppType pOProdType, pAppType]
 
   -- Type application
   pAppType <-
     rule $
       choice
-        [ pApp pAtomType tapp_,
+        [ pApp tapp_ pAtomType,
           -- Next precedence
           pAtomType
         ]
