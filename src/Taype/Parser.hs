@@ -478,9 +478,12 @@ parse :: [LocatedToken] -> Either LocatedError [NamedDef Text]
 parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> Left $ renderParserError rpt
-    ([ast], _) -> Right ast
-    (asts, _) ->
-      oops $ "Ambiguous grammar: there are " <> show (length asts) <> " parses!"
+    ([defs], _) -> Right $ close <$> defs
+    (defs, _) ->
+      oops $ "Ambiguous grammar: there are " <> show (length defs) <> " parses!"
+  where
+    close :: NamedDef Text -> NamedDef a
+    close NamedDef {..} = NamedDef {def = def >>>= GV, ..}
 
 renderParserError :: Report Text [LocatedToken] -> LocatedError
 renderParserError Report {..} =
