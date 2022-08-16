@@ -196,15 +196,7 @@ grammar = mdo
             body0 <- pExpr
             return $
               let go ((loc, binder), maybeType) body =
-                    Loc
-                      { expr =
-                          Lam
-                            { body = abstract1Binder binder body,
-                              label = Nothing,
-                              ..
-                            },
-                        ..
-                      }
+                    Loc {expr = lam_ binder maybeType body, ..}
                in foldr go body0 args,
           -- Let
           do
@@ -220,15 +212,7 @@ grammar = mdo
             body0 <- pExpr
             return $
               let go ((loc, binder), maybeType, rhs) body =
-                    Loc
-                      { expr =
-                          Let
-                            { body = abstract1Binder binder body,
-                              label = Nothing,
-                              ..
-                            },
-                        ..
-                      }
+                    Loc {expr = let_ binder maybeType rhs body, ..}
                in foldr go body0 bindings,
           -- If conditional
           do
@@ -238,7 +222,7 @@ grammar = mdo
             ifTrue <- pExpr
             pToken L.Else
             ifFalse <- pExpr
-            return Loc {expr = Ite {maybeType = Nothing, ..}, ..},
+            return Loc {expr = ite_ cond ifTrue ifFalse, ..},
           -- Oblivious (leaky) if conditional
           do
             loc <- pLocatedToken L.OIf
@@ -247,7 +231,7 @@ grammar = mdo
             ifTrue <- pExpr
             pToken L.Else
             ifFalse <- pExpr
-            return Loc {expr = OIte {..}, ..},
+            return Loc {expr = oite_ cond ifTrue ifFalse, ..},
           -- Product elimination
           do
             loc <- pLocatedToken L.Case
@@ -260,16 +244,7 @@ grammar = mdo
             pToken L.CloseParen
             pToken L.Arrow
             body <- pExpr
-            return
-              Loc
-                { expr =
-                    PCase
-                      { body2 = abstract2Binders left right body,
-                        maybeType = Nothing,
-                        ..
-                      },
-                  ..
-                },
+            return Loc {expr = pcase_ cond left right body, ..},
           -- Case analysis
           do
             let pAlt = do
@@ -278,12 +253,12 @@ grammar = mdo
                   binders <- many pBinder
                   pToken L.Arrow
                   body <- pExpr
-                  return (ctor, abstractBinders binders body)
+                  return (ctor, binders, body)
             loc <- pLocatedToken L.Case
             cond <- pExpr
             pToken L.Of
             alts <- some1 pAlt
-            return Loc {expr = Case {maybeType = Nothing, ..}, ..},
+            return Loc {expr = case_ cond alts, ..},
           -- Oblivious product elimination
           do
             loc <- pLocatedToken L.OCase
@@ -297,15 +272,7 @@ grammar = mdo
             pToken L.CloseParen
             pToken L.Arrow
             body <- pExpr
-            return
-              Loc
-                { expr =
-                    OPCase
-                      { body2 = abstract2Binders left right body,
-                        ..
-                      },
-                  ..
-                },
+            return Loc {expr = opcase_ cond left right body, ..},
           -- Oblivious (leaky) case analysis
           do
             loc <- pLocatedToken L.OCase
@@ -313,25 +280,15 @@ grammar = mdo
             pToken L.Of
             pToken L.Bar
             pToken $ L.OInj True
-            left <- pBinder
+            lBinder <- pBinder
             pToken L.Arrow
             lBody <- pExpr
             pToken L.Bar
             pToken $ L.OInj False
-            right <- pBinder
+            rBinder <- pBinder
             pToken L.Arrow
             rBody <- pExpr
-            return
-              Loc
-                { expr =
-                    OCase
-                      { maybeType = Nothing,
-                        lBody = abstract1Binder left lBody,
-                        rBody = abstract1Binder right rBody,
-                        ..
-                      },
-                  ..
-                },
+            return Loc {expr = ocase_ cond lBinder lBody rBinder rBody, ..},
           -- Ascription
           do
             expr <- pCompareExpr
@@ -365,15 +322,7 @@ grammar = mdo
             body <- pType
             return $
               let (binder, typ) = typeArg
-               in Loc
-                    { expr =
-                        Pi
-                          { body = abstract1Binder binder body,
-                            label = Nothing,
-                            ..
-                          },
-                      ..
-                    },
+               in Loc {expr = pi_ binder typ body, ..},
           -- Let
           do
             let pBinding = do
@@ -388,15 +337,7 @@ grammar = mdo
             body0 <- pType
             return $
               let go ((loc, binder), maybeType, rhs) body =
-                    Loc
-                      { expr =
-                          Let
-                            { body = abstract1Binder binder body,
-                              label = Nothing,
-                              ..
-                            },
-                        ..
-                      }
+                    Loc {expr = let_ binder maybeType rhs body, ..}
                in foldr go body0 bindings,
           -- If conditional
           do
@@ -406,7 +347,7 @@ grammar = mdo
             ifTrue <- pType
             pToken L.Else
             ifFalse <- pType
-            return Loc {expr = Ite {maybeType = Nothing, ..}, ..},
+            return Loc {expr = ite_ cond ifTrue ifFalse, ..},
           -- Product elimination
           do
             loc <- pLocatedToken L.Case
@@ -419,16 +360,7 @@ grammar = mdo
             pToken L.CloseParen
             pToken L.Arrow
             body <- pType
-            return
-              Loc
-                { expr =
-                    PCase
-                      { body2 = abstract2Binders left right body,
-                        maybeType = Nothing,
-                        ..
-                      },
-                  ..
-                },
+            return Loc {expr = pcase_ cond left right body, ..},
           -- Case analysis
           do
             let pAlt = do
@@ -437,12 +369,12 @@ grammar = mdo
                   binders <- many pBinder
                   pToken L.Arrow
                   body <- pType
-                  return (ctor, abstractBinders binders body)
+                  return (ctor, binders, body)
             loc <- pLocatedToken L.Case
             cond <- pExpr
             pToken L.Of
             alts <- some1 pAlt
-            return Loc {expr = Case {maybeType = Nothing, ..}, ..},
+            return Loc {expr = case_ cond alts, ..},
           -- Next precedence
           pProdType
         ]
@@ -453,15 +385,7 @@ grammar = mdo
         right <- pRight
         return $
           let (loc, ref) = op
-           in Loc
-                { expr =
-                    App
-                      { appKind = Just InfixApp,
-                        fn = GV {..},
-                        args = [left, right]
-                      },
-                  ..
-                }
+           in Loc {expr = iapp_ (GV {..}) [left, right], ..}
 
   -- Comparative infix
   pCompareExpr <-
@@ -486,11 +410,7 @@ grammar = mdo
             args <- many pAtomExpr
             return $ case args of
               [] -> fn
-              _ ->
-                Loc
-                  { loc = getLoc fn,
-                    expr = App {appKind = Nothing, ..}
-                  },
+              _ -> Loc {loc = getLoc fn, expr = app_ fn args},
           -- MUX
           do
             loc <- pLocatedToken L.Mux
@@ -558,15 +478,15 @@ grammar = mdo
         right <- pRight
         return $ Loc {expr = former left right, ..}
 
-  -- Product type
+  -- Right-associative product type
   pProdType <-
     rule $ choice [pInfixType "*" Prod pOSumType pProdType, pOSumType]
 
-  -- Oblivious sum type
+  -- Right-associative oblivious sum type
   pOSumType <-
     rule $ choice [pInfixType "~+" OSum pOProdType pOSumType, pOProdType]
 
-  -- Oblivious product type
+  -- Right-associative oblivious product type
   pOProdType <-
     rule $ choice [pInfixType "~*" OProd pAppType pOProdType, pAppType]
 
@@ -583,11 +503,7 @@ grammar = mdo
                   fn = GV {..}
                in case args of
                     [] -> fn
-                    _ ->
-                      Loc
-                        { expr = App {appKind = Just TypeApp, ..},
-                          ..
-                        },
+                    _ -> Loc {expr = tapp_ fn args, ..},
           -- Next precedence
           pAtomType
         ]
