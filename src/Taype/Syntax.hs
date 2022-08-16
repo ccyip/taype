@@ -38,6 +38,19 @@ module Taype.Syntax
     instantiate1Binder,
     instantiate2Binders,
     instantiateBinders,
+
+    -- * Smart constructors
+    lam_,
+    pi_,
+    app_,
+    tapp_,
+    let_,
+    ite_,
+    oite_,
+    case_,
+    ocase_,
+    pcase_,
+    opcase_,
   )
 where
 
@@ -339,6 +352,52 @@ instantiateBinders binders = instantiate $ \i ->
   case binders !!? i of
     Just binder -> return $ fromBinder binder
     Nothing -> oops "Instantiating an out-of-bound binder"
+
+lam_ :: (Eq a) => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a
+lam_ binder maybeType body =
+  Lam {label = Nothing, body = abstract1Binder binder body, ..}
+
+pi_ :: (Eq a) => BinderM a -> Typ a -> Expr a -> Expr a
+pi_ binder typ body =
+  Pi {label = Nothing, body = abstract1Binder binder body, ..}
+
+app_ :: Expr a -> [Expr a] -> Expr a
+app_ fn args = App {appKind = Nothing, ..}
+
+tapp_ :: Expr a -> [Expr a] -> Typ a
+tapp_ fn args = App {appKind = Just TypeApp, ..}
+
+let_ :: (Eq a) => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a -> Expr a
+let_ binder maybeType rhs body =
+  Let {label = Nothing, body = abstract1Binder binder body, ..}
+
+ite_ :: Expr a -> Expr a -> Expr a -> Expr a
+ite_ cond ifTrue ifFalse = Ite {maybeType = Nothing, ..}
+
+oite_ :: Expr a -> Expr a -> Expr a -> Expr a
+oite_ cond ifTrue ifFalse = OIte {..}
+
+case_ :: (Eq a) => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
+case_ cond alts = Case {maybeType = Nothing, alts = abstr <$> alts, ..}
+  where
+    abstr (ctor, binders, body) = (ctor, abstractBinders binders body)
+
+ocase_ :: (Eq a) => Expr a -> BinderM a -> Expr a -> BinderM a -> Expr a -> Expr a
+ocase_ cond lBinder lBody rBinder rBody =
+  OCase
+    { maybeType = Nothing,
+      lBody = abstract1Binder lBinder lBody,
+      rBody = abstract1Binder rBinder rBody,
+      ..
+    }
+
+pcase_ :: (Eq a) => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
+pcase_ cond left right body =
+  PCase {maybeType = Nothing, body2 = abstract2Binders left right body, ..}
+
+opcase_ :: (Eq a) => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
+opcase_ cond left right body =
+  OPCase {body2 = abstract2Binders left right body, ..}
 
 -- | Pretty printer for Taype expressions
 instance Pretty (Expr Text) where
