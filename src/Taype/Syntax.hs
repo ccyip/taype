@@ -244,11 +244,11 @@ instance Monad Expr where
   V {..} >>= f = f name
   GV {..} >>= _ = GV {..}
   Pi {..} >>= f = Pi {typ = typ >>= f, body = body >>>= f, ..}
-  Lam {..} >>= f = Lam {maybeType = (>>= f) <$> maybeType, body = body >>>= f, ..}
-  App {..} >>= f = App {fn = fn >>= f, args = (>>= f) <$> args, ..}
+  Lam {..} >>= f = Lam {maybeType = maybeType <&> (>>= f), body = body >>>= f, ..}
+  App {..} >>= f = App {fn = fn >>= f, args = args <&> (>>= f), ..}
   Let {..} >>= f =
     Let
-      { maybeType = (>>= f) <$> maybeType,
+      { maybeType = maybeType <&> (>>= f),
         rhs = rhs >>= f,
         body = body >>>= f,
         ..
@@ -263,16 +263,16 @@ instance Monad Expr where
   ILit {..} >>= _ = ILit {..}
   Ite {..} >>= f =
     Ite
-      { maybeType = (>>= f) <$> maybeType,
+      { maybeType = maybeType <&> (>>= f),
         cond = cond >>= f,
         ifTrue = ifTrue >>= f,
         ifFalse = ifFalse >>= f
       }
   Case {..} >>= f =
     Case
-      { maybeType = (>>= f) <$> maybeType,
+      { maybeType = maybeType <&> (>>= f),
         cond = cond >>= f,
-        alts = second (>>>= f) <$> alts,
+        alts = alts <&> second (>>>= f),
         ..
       }
   OIte {..} >>= f =
@@ -286,7 +286,7 @@ instance Monad Expr where
   Pair {..} >>= f = Pair {left = left >>= f, right = right >>= f, ..}
   PCase {..} >>= f =
     PCase
-      { maybeType = (>>= f) <$> maybeType,
+      { maybeType = maybeType <&> (>>= f),
         cond = cond >>= f,
         body2 = body2 >>>= f,
         ..
@@ -300,10 +300,10 @@ instance Monad Expr where
         ..
       }
   OSum {..} >>= f = OSum {left = left >>= f, right = right >>= f, ..}
-  OInj {..} >>= f = OInj {maybeType = (>>= f) <$> maybeType, inj = inj >>= f, ..}
+  OInj {..} >>= f = OInj {maybeType = maybeType <&> (>>= f), inj = inj >>= f, ..}
   OCase {..} >>= f =
     OCase
-      { maybeType = (>>= f) <$> maybeType,
+      { maybeType = maybeType <&> (>>= f),
         cond = cond >>= f,
         lBody = lBody >>>= f,
         rBody = rBody >>>= f,
@@ -325,10 +325,10 @@ instance Bound DefB where
   FunDef {..} >>>= f = FunDef {typ = typ >>= f, expr = expr >>= f, ..}
   ADTDef {..} >>>= _ = ADTDef {..}
   OADTDef {..} >>>= f = OADTDef {typ = typ >>= f, body = body >>>= f}
-  CtorDef {..} >>>= f = CtorDef {paraTypes = (>>= f) <$> paraTypes, ..}
+  CtorDef {..} >>>= f = CtorDef {paraTypes = paraTypes <&> (>>= f), ..}
   BuiltinDef {..} >>>= f =
     BuiltinDef
-      { paraTypes = (>>= f) <$> paraTypes,
+      { paraTypes = paraTypes <&> (>>= f),
         resType = resType >>= f,
         ..
       }
