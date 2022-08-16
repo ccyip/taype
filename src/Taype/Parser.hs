@@ -190,6 +190,207 @@ grammar = mdo
                   }
         ]
 
+  -- Expression
+  pExpr <-
+    rule $
+      choice
+        [ -- Lambda abstraction
+          do
+            pToken L.Lambda
+            args <- some1 pFunArg
+            pToken L.Arrow
+            body0 <- pExpr
+            return $
+              let go ((loc, binder), maybeType) body =
+                    Loc {expr = lam_ binder maybeType body, ..}
+               in foldr go body0 args,
+          -- Let
+          pLet pExpr,
+          -- If conditional
+          pIf ite_ L.If pExpr,
+          -- Oblivious (leaky) if conditional
+          pIf oite_ L.OIf pExpr,
+          -- Product elimination
+          pPCase pcase_ L.Case L.OpenParen pExpr,
+          -- Oblivious product elimination
+          pPCase opcase_ L.OCase L.OpenOParen pExpr,
+          -- Case analysis
+          pCase pExpr,
+          -- Oblivious (leaky) case analysis
+          do
+            loc <- pLocatedToken L.OCase
+            cond <- pExpr
+            pToken L.Of
+            pToken L.Bar
+            pToken $ L.OInj True
+            lBinder <- pBinder
+            pToken L.Arrow
+            lBody <- pExpr
+            pToken L.Bar
+            pToken $ L.OInj False
+            rBinder <- pBinder
+            pToken L.Arrow
+            rBody <- pExpr
+            return Loc {expr = ocase_ cond lBinder lBody rBinder rBody, ..},
+          -- Ascription
+          do
+            expr <- pCompareExpr
+            loc <- pLocatedToken L.Colon
+            typ <- pType
+            return Loc {expr = Asc {..}, ..},
+          -- Next precedence
+          pCompareExpr
+        ]
+
+  let pInfixExpr = pInfix $ \ref left right -> iapp_ (GV {..}) [left, right]
+
+  -- Comparative infix
+  pCompareExpr <-
+    rule $ choice [pInfixExpr ["==", "~=", "<=", "~<="] pAddExpr pAddExpr, pAddExpr]
+
+  -- Left-associative additive infix
+  pAddExpr <-
+    rule $ choice [pInfixExpr ["+", "-", "~+", "~-"] pAddExpr pMulExpr, pMulExpr]
+
+  -- Left-associative multiplicative infix. We do not have any of these at the
+  -- moment, but we will probably have at least integer multiplication in the
+  -- future
+  pMulExpr <- rule pAppExpr
+
+  -- Application expression
+  pAppExpr <-
+    rule $
+      choice
+        [ -- Application
+          pApp app_ pAtomExpr,
+          -- MUX
+          do
+            loc <- pLocatedToken L.Mux
+            cond <- pAtomExpr
+            ifTrue <- pAtomExpr
+            ifFalse <- pAtomExpr
+            return Loc {expr = Mux {..}, ..},
+          -- Oblivious injection
+          do
+            locatedTag <- pLocatedOInj
+            maybeType <- optional $ do
+              pToken L.OpenAngle
+              typ <- pType
+              pToken L.CloseAngle
+              return typ
+            inj <- pAtomExpr
+            return $
+              let (loc, tag) = locatedTag
+               in Loc {expr = OInj {..}, ..},
+          -- Tape
+          do
+            loc <- pLocatedToken L.Tape
+            expr <- pAtomExpr
+            return Loc {expr = Tape {..}, ..},
+          -- Next precedence
+          pAtomExpr
+        ]
+
+  -- Atomic expression
+  pAtomExpr <-
+    rule $
+      choice
+        [ -- Unit value
+          pLocatedToken L.OpenParen <* pToken L.CloseParen <&> \loc ->
+            Loc {expr = VUnit, ..},
+          -- Boolean literal
+          pLocatedBLit <&> \(loc, bLit) -> Loc {expr = BLit {..}, ..},
+          -- Integer literal
+          pLocatedILit <&> \(loc, iLit) -> Loc {expr = ILit {..}, ..},
+          -- Variable
+          pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
+          -- Pair
+          pPair Pair L.OpenParen,
+          -- Oblivious pair
+          pPair OPair L.OpenOParen,
+          -- Parenthesized expression
+          pParen pExpr
+        ]
+
+  -- Type. Technically we can have one production rule for both expressions and
+  -- types. However, separating them allows us to easily disambiguate term-level
+  -- and type-level operations.
+  pType <-
+    rule $
+      choice
+        [ -- Dependent function type
+          do
+            typeArg <-
+              choice
+                [ (Anon,) <$> pProdType,
+                  do
+                    pToken L.OpenParen
+                    binder <- pBinder
+                    pToken L.Colon
+                    typ <- pProdType
+                    pToken L.CloseParen
+                    return (binder, typ)
+                ]
+            loc <- pLocatedToken L.Arrow
+            body <- pType
+            return $
+              let (binder, typ) = typeArg
+               in Loc {expr = pi_ binder typ body, ..},
+          -- Let
+          pLet pType,
+          -- If conditional
+          pIf ite_ L.If pType,
+          -- Product elimination
+          pPCase pcase_ L.Case L.OpenParen pType,
+          -- Case analysis
+          pCase pType,
+          -- Next precedence
+          pProdType
+        ]
+
+  let pInfixType = pInfix infixToTypeFormer
+
+  -- Right-associative product type
+  pProdType <-
+    rule $ choice [pInfixType ["*"] pOSumType pProdType, pOSumType]
+
+  -- Right-associative oblivious sum type
+  pOSumType <-
+    rule $ choice [pInfixType ["~+"] pOProdType pOSumType, pOProdType]
+
+  -- Right-associative oblivious product type
+  pOProdType <-
+    rule $ choice [pInfixType ["~*"] pAppType pOProdType, pAppType]
+
+  -- Type application
+  pAppType <-
+    rule $
+      choice
+        [ pApp tapp_ pAtomType,
+          -- Next precedence
+          pAtomType
+        ]
+
+  -- Atomic type
+  pAtomType <-
+    rule $
+      choice
+        [ -- Unit type
+          pLocatedToken L.TUnit <&> \loc -> Loc {expr = TUnit, ..},
+          -- Boolean type
+          pLocatedToken L.TBool <&> \loc -> Loc {expr = TBool, ..},
+          -- Oblivious Boolean type
+          pLocatedToken L.OBool <&> \loc -> Loc {expr = OBool, ..},
+          -- Integer type
+          pLocatedToken L.TInt <&> \loc -> Loc {expr = TInt, ..},
+          -- Oblivious integer type
+          pLocatedToken L.OInt <&> \loc -> Loc {expr = OInt, ..},
+          -- Variable
+          pLocatedIdent <&> \(loc, ref) -> Loc {expr = GV {..}, ..},
+          -- Parenthesized type
+          pParen pType
+        ]
+
   -- Common production rules
   let -- Let-like binding
       pLet pBody = do
@@ -268,207 +469,6 @@ grammar = mdo
         return $
           let (loc, name) = op
            in Loc {expr = former name left right, ..}
-
-  -- Expression
-  pExpr <-
-    rule $
-      choice
-        [ -- Lambda abstraction
-          do
-            pToken L.Lambda
-            args <- some1 pFunArg
-            pToken L.Arrow
-            body0 <- pExpr
-            return $
-              let go ((loc, binder), maybeType) body =
-                    Loc {expr = lam_ binder maybeType body, ..}
-               in foldr go body0 args,
-          -- Let
-          pLet pExpr,
-          -- If conditional
-          pIf ite_ L.If pExpr,
-          -- Oblivious (leaky) if conditional
-          pIf oite_ L.OIf pExpr,
-          -- Product elimination
-          pPCase pcase_ L.Case L.OpenParen pExpr,
-          -- Oblivious product elimination
-          pPCase opcase_ L.OCase L.OpenOParen pExpr,
-          -- Case analysis
-          pCase pExpr,
-          -- Oblivious (leaky) case analysis
-          do
-            loc <- pLocatedToken L.OCase
-            cond <- pExpr
-            pToken L.Of
-            pToken L.Bar
-            pToken $ L.OInj True
-            lBinder <- pBinder
-            pToken L.Arrow
-            lBody <- pExpr
-            pToken L.Bar
-            pToken $ L.OInj False
-            rBinder <- pBinder
-            pToken L.Arrow
-            rBody <- pExpr
-            return Loc {expr = ocase_ cond lBinder lBody rBinder rBody, ..},
-          -- Ascription
-          do
-            expr <- pCompareExpr
-            loc <- pLocatedToken L.Colon
-            typ <- pType
-            return Loc {expr = Asc {..}, ..},
-          -- Next precedence
-          pCompareExpr
-        ]
-
-  -- Type. Technically we can have one production rule for both expressions and
-  -- types. However, separating them allows us to easily disambiguate term-level
-  -- and type-level operations.
-  pType <-
-    rule $
-      choice
-        [ -- Dependent function type
-          do
-            typeArg <-
-              choice
-                [ (Anon,) <$> pProdType,
-                  do
-                    pToken L.OpenParen
-                    binder <- pBinder
-                    pToken L.Colon
-                    typ <- pProdType
-                    pToken L.CloseParen
-                    return (binder, typ)
-                ]
-            loc <- pLocatedToken L.Arrow
-            body <- pType
-            return $
-              let (binder, typ) = typeArg
-               in Loc {expr = pi_ binder typ body, ..},
-          -- Let
-          pLet pType,
-          -- If conditional
-          pIf ite_ L.If pType,
-          -- Product elimination
-          pPCase pcase_ L.Case L.OpenParen pType,
-          -- Case analysis
-          pCase pType,
-          -- Next precedence
-          pProdType
-        ]
-
-  let pInfixExpr = pInfix $ \ref left right -> iapp_ (GV {..}) [left, right]
-
-  -- Comparative infix
-  pCompareExpr <-
-    rule $ choice [pInfixExpr ["==", "~=", "<=", "~<="] pAddExpr pAddExpr, pAddExpr]
-
-  -- Left-associative additive infix
-  pAddExpr <-
-    rule $ choice [pInfixExpr ["+", "-", "~+", "~-"] pAddExpr pMulExpr, pMulExpr]
-
-  -- Left-associative multiplicative infix. We do not have any of these at the
-  -- moment, but we will probably have at least integer multiplication in the
-  -- future
-  pMulExpr <- rule pAppExpr
-
-  -- Application expression
-  pAppExpr <-
-    rule $
-      choice
-        [ -- Application
-          pApp app_ pAtomExpr,
-          -- MUX
-          do
-            loc <- pLocatedToken L.Mux
-            cond <- pAtomExpr
-            ifTrue <- pAtomExpr
-            ifFalse <- pAtomExpr
-            return Loc {expr = Mux {..}, ..},
-          -- Oblivious injection
-          do
-            locatedTag <- pLocatedOInj
-            maybeType <- optional $ do
-              pToken L.OpenAngle
-              typ <- pType
-              pToken L.CloseAngle
-              return typ
-            inj <- pAtomExpr
-            return $
-              let (loc, tag) = locatedTag
-               in Loc {expr = OInj {..}, ..},
-          -- Tape
-          do
-            loc <- pLocatedToken L.Tape
-            expr <- pAtomExpr
-            return Loc {expr = Tape {..}, ..},
-          -- Next precedence
-          pAtomExpr
-        ]
-
-  -- Atomic expression
-  pAtomExpr <-
-    rule $
-      choice
-        [ -- Unit value
-          pLocatedToken L.OpenParen <* pToken L.CloseParen <&> \loc ->
-            Loc {expr = VUnit, ..},
-          -- Boolean literal
-          pLocatedBLit <&> \(loc, bLit) -> Loc {expr = BLit {..}, ..},
-          -- Integer literal
-          pLocatedILit <&> \(loc, iLit) -> Loc {expr = ILit {..}, ..},
-          -- Variable
-          pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
-          -- Pair
-          pPair Pair L.OpenParen,
-          -- Oblivious pair
-          pPair OPair L.OpenOParen,
-          -- Parenthesized expression
-          pParen pExpr
-        ]
-
-  let pInfixType = pInfix infixToTypeFormer
-
-  -- Right-associative product type
-  pProdType <-
-    rule $ choice [pInfixType ["*"] pOSumType pProdType, pOSumType]
-
-  -- Right-associative oblivious sum type
-  pOSumType <-
-    rule $ choice [pInfixType ["~+"] pOProdType pOSumType, pOProdType]
-
-  -- Right-associative oblivious product type
-  pOProdType <-
-    rule $ choice [pInfixType ["~*"] pAppType pOProdType, pAppType]
-
-  -- Type application
-  pAppType <-
-    rule $
-      choice
-        [ pApp tapp_ pAtomType,
-          -- Next precedence
-          pAtomType
-        ]
-
-  -- Atomic type
-  pAtomType <-
-    rule $
-      choice
-        [ -- Unit type
-          pLocatedToken L.TUnit <&> \loc -> Loc {expr = TUnit, ..},
-          -- Boolean type
-          pLocatedToken L.TBool <&> \loc -> Loc {expr = TBool, ..},
-          -- Oblivious Boolean type
-          pLocatedToken L.OBool <&> \loc -> Loc {expr = OBool, ..},
-          -- Integer type
-          pLocatedToken L.TInt <&> \loc -> Loc {expr = TInt, ..},
-          -- Oblivious integer type
-          pLocatedToken L.OInt <&> \loc -> Loc {expr = OInt, ..},
-          -- Variable
-          pLocatedIdent <&> \(loc, ref) -> Loc {expr = GV {..}, ..},
-          -- Parenthesized type
-          pParen pType
-        ]
 
   -- Function argument
   pFunArg <-
