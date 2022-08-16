@@ -24,7 +24,8 @@ module Taype.Syntax
     Typ,
     Label,
     AppKind (..),
-    Def (..),
+    Def,
+    DefB (..),
     NamedDef (..),
     Attribute (..),
     LabelPolyStrategy (..),
@@ -203,7 +204,7 @@ data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
 -- | A binder is either a name, or anonymous, i.e. \"_\", with location
 type Binder = BinderM Text
 
--- | Polymorphic binders
+-- | Generalized binders
 data BinderM a = Named Int a | Anon
   deriving stock (Eq, Show)
 
@@ -211,17 +212,20 @@ instance IsString a => IsString (BinderM a) where
   fromString = Named (-1) . fromString
 
 -- | Global definition
-data Def a
+type Def = DefB Expr
+
+-- | Generalized global definition
+data DefB f a
   = -- Function
-    FunDef {attr :: Attribute, typ :: Typ a, label :: Maybe Label, expr :: Expr a}
+    FunDef {attr :: Attribute, typ :: f a, label :: Maybe Label, expr :: f a}
   | -- | Algebraic data type. Do not support empty type
     ADTDef {ctors :: NonEmpty Text}
   | -- | Oblivious algebraic data type. Only support one argument for now
-    OADTDef {typ :: Typ a, body :: Scope () Expr a}
+    OADTDef {typ :: f a, body :: Scope () f a}
   | -- | Constructor
-    CtorDef {paraTypes :: [Typ a], dataType :: Text}
+    CtorDef {paraTypes :: [f a], dataType :: Text}
   | -- | Builtin operation
-    BuiltinDef {paraTypes :: [Typ a], resType :: Typ a, strategy :: LabelPolyStrategy}
+    BuiltinDef {paraTypes :: [f a], resType :: f a, strategy :: LabelPolyStrategy}
   deriving stock (Functor, Foldable, Traversable)
 
 data NamedDef a = NamedDef {name :: Text, loc :: Int, def :: Def a}
