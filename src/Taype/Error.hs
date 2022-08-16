@@ -85,3 +85,4 @@ renderError file code LocatedError {..} =
   "!!" <> errCategory <> "!!\n"
     <> renderFancyLocation file code errLoc
     <> errMsg
+    <> "\n"

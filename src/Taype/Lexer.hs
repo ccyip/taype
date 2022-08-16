@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GADTs #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -206,6 +207,14 @@ renderLexerError :: ParseErrorBundle Text Void -> LocatedError
 renderLexerError ParseErrorBundle {bundleErrors = err :| _} =
   LocatedError
     { errLoc = errorOffset err,
-      errMsg = toText $ parseErrorTextPretty err,
+      errMsg = showError err,
       errCategory = "Lexing Error"
     }
+  where
+    showError (TrivialError _ u _) = maybe "unknown error" showUnexpected u
+    showError (FancyError _ _) = "unknown error"
+    showUnexpected = ("unexpected " <>) . showErrorItem
+    showErrorItem (Tokens ts) = toText (showTokens proxy ts)
+    showErrorItem (Label lab) = toText $ toList lab
+    showErrorItem EndOfInput = "end of input"
+    proxy = Proxy :: Proxy Text

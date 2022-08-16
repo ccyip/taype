@@ -19,7 +19,6 @@ import Bound
 import Control.Applicative.Combinators (choice)
 import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import Data.List.NonEmpty (some1)
-import Data.Text as T (intercalate)
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
 import qualified Taype.Lexer as L
@@ -644,11 +643,5 @@ renderParserError Report {..} =
     }
   where
     unexpectedToken = listToMaybe unconsumed
-    errMsg =
-      maybe "unexpected end of file\n" showUnexpected unexpectedToken
-        <> maybe "" showExpected (nonEmpty expected)
-    showUnexpected LocatedToken {..} = "unexpected " <> show token <> "\n"
-    showExpected xs = "expecting " <> showOrList xs <> "\n"
-    showOrList (x :| []) = x
-    showOrList (x :| [y]) = x <> " or " <> y
-    showOrList xs = T.intercalate ", " (init xs) <> ", or " <> last xs
+    errMsg = maybe "unexpected end of input" showUnexpected unexpectedToken
+    showUnexpected LocatedToken {..} = "unexpected " <> show token
