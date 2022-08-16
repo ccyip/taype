@@ -1,7 +1,7 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GADTs #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -15,7 +15,6 @@ module Taype.Lexer (Token (..), LocatedToken (..), lex) where
 
 import Data.Char
 import qualified Data.Text as T
-import Relude.Extra
 import Taype.Error
 import Text.Megaparsec hiding (Token, token)
 import qualified Text.Megaparsec.Char as C
@@ -156,37 +155,36 @@ pIdent = lexeme . try $ do
   x <- satisfy isIdent0
   xs <- takeWhileP Nothing isIdent
   let ident = mayObliv <> T.cons x xs
-  guard (notMember ident reserved)
+  guard (ident `notElem` reserved)
   return $ Ident ident
 
 -- | Reserved tokens that cannot be used for identifier
-reserved :: HashSet Text
+reserved :: [Text]
 reserved =
-  fromList
-    [ "_",
-      "data",
-      "obliv",
-      "fn",
-      "let",
-      "in",
-      "if",
-      "then",
-      "else",
-      "mux",
-      "case",
-      "~case",
-      "of",
-      "~inl",
-      "~inr",
-      "tape",
-      "Unit",
-      "Bool",
-      "~Bool",
-      "Int",
-      "~Int",
-      "True",
-      "False"
-    ]
+  [ "_",
+    "data",
+    "obliv",
+    "fn",
+    "let",
+    "in",
+    "if",
+    "then",
+    "else",
+    "mux",
+    "case",
+    "~case",
+    "of",
+    "~inl",
+    "~inr",
+    "tape",
+    "Unit",
+    "Bool",
+    "~Bool",
+    "Int",
+    "~Int",
+    "True",
+    "False"
+  ]
 
 -- | Parse a token with offset
 pLocatedToken :: Parser LocatedToken
