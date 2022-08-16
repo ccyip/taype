@@ -146,17 +146,16 @@ grammar = mdo
                   pToken L.CloseParen
                   return (argName, typ)
             -- Only support one argument for oblivious type at the moment
-            arg <- pArg
+            ~(argName, typ) <- pArg
             pToken L.Equals
             body <- pType
             return $
               one $
-                let (argName, typ) = arg
-                 in NamedDef
-                      { def =
-                          OADTDef {body = abstract1 argName body, ..},
-                        ..
-                      },
+                NamedDef
+                  { def =
+                      OADTDef {body = abstract1 argName body, ..},
+                    ..
+                  },
           -- Function definition
           do
             let pAttr = do
@@ -272,16 +271,14 @@ grammar = mdo
             return Loc {expr = Mux {..}, ..},
           -- Oblivious injection
           do
-            locatedTag <- pLocatedOInj
+            ~(loc, tag) <- pLocatedOInj
             maybeType <- optional $ do
               pToken L.OpenAngle
               typ <- pType
               pToken L.CloseAngle
               return typ
             inj <- pAtomExpr
-            return $
-              let (loc, tag) = locatedTag
-               in Loc {expr = OInj {..}, ..},
+            return Loc {expr = OInj {..}, ..},
           -- Tape
           do
             loc <- pLocatedToken L.Tape
@@ -320,7 +317,7 @@ grammar = mdo
       choice
         [ -- Dependent function type
           do
-            typeArg <-
+            ~(binder, typ) <-
               choice
                 [ (Anon,) <$> pProdType,
                   do
@@ -333,9 +330,7 @@ grammar = mdo
                 ]
             loc <- pLocatedToken L.Arrow
             body <- pType
-            return $
-              let (binder, typ) = typeArg
-               in Loc {expr = pi_ binder typ body, ..},
+            return Loc {expr = pi_ binder typ body, ..},
           -- Let
           pLet pType,
           -- If conditional
@@ -464,11 +459,9 @@ grammar = mdo
       -- Infix
       pInfix former ops pLeft pRight = do
         left <- pLeft
-        op <- pLocatedInfix ops
+        ~(loc, name) <- pLocatedInfix ops
         right <- pRight
-        return $
-          let (loc, name) = op
-           in Loc {expr = former name left right, ..}
+        return Loc {expr = former name left right, ..}
 
   -- Function argument
   pFunArg <-
