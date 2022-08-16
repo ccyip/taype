@@ -14,10 +14,11 @@ module Taype.Lexer (Token (..), LocatedToken (..), lex) where
 
 import Data.Char
 import qualified Data.Text as T
+import Relude.Extra
+import Taype.Error
 import Text.Megaparsec hiding (Token, token)
 import qualified Text.Megaparsec.Char as C
 import qualified Text.Megaparsec.Char.Lexer as L
-import Relude.Extra
 
 -- | Taype tokens
 data Token
@@ -198,5 +199,13 @@ pTokens :: Parser [LocatedToken]
 pTokens = space *> manyTill pLocatedToken eof
 
 -- | Taype lexer
-lex :: FilePath -> Text -> Either (ParseErrorBundle Text Void) [LocatedToken]
-lex = parse pTokens
+lex :: FilePath -> Text -> Either LocatedError [LocatedToken]
+lex = first renderLexerError <<$>> parse pTokens
+
+renderLexerError :: ParseErrorBundle Text Void -> LocatedError
+renderLexerError ParseErrorBundle {bundleErrors = err :| _} =
+  LocatedError
+    { errLoc = errorOffset err,
+      errMsg = toText $ parseErrorTextPretty err,
+      errCategory = "Lexing Error"
+    }

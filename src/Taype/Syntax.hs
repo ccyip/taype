@@ -41,11 +41,10 @@ module Taype.Syntax
 where
 
 import Bound
-import Bound.Name (instantiate1Name)
 import Control.Monad
 import Data.Deriving
 import Data.Functor.Classes
-import Data.List
+import Data.List (elemIndex)
 import Prettyprinter
 import Taype.Error
 import Taype.Fresh

@@ -19,6 +19,7 @@ import Bound
 import Control.Applicative.Combinators (choice)
 import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import Data.List.NonEmpty (some1)
+import Data.Text as T (intercalate)
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
 import qualified Taype.Lexer as L
@@ -627,11 +628,27 @@ grammar = mdo
 
   return pProg
 
-parse :: FilePath -> Text -> IO ()
-parse file code =
-  case L.lex file code of
-    Left bundle -> print bundle
-    Right tokens ->
-      case fullParses (parser grammar) tokens of
-        ([], Report {..}) -> putStrLn "failed:" >> print position >> print expected >> print (unconsumed !!? 0)
-        (ast : _, _) -> print ast
+-- | Main parser
+parse :: [LocatedToken] -> Either LocatedError [NamedDef Text]
+parse tokens =
+  case fullParses (parser grammar) tokens of
+    ([], rpt) -> Left $ renderParserError rpt
+    (ast : _, _) -> Right ast
+
+renderParserError :: Report Text [LocatedToken] -> LocatedError
+renderParserError Report {..} =
+  LocatedError
+    { errLoc = maybe (-1) offset unexpectedToken,
+      errCategory = "Parsing Error",
+      errMsg
+    }
+  where
+    unexpectedToken = listToMaybe unconsumed
+    errMsg =
+      maybe "unexpected end of file\n" showUnexpected unexpectedToken
+        <> maybe "" showExpected (nonEmpty expected)
+    showUnexpected LocatedToken {..} = "unexpected " <> show token <> "\n"
+    showExpected xs = "expecting " <> showOrList xs <> "\n"
+    showOrList (x :| []) = x
+    showOrList (x :| [y]) = x <> " or " <> y
+    showOrList xs = T.intercalate ", " (init xs) <> ", or " <> last xs

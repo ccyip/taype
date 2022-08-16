@@ -11,12 +11,20 @@ module Taype
   )
 where
 
--- import Prettyprinter
--- import Prettyprinter.Render.Text
-
-import Taype.Parser
+import Taype.Syntax
+import Taype.Lexer (lex)
+import Taype.Parser (parse)
+import Taype.Error
 
 test :: FilePath -> IO ()
 test file = do
   content <- readFileBS file
-  parse file $ decodeUtf8 content
+  let code = decodeUtf8 content
+  case process file code of
+    Left err -> putTextLn $ renderError file code err
+    Right ast -> print ast
+
+process :: FilePath -> Text -> Either LocatedError [NamedDef Text]
+process file code = do
+  tokens <- lex file code
+  parse tokens
