@@ -321,6 +321,18 @@ instance Monad Expr where
   Tape {..} >>= f = Tape {expr = expr >>= f, ..}
   Loc {..} >>= f = Loc {expr = expr >>= f, ..}
 
+instance Bound DefB where
+  FunDef {..} >>>= f = FunDef {typ = typ >>= f, expr = expr >>= f, ..}
+  ADTDef {..} >>>= _ = ADTDef {..}
+  OADTDef {..} >>>= f = OADTDef {typ = typ >>= f, body = body >>>= f}
+  CtorDef {..} >>>= f = CtorDef {paraTypes = (>>= f) <$> paraTypes, ..}
+  BuiltinDef {..} >>>= f =
+    BuiltinDef
+      { paraTypes = (>>= f) <$> paraTypes,
+        resType = resType >>= f,
+        ..
+      }
+
 deriveEq1 ''Expr
 deriveShow1 ''Expr
 
