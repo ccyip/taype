@@ -1,10 +1,10 @@
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE LambdaCase #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -60,15 +60,13 @@ pIdent = pTerminal matchIdent
 pLocatedIdent :: Parser r (Int, Text)
 pLocatedIdent = pLocatedTerminal matchIdent
 
-matchBinder :: Token -> Maybe Binder
-matchBinder L.Underscore = Just Anon
-matchBinder token = Named <$> matchIdent token
-
+-- Binders are always located
 pBinder :: Parser r Binder
-pBinder = pTerminal matchBinder
-
-pLocatedBinder :: Parser r (Int, Binder)
-pLocatedBinder = pLocatedTerminal matchBinder
+pBinder =
+  choice
+    [ Anon <$ pToken L.Underscore,
+      uncurry Named <$> pLocatedIdent
+    ]
 
 matchOInj :: Token -> Maybe Bool
 matchOInj (L.OInj b) = Just b
@@ -117,8 +115,8 @@ grammar = mdo
       choice
         [ -- ADT definition
           do
-            loc <- pLocatedToken L.Data
-            name <- pIdent
+            pToken L.Data
+            ~(loc, name) <- pLocatedIdent
             pToken L.Equals
             let pCtor = (,) <$> pLocatedIdent <*> many pAtomType
             ctors <- pCtor `sepBy1` pToken L.Bar
@@ -137,8 +135,8 @@ grammar = mdo
                   ctorDefs,
           -- Oblivious ADT definition
           do
-            loc <- pLocatedToken L.Obliv
-            name <- pIdent
+            pToken L.Obliv
+            ~(loc, name) <- pLocatedIdent
             let pArg = do
                   pToken L.OpenParen
                   argName <- pIdent
@@ -171,8 +169,8 @@ grammar = mdo
                   pToken L.CloseBrace
                   return attr
             attr <- optional pAttr
-            loc <- pLocatedToken L.Fn
-            name <- pIdent
+            pToken L.Fn
+            ~(loc, name) <- pLocatedIdent
             pToken L.Colon
             typ <- pType
             pToken L.Equals
@@ -196,12 +194,12 @@ grammar = mdo
       choice
         [ -- Lambda abstraction
           do
-            pToken L.Lambda
+            loc <- pLocatedToken L.Lambda
             args <- some1 pFunArg
             pToken L.Arrow
             body0 <- pExpr
             return $
-              let go ((loc, binder), maybeType) body =
+              let go (binder, maybeType) body =
                     Loc {expr = lam_ binder maybeType body, ..}
                in foldr go body0 args,
           -- Let
@@ -391,17 +389,17 @@ grammar = mdo
   let -- Let-like binding
       pLet pBody = do
         let pBinding = do
-              binder <- pLocatedBinder
+              binder <- pBinder
               maybeType <- optional $ pToken L.Colon *> pType
               pToken L.Equals
               rhs <- pExpr
               return (binder, maybeType, rhs)
-        pToken L.Let
+        loc <- pLocatedToken L.Let
         bindings <- some1 pBinding
         pToken L.In
         body0 <- pBody
         return $
-          let go ((loc, binder), maybeType, rhs) body =
+          let go (binder, maybeType, rhs) body =
                 Loc {expr = let_ binder maybeType rhs body, ..}
            in foldr go body0 bindings
       -- If-like conditional
@@ -468,10 +466,10 @@ grammar = mdo
   pFunArg <-
     rule $
       choice
-        [ (,Nothing) <$> pLocatedBinder,
+        [ (,Nothing) <$> pBinder,
           do
             pToken L.OpenParen
-            binder <- pLocatedBinder
+            binder <- pBinder
             pToken L.Colon
             typ <- pType
             pToken L.CloseParen

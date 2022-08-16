@@ -33,7 +33,6 @@ module Taype.Syntax
     Binder,
     BinderM (..),
     fromBinder,
-    binderName,
     isBinderName,
     binderNameEq,
     findDupBinderName,
@@ -199,15 +198,15 @@ type Label = Bool
 data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
   deriving stock (Eq, Show)
 
--- | A binder is either a name, or anonymous, i.e. \"_\"
+-- | A binder is either a name, or anonymous, i.e. \"_\", with location
 type Binder = BinderM Text
 
--- | Isomorphic to 'Maybe'
-data BinderM a = Named a | Anon
+-- | Polymorphic binders
+data BinderM a = Named Int a | Anon
   deriving stock (Eq, Show)
 
 instance IsString a => IsString (BinderM a) where
-  fromString = Named . fromString
+  fromString = Named (-1) . fromString
 
 -- | Global definition
 data Def a
@@ -332,21 +331,17 @@ deriving stock instance Eq a => Eq (NamedDef a)
 deriving stock instance Show a => Show (NamedDef a)
 
 fromBinder :: BinderM a -> a
-fromBinder (Named name) = name
+fromBinder (Named _ name) = name
 fromBinder Anon = oops "Instantiating an anonymous binder"
 
-binderName :: BinderM a -> Maybe a
-binderName (Named name) = Just name
-binderName Anon = Nothing
-
 isBinderName :: (Eq a) => a -> BinderM a -> Bool
-isBinderName x (Named y) = x == y
+isBinderName x (Named _ y) = x == y
 isBinderName _ Anon = False
 
 -- | Check if two binders have the same name. Two anonymous binder DO NOT have
 -- the same name
 binderNameEq :: (Eq a) => BinderM a -> BinderM a -> Bool
-binderNameEq (Named x) (Named y) = x == y
+binderNameEq (Named _ x) (Named _ y) = x == y
 binderNameEq _ _ = False
 
 -- | Return 'Nothing' if the list of binders do not has duplicate names, or
