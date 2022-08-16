@@ -197,11 +197,8 @@ grammar = mdo
             loc <- pLocatedToken L.Lambda
             args <- some1 pFunArg
             pToken L.Arrow
-            body0 <- pExpr
-            return $
-              let go (binder, maybeType) body =
-                    Loc {expr = lam_ binder maybeType body, ..}
-               in foldr go body0 args,
+            body <- pExpr
+            return Loc {expr = lams_ args body, ..},
           -- Let
           pLet pExpr,
           -- If conditional
@@ -397,11 +394,8 @@ grammar = mdo
         loc <- pLocatedToken L.Let
         bindings <- some1 pBinding
         pToken L.In
-        body0 <- pBody
-        return $
-          let go (binder, maybeType, rhs) body =
-                Loc {expr = let_ binder maybeType rhs body, ..}
-           in foldr go body0 bindings
+        body <- pBody
+        return Loc {expr = lets_ bindings body, ..}
       -- If-like conditional
       pIf former ifToken pBranch = do
         loc <- pLocatedToken ifToken

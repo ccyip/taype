@@ -47,11 +47,13 @@ module Taype.Syntax
 
     -- * Smart constructors
     lam_,
+    lams_,
     pi_,
     app_,
     iapp_,
     tapp_,
     let_,
+    lets_,
     ite_,
     oite_,
     case_,
@@ -384,6 +386,10 @@ lam_ :: (Eq a) => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a
 lam_ binder maybeType body =
   Lam {label = Nothing, body = abstract1Binder binder body, ..}
 
+-- | A smart constructor for lambda abstraction that takes a list of arguments
+lams_ :: (Eq a) => NonEmpty (BinderM a, Maybe (Typ a)) -> Expr a -> Expr a
+lams_ args body = foldr (uncurry lam_) body args
+
 pi_ :: (Eq a) => BinderM a -> Typ a -> Expr a -> Expr a
 pi_ binder typ body =
   Pi {label = Nothing, body = abstract1Binder binder body, ..}
@@ -400,6 +406,12 @@ tapp_ fn args = App {appKind = Just TypeApp, ..}
 let_ :: (Eq a) => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a -> Expr a
 let_ binder maybeType rhs body =
   Let {label = Nothing, body = abstract1Binder binder body, ..}
+
+-- | A smart constructor for let that takes a list of bindings
+lets_ :: (Eq a) => NonEmpty (BinderM a, Maybe (Typ a), Expr a) -> Expr a -> Expr a
+lets_ bindings body = foldr go body bindings
+  where
+    go (binder, maybeType, rhs) = let_ binder maybeType rhs
 
 ite_ :: Expr a -> Expr a -> Expr a -> Expr a
 ite_ cond ifTrue ifFalse = Ite {maybeType = Nothing, ..}
