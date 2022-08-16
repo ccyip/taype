@@ -184,6 +184,77 @@ grammar = mdo
                   }
         ]
 
+  -- Common production rules
+  let -- Let-like binding
+      pLet pBody = do
+        let pBinding = do
+              binder <- pLocatedBinder
+              maybeType <- optional $ pToken L.Colon *> pType
+              pToken L.Equals
+              rhs <- pExpr
+              return (binder, maybeType, rhs)
+        pToken L.Let
+        bindings <- some1 pBinding
+        pToken L.In
+        body0 <- pBody
+        return $
+          let go ((loc, binder), maybeType, rhs) body =
+                Loc {expr = let_ binder maybeType rhs body, ..}
+           in foldr go body0 bindings
+      -- If-like conditional
+      pIf ifToken pBranch former = do
+        loc <- pLocatedToken ifToken
+        cond <- pExpr
+        pToken L.Then
+        ifTrue <- pBranch
+        pToken L.Else
+        ifFalse <- pBranch
+        return Loc {expr = former cond ifTrue ifFalse, ..}
+      -- Product-like elimination
+      pPCase caseToken openParenToken pBody former = do
+        loc <- pLocatedToken caseToken
+        cond <- pExpr
+        pToken L.Of
+        pToken L.Bar
+        pToken openParenToken
+        left <- pBinder
+        pToken L.Comma
+        right <- pBinder
+        pToken L.CloseParen
+        pToken L.Arrow
+        body <- pBody
+        return Loc {expr = former cond left right body, ..}
+      -- Public case-like elimination
+      pCase pBody = do
+        let pAlt = do
+              pToken L.Bar
+              ctor <- pIdent
+              binders <- many pBinder
+              pToken L.Arrow
+              body <- pBody
+              return (ctor, binders, body)
+        loc <- pLocatedToken L.Case
+        cond <- pExpr
+        pToken L.Of
+        alts <- some1 pAlt
+        return Loc {expr = case_ cond alts, ..}
+      -- Pair-like
+      pPair openParenToken former = do
+        pToken openParenToken
+        prefix <- some1 $ flip (,) <$> pExpr <*> pLocatedToken L.Comma
+        end <- pExpr
+        pToken L.CloseParen
+        return $
+          let go (loc, left) right = Loc {expr = former left right, ..}
+           in foldr go end prefix
+      -- Application-like
+      pApp pFn former = do
+        fn <- pFn
+        args <- many pAtomExpr
+        return $ case args of
+          [] -> fn
+          _ -> Loc {loc = getLoc fn, expr = former fn args}
+
   -- Expression
   pExpr <-
     rule $
@@ -199,80 +270,17 @@ grammar = mdo
                     Loc {expr = lam_ binder maybeType body, ..}
                in foldr go body0 args,
           -- Let
-          do
-            let pBinding = do
-                  binder <- pLocatedBinder
-                  maybeType <- optional $ pToken L.Colon *> pType
-                  pToken L.Equals
-                  rhs <- pExpr
-                  return (binder, maybeType, rhs)
-            pToken L.Let
-            bindings <- some1 pBinding
-            pToken L.In
-            body0 <- pExpr
-            return $
-              let go ((loc, binder), maybeType, rhs) body =
-                    Loc {expr = let_ binder maybeType rhs body, ..}
-               in foldr go body0 bindings,
+          pLet pExpr,
           -- If conditional
-          do
-            loc <- pLocatedToken L.If
-            cond <- pExpr
-            pToken L.Then
-            ifTrue <- pExpr
-            pToken L.Else
-            ifFalse <- pExpr
-            return Loc {expr = ite_ cond ifTrue ifFalse, ..},
+          pIf L.If pExpr ite_,
           -- Oblivious (leaky) if conditional
-          do
-            loc <- pLocatedToken L.OIf
-            cond <- pExpr
-            pToken L.Then
-            ifTrue <- pExpr
-            pToken L.Else
-            ifFalse <- pExpr
-            return Loc {expr = oite_ cond ifTrue ifFalse, ..},
+          pIf L.OIf pExpr oite_,
           -- Product elimination
-          do
-            loc <- pLocatedToken L.Case
-            cond <- pExpr
-            pToken L.Of
-            pToken L.OpenParen
-            left <- pBinder
-            pToken L.Comma
-            right <- pBinder
-            pToken L.CloseParen
-            pToken L.Arrow
-            body <- pExpr
-            return Loc {expr = pcase_ cond left right body, ..},
-          -- Case analysis
-          do
-            let pAlt = do
-                  pToken L.Bar
-                  ctor <- pIdent
-                  binders <- many pBinder
-                  pToken L.Arrow
-                  body <- pExpr
-                  return (ctor, binders, body)
-            loc <- pLocatedToken L.Case
-            cond <- pExpr
-            pToken L.Of
-            alts <- some1 pAlt
-            return Loc {expr = case_ cond alts, ..},
+          pPCase L.Case L.OpenParen pExpr pcase_,
           -- Oblivious product elimination
-          do
-            loc <- pLocatedToken L.OCase
-            cond <- pExpr
-            pToken L.Of
-            pToken L.Bar
-            pToken L.OpenOParen
-            left <- pBinder
-            pToken L.Comma
-            right <- pBinder
-            pToken L.CloseParen
-            pToken L.Arrow
-            body <- pExpr
-            return Loc {expr = opcase_ cond left right body, ..},
+          pPCase L.OCase L.OpenOParen pExpr opcase_,
+          -- Case analysis
+          pCase pExpr,
           -- Oblivious (leaky) case analysis
           do
             loc <- pLocatedToken L.OCase
@@ -324,57 +332,13 @@ grammar = mdo
               let (binder, typ) = typeArg
                in Loc {expr = pi_ binder typ body, ..},
           -- Let
-          do
-            let pBinding = do
-                  binder <- pLocatedBinder
-                  maybeType <- optional $ pToken L.Colon *> pType
-                  pToken L.Equals
-                  rhs <- pExpr
-                  return (binder, maybeType, rhs)
-            pToken L.Let
-            bindings <- some1 pBinding
-            pToken L.In
-            body0 <- pType
-            return $
-              let go ((loc, binder), maybeType, rhs) body =
-                    Loc {expr = let_ binder maybeType rhs body, ..}
-               in foldr go body0 bindings,
+          pLet pType,
           -- If conditional
-          do
-            loc <- pLocatedToken L.If
-            cond <- pExpr
-            pToken L.Then
-            ifTrue <- pType
-            pToken L.Else
-            ifFalse <- pType
-            return Loc {expr = ite_ cond ifTrue ifFalse, ..},
+          pIf L.If pType ite_,
           -- Product elimination
-          do
-            loc <- pLocatedToken L.Case
-            cond <- pExpr
-            pToken L.Of
-            pToken L.OpenParen
-            left <- pBinder
-            pToken L.Comma
-            right <- pBinder
-            pToken L.CloseParen
-            pToken L.Arrow
-            body <- pType
-            return Loc {expr = pcase_ cond left right body, ..},
+          pPCase L.Case L.OpenParen pType pcase_,
           -- Case analysis
-          do
-            let pAlt = do
-                  pToken L.Bar
-                  ctor <- pIdent
-                  binders <- many pBinder
-                  pToken L.Arrow
-                  body <- pType
-                  return (ctor, binders, body)
-            loc <- pLocatedToken L.Case
-            cond <- pExpr
-            pToken L.Of
-            alts <- some1 pAlt
-            return Loc {expr = case_ cond alts, ..},
+          pCase pType,
           -- Next precedence
           pProdType
         ]
@@ -405,12 +369,7 @@ grammar = mdo
     rule $
       choice
         [ -- Application
-          do
-            fn <- pAtomExpr
-            args <- many pAtomExpr
-            return $ case args of
-              [] -> fn
-              _ -> Loc {loc = getLoc fn, expr = app_ fn args},
+          pApp pAtomExpr app_,
           -- MUX
           do
             loc <- pLocatedToken L.Mux
@@ -451,23 +410,9 @@ grammar = mdo
           -- Variable
           pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
           -- Pair
-          do
-            pToken L.OpenParen
-            prefix <- some1 $ flip (,) <$> pExpr <*> pLocatedToken L.Comma
-            end <- pExpr
-            pToken L.CloseParen
-            return $
-              let go (loc, left) right = Loc {expr = Pair {..}, ..}
-               in foldr go end prefix,
+          pPair L.OpenParen Pair,
           -- Oblivious pair
-          do
-            pToken L.OpenOParen
-            prefix <- some1 $ flip (,) <$> pExpr <*> pLocatedToken L.Comma
-            end <- pExpr
-            pToken L.CloseParen
-            return $
-              let go (loc, left) right = Loc {expr = OPair {..}, ..}
-               in foldr go end prefix,
+          pPair L.OpenOParen OPair,
           -- Parenthesized expression
           pToken L.OpenParen *> pExpr <* pToken L.CloseParen
         ]
@@ -491,22 +436,7 @@ grammar = mdo
     rule $ choice [pInfixType "~*" OProd pAppType pOProdType, pAppType]
 
   -- Type application
-  pAppType <-
-    rule $
-      choice
-        [ -- Application
-          do
-            hd <- pLocatedIdent
-            args <- many pAtomExpr
-            return $
-              let (loc, ref) = hd
-                  fn = GV {..}
-               in case args of
-                    [] -> fn
-                    _ -> Loc {expr = tapp_ fn args, ..},
-          -- Next precedence
-          pAtomType
-        ]
+  pAppType <- rule $ pApp pAtomType tapp_
 
   -- Atomic type
   pAtomType <-
@@ -523,7 +453,7 @@ grammar = mdo
           -- Oblivious integer type
           pLocatedToken L.OInt <&> \loc -> Loc {expr = OInt, ..},
           -- Variable
-          pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..}
+          pLocatedIdent <&> \(loc, ref) -> Loc {expr = GV {..}, ..}
         ]
 
   -- Function argument
@@ -548,7 +478,9 @@ parse :: [LocatedToken] -> Either LocatedError [NamedDef Text]
 parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> Left $ renderParserError rpt
-    (ast : _, _) -> Right ast
+    -- (ast : _, _) -> Right ast
+    (asts@(ast : _), _) ->
+      trace (show (length asts)) $ Right ast
 
 renderParserError :: Report Text [LocatedToken] -> LocatedError
 renderParserError Report {..} =
