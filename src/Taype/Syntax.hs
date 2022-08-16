@@ -24,13 +24,14 @@ module Taype.Syntax
     Typ,
     Label,
     AppKind (..),
-    Binder (..),
+    Binder,
+    BinderM (..),
     Def (..),
     NamedDef (..),
     Attribute (..),
     LabelPolyStrategy (..),
 
-    -- * Helper functions
+    -- * Specialized locally nameless abstraction and instantiation
     abstract1Binder,
     abstract2Binders,
     abstractBinders,
@@ -178,7 +179,10 @@ data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
   deriving stock (Eq, Show)
 
 -- | A binder is either a name, or anonymous, i.e. \"_\"
-data Binder = Named Text | Anon
+type Binder = BinderM Text
+
+-- | Isomorphic to 'Maybe'
+data BinderM a = Named a | Anon
   deriving stock (Eq, Show)
 
 -- | Global definition
@@ -303,34 +307,34 @@ deriving stock instance Eq a => Eq (NamedDef a)
 
 deriving stock instance Show a => Show (NamedDef a)
 
-abstract1Binder :: (Monad f) => Binder -> f Text -> Scope () f Text
+abstract1Binder :: (Monad f, Eq a) => BinderM a -> f a -> Scope () f a
 abstract1Binder binder = abstract $ \name ->
   if Named name == binder
     then Just ()
     else Nothing
 
-abstract2Binders :: (Monad f) => Binder -> Binder -> f Text -> Scope Bool f Text
+abstract2Binders :: (Monad f, Eq a) => BinderM a -> BinderM a -> f a -> Scope Bool f a
 abstract2Binders left right = abstract $ \name ->
   if
       | Named name == left -> Just True
       | Named name == right -> Just False
       | otherwise -> Nothing
 
-abstractBinders :: (Monad f) => [Binder] -> f Text -> Scope Int f Text
+abstractBinders :: (Monad f, Eq a) => [BinderM a] -> f a -> Scope Int f a
 abstractBinders binders = abstract $ \name -> elemIndex (Named name) binders
 
-fromBinder :: Binder -> Text
+fromBinder :: BinderM a -> a
 fromBinder (Named name) = name
 fromBinder Anon = oops "Instantiating an anonymous binder"
 
-instantiate1Binder :: (Monad f) => Binder -> Scope n f Text -> f Text
+instantiate1Binder :: (Monad f) => BinderM a -> Scope n f a -> f a
 instantiate1Binder = instantiate . const . return . fromBinder
 
-instantiate2Binders :: (Monad f) => Binder -> Binder -> Scope Bool f Text -> f Text
+instantiate2Binders :: (Monad f) => BinderM a -> BinderM a -> Scope Bool f a -> f a
 instantiate2Binders left right = instantiate $ \b ->
   return . fromBinder $ if b then left else right
 
-instantiateBinders :: (Monad f) => [Binder] -> Scope Int f Text -> f Text
+instantiateBinders :: (Monad f) => [BinderM a] -> Scope Int f a -> f a
 instantiateBinders binders = instantiate $ \i ->
   case binders !!? i of
     Just binder -> return $ fromBinder binder
