@@ -43,6 +43,7 @@ module Taype.Syntax
     lam_,
     pi_,
     app_,
+    iapp_,
     tapp_,
     let_,
     ite_,
@@ -363,6 +364,9 @@ pi_ binder typ body =
 
 app_ :: Expr a -> [Expr a] -> Expr a
 app_ fn args = App {appKind = Nothing, ..}
+
+iapp_ :: Expr a -> [Expr a] -> Expr a
+iapp_ fn args = App {appKind = Just InfixApp, ..}
 
 tapp_ :: Expr a -> [Expr a] -> Typ a
 tapp_ fn args = App {appKind = Just TypeApp, ..}
