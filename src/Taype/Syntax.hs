@@ -24,12 +24,19 @@ module Taype.Syntax
     Typ,
     Label,
     AppKind (..),
-    Binder,
-    BinderM (..),
     Def (..),
     NamedDef (..),
     Attribute (..),
     LabelPolyStrategy (..),
+
+    -- * Binders
+    Binder,
+    BinderM (..),
+    fromBinder,
+    binderName,
+    isBinderName,
+    binderNameEq,
+    findDupBinderName,
 
     -- * Specialized locally nameless abstraction and instantiation
     abstract1Binder,
@@ -59,7 +66,7 @@ import Bound
 import Control.Monad
 import Data.Deriving
 import Data.Functor.Classes
-import Data.List (elemIndex)
+import Data.List (findIndex, groupBy)
 import Prettyprinter
 import Taype.Error
 import Taype.Fresh
@@ -324,25 +331,46 @@ deriving stock instance Eq a => Eq (NamedDef a)
 
 deriving stock instance Show a => Show (NamedDef a)
 
+fromBinder :: BinderM a -> a
+fromBinder (Named name) = name
+fromBinder Anon = oops "Instantiating an anonymous binder"
+
+binderName :: BinderM a -> Maybe a
+binderName (Named name) = Just name
+binderName Anon = Nothing
+
+isBinderName :: (Eq a) => a -> BinderM a -> Bool
+isBinderName x (Named y) = x == y
+isBinderName _ Anon = False
+
+-- | Check if two binders have the same name. Two anonymous binder DO NOT have
+-- the same name
+binderNameEq :: (Eq a) => BinderM a -> BinderM a -> Bool
+binderNameEq (Named x) (Named y) = x == y
+binderNameEq _ _ = False
+
+-- | Return 'Nothing' if the list of binders do not has duplicate names, or
+-- 'Just' the duplicate binder
+findDupBinderName :: (Eq a) => [BinderM a] -> Maybe (BinderM a)
+findDupBinderName binders = find ((> 1) . length) groups >>= viaNonEmpty head
+  where
+    groups = groupBy binderNameEq binders
+
 abstract1Binder :: (Monad f, Eq a) => BinderM a -> f a -> Scope () f a
 abstract1Binder binder = abstract $ \name ->
-  if Named name == binder
+  if isBinderName name binder
     then Just ()
     else Nothing
 
 abstract2Binders :: (Monad f, Eq a) => BinderM a -> BinderM a -> f a -> Scope Bool f a
 abstract2Binders left right = abstract $ \name ->
   if
-      | Named name == left -> Just True
-      | Named name == right -> Just False
+      | isBinderName name left -> Just True
+      | isBinderName name right -> Just False
       | otherwise -> Nothing
 
 abstractBinders :: (Monad f, Eq a) => [BinderM a] -> f a -> Scope Int f a
-abstractBinders binders = abstract $ \name -> elemIndex (Named name) binders
-
-fromBinder :: BinderM a -> a
-fromBinder (Named name) = name
-fromBinder Anon = oops "Instantiating an anonymous binder"
+abstractBinders binders = abstract $ \name -> findIndex (isBinderName name) binders
 
 instantiate1Binder :: (Monad f) => BinderM a -> Scope n f a -> f a
 instantiate1Binder = instantiate . const . return . fromBinder
