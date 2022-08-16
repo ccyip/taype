@@ -51,7 +51,7 @@ fn r_list : (k : Int) -> ~List k -> List = \ k ->
   else \ xs -> ~case xs of
                | ~inl _ -> Nil
                | ~inr p -> ~case p of
-                           | ~(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
+                           ~(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
 
 -- Finally, we can simply lift the public functions to the oblivious
 -- counterparts, by composing them with section and retraction.

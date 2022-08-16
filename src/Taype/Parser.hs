@@ -216,7 +216,7 @@ grammar = mdo
             loc <- pLocatedToken L.OCase
             cond <- pExpr
             pToken L.Of
-            pToken L.Bar
+            optional $ pToken L.Bar
             pToken $ L.OInj True
             lBinder <- pBinder
             pToken L.Arrow
@@ -410,7 +410,7 @@ grammar = mdo
         loc <- pLocatedToken caseToken
         cond <- pExpr
         pToken L.Of
-        pToken L.Bar
+        optional $ pToken L.Bar
         pToken openParenToken
         left <- pBinder
         pToken L.Comma
@@ -422,7 +422,6 @@ grammar = mdo
       -- Public case-like elimination
       pCase pBody = do
         let pAlt = do
-              pToken L.Bar
               ctor <- pIdent
               binders <- many pBinder
               pToken L.Arrow
@@ -431,7 +430,8 @@ grammar = mdo
         loc <- pLocatedToken L.Case
         cond <- pExpr
         pToken L.Of
-        alts <- some1 pAlt
+        optional $ pToken L.Bar
+        alts <- pAlt `sepBy1` pToken L.Bar
         return Loc {expr = case_ cond alts, ..}
       -- Pair-like
       pPair former openParenToken = do
