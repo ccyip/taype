@@ -113,7 +113,7 @@ grammar = mdo
             loc <- pLocatedToken L.Data
             name <- pIdent
             pToken L.Equals
-            let pCtor = (,) <$> pLocatedIdent <*> many pType
+            let pCtor = (,) <$> pLocatedIdent <*> many pAtomType
             ctors <- pCtor `sepBy1` pToken L.Bar
             return $
               let ctorDefs = toList $ ctorToDef <$> ctors
@@ -254,6 +254,8 @@ grammar = mdo
         return $ case args of
           [] -> fn
           _ -> Loc {loc = getLoc fn, expr = former fn args}
+      -- Parenthesized
+      pParen pBody = pToken L.OpenParen *> pBody <* pToken L.CloseParen
 
   -- Expression
   pExpr <-
@@ -414,7 +416,7 @@ grammar = mdo
           -- Oblivious pair
           pPair L.OpenOParen OPair,
           -- Parenthesized expression
-          pToken L.OpenParen *> pExpr <* pToken L.CloseParen
+          pParen pExpr
         ]
 
   let pInfixType op former pLeft pRight = do
@@ -453,7 +455,9 @@ grammar = mdo
           -- Oblivious integer type
           pLocatedToken L.OInt <&> \loc -> Loc {expr = OInt, ..},
           -- Variable
-          pLocatedIdent <&> \(loc, ref) -> Loc {expr = GV {..}, ..}
+          pLocatedIdent <&> \(loc, ref) -> Loc {expr = GV {..}, ..},
+          -- Parenthesized type
+          pParen pType
         ]
 
   -- Function argument
@@ -478,9 +482,9 @@ parse :: [LocatedToken] -> Either LocatedError [NamedDef Text]
 parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> Left $ renderParserError rpt
-    -- (ast : _, _) -> Right ast
-    (asts@(ast : _), _) ->
-      trace (show (length asts)) $ Right ast
+    ([ast], _) -> Right ast
+    (asts, _) ->
+      oops $ "Ambiguous grammar: there are " <> show (length asts) <> " parses!"
 
 renderParserError :: Report Text [LocatedToken] -> LocatedError
 renderParserError Report {..} =
