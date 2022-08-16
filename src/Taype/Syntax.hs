@@ -199,6 +199,9 @@ type Binder = BinderM Text
 data BinderM a = Named a | Anon
   deriving stock (Eq, Show)
 
+instance IsString a => IsString (BinderM a) where
+  fromString = Named . fromString
+
 -- | Global definition
 data Def a
   = -- Function
