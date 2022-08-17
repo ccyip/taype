@@ -2,12 +2,12 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 -- |
@@ -24,9 +24,11 @@ module Taype.Syntax
     Typ,
     Label,
     AppKind (..),
+    CaseAlt (..),
     Def,
+    NamedDef,
     DefB (..),
-    NamedDef (..),
+    NamedDefB (..),
     Attribute (..),
     LabelPolyStrategy (..),
 
@@ -133,7 +135,7 @@ data Expr a
     Case
       { maybeType :: Maybe (Typ a),
         cond :: Expr a,
-        alts :: NonEmpty (Text, Scope Int Expr a)
+        alts :: NonEmpty (CaseAlt Expr a)
       }
   | -- | Oblivious and leaky if conditional
     OIte
@@ -201,6 +203,14 @@ type Label = Bool
 data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
   deriving stock (Eq, Show)
 
+-- | Case alternatives
+data CaseAlt f a = CaseAlt
+  { ctor :: Text,
+    binders :: [Binder],
+    body :: Scope Int f a
+  }
+  deriving stock (Functor, Foldable, Traversable)
+
 -- | A binder is either a name, or anonymous, i.e. \"_\", with location
 type Binder = BinderM Text
 
@@ -214,6 +224,8 @@ instance IsString a => IsString (BinderM a) where
 -- | Global definition
 type Def = DefB Expr
 
+type NamedDef = NamedDefB Expr
+
 -- | Generalized global definition
 data DefB f a
   = -- Function
@@ -226,9 +238,10 @@ data DefB f a
     CtorDef {paraTypes :: [f a], dataType :: Text}
   | -- | Builtin operation
     BuiltinDef {paraTypes :: [f a], resType :: f a, strategy :: LabelPolyStrategy}
-  deriving stock (Functor, Foldable, Traversable)
+  deriving stock (Eq, Show, Functor, Foldable, Traversable)
 
-data NamedDef a = NamedDef {name :: Text, loc :: Int, def :: Def a}
+data NamedDefB f a = NamedDef {name :: Text, loc :: Int, def :: DefB f a}
+  deriving stock (Eq, Show)
 
 data Attribute = SectionAttr | RetractionAttr | SafeAttr | LeakyAttr
   deriving stock (Eq, Show)
@@ -272,7 +285,7 @@ instance Monad Expr where
     Case
       { maybeType = maybeType <&> (>>= f),
         cond = cond >>= f,
-        alts = alts <&> second (>>>= f),
+        alts = alts <&> (>>>= f),
         ..
       }
   OIte {..} >>= f =
@@ -321,6 +334,9 @@ instance Monad Expr where
   Tape {..} >>= f = Tape {expr = expr >>= f, ..}
   Loc {..} >>= f = Loc {expr = expr >>= f, ..}
 
+instance Bound CaseAlt where
+  CaseAlt {..} >>>= f = CaseAlt {body = body >>>= f, ..}
+
 instance Bound DefB where
   FunDef {..} >>>= f = FunDef {typ = typ >>= f, expr = expr >>= f, ..}
   ADTDef {..} >>>= _ = ADTDef {..}
@@ -333,20 +349,25 @@ instance Bound DefB where
         ..
       }
 
+instance (Eq1 f, Monad f) => Eq1 (CaseAlt f) where
+  liftEq
+    eq
+    (CaseAlt {ctor, body})
+    (CaseAlt {ctor = ctor', body = body'}) =
+      ctor == ctor' && liftEq eq body body'
+
 deriveEq1 ''Expr
-deriveShow1 ''Expr
+
+instance (Eq1 f, Monad f, Eq a) => Eq (CaseAlt f a) where (==) = eq1
 
 instance Eq a => Eq (Expr a) where (==) = eq1
 
+deriveShow1 ''CaseAlt
+deriveShow1 ''Expr
+
+instance (Show1 f, Show a) => Show (CaseAlt f a) where showsPrec = showsPrec1
+
 instance Show a => Show (Expr a) where showsPrec = showsPrec1
-
-deriving stock instance Eq a => Eq (Def a)
-
-deriving stock instance Show a => Show (Def a)
-
-deriving stock instance Eq a => Eq (NamedDef a)
-
-deriving stock instance Show a => Show (NamedDef a)
 
 fromBinder :: BinderM a -> a
 fromBinder (Named _ name) = name
@@ -435,10 +456,11 @@ ite_ cond ifTrue ifFalse = Ite {maybeType = Nothing, ..}
 oite_ :: Expr a -> Expr a -> Expr a -> Expr a
 oite_ cond ifTrue ifFalse = OIte {..}
 
-case_ :: (Eq a) => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
+case_ :: (a ~ Text) => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 case_ cond alts = Case {maybeType = Nothing, alts = abstr <$> alts, ..}
   where
-    abstr (ctor, binders, body) = (ctor, abstractBinders binders body)
+    abstr (ctor, binders, body) =
+      CaseAlt {body = abstractBinders binders body, ..}
 
 ocase_ :: (Eq a) => Expr a -> BinderM a -> Expr a -> BinderM a -> Expr a -> Expr a
 ocase_ cond lBinder lBody rBinder rBody =
