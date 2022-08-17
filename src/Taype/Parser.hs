@@ -474,7 +474,7 @@ grammar = mdo
   return pProg
 
 -- | Main parser
-parse :: [LocatedToken] -> Either LocatedError [NamedDef Text]
+parse :: [LocatedToken] -> Either LocatedError [NamedDef a]
 parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> Left $ renderParserError rpt
@@ -482,7 +482,6 @@ parse tokens =
     (defs, _) ->
       oops $ "Ambiguous grammar: there are " <> show (length defs) <> " parses!"
   where
-    close :: NamedDef Text -> NamedDef a
     close NamedDef {..} = NamedDef {def = def >>>= GV, ..}
 
 renderParserError :: Report Text [LocatedToken] -> LocatedError
