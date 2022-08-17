@@ -29,13 +29,13 @@ data Token
   | Colon
   | Bar
   | Comma
-  | OpenAngle
-  | CloseAngle
-  | OpenAttr
-  | CloseBrace
-  | OpenParen
-  | OpenOParen
-  | CloseParen
+  | LAngle
+  | RAngle
+  | LAttr
+  | RBrace
+  | LParen
+  | LOParen
+  | RParen
   | TUnit
   | TBool
   | OBool
@@ -134,13 +134,13 @@ pToken =
       Bar <$ symbol "|",
       Comma <$ symbol ",",
       Underscore <$ symbol "_",
-      OpenAngle <$ symbol "<",
-      CloseAngle <$ symbol ">",
-      OpenAttr <$ symbol "#[",
-      CloseBrace <$ symbol "]",
-      OpenParen <$ symbol "(",
-      OpenOParen <$ symbol "~(",
-      CloseParen <$ symbol ")"
+      LAngle <$ symbol "<",
+      RAngle <$ symbol ">",
+      LAttr <$ symbol "#[",
+      RBrace <$ symbol "]",
+      LParen <$ symbol "(",
+      LOParen <$ symbol "~(",
+      RParen <$ symbol ")"
     ]
 
 isIdent0 :: Char -> Bool

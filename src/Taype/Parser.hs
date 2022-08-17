@@ -138,11 +138,11 @@ grammar = mdo
             pToken L.Obliv
             ~(loc, name) <- pLocatedIdent
             let pArg = do
-                  pToken L.OpenParen
+                  pToken L.LParen
                   argName <- pIdent
                   pToken L.Colon
                   typ <- pType
-                  pToken L.CloseParen
+                  pToken L.RParen
                   return (argName, typ)
             -- Only support one argument for oblivious type at the moment
             ~(argName, typ) <- pArg
@@ -158,7 +158,7 @@ grammar = mdo
           -- Function definition
           do
             let pAttr = do
-                  pToken L.OpenAttr
+                  pToken L.LAttr
                   attr <-
                     choice
                       [ SectionAttr <$ pToken (L.Ident "section"),
@@ -166,7 +166,7 @@ grammar = mdo
                         SafeAttr <$ pToken (L.Ident "safe"),
                         LeakyAttr <$ pToken (L.Ident "leaky")
                       ]
-                  pToken L.CloseBrace
+                  pToken L.RBrace
                   return attr
             attr <- optional pAttr
             pToken L.Fn
@@ -206,9 +206,9 @@ grammar = mdo
           -- Oblivious (leaky) if conditional
           pIf oite_ L.OIf pExpr,
           -- Product elimination
-          pPCase pcase_ L.Case L.OpenParen pExpr,
+          pPCase pcase_ L.Case L.LParen pExpr,
           -- Oblivious product elimination
-          pPCase opcase_ L.OCase L.OpenOParen pExpr,
+          pPCase opcase_ L.OCase L.LOParen pExpr,
           -- Case analysis
           pCase pExpr,
           -- Oblivious (leaky) case analysis
@@ -269,9 +269,9 @@ grammar = mdo
           do
             ~(loc, tag) <- pLocatedOInj
             maybeType <- optional $ do
-              pToken L.OpenAngle
+              pToken L.LAngle
               typ <- pType
-              pToken L.CloseAngle
+              pToken L.RAngle
               return typ
             inj <- pAtomExpr
             return Loc {expr = OInj {..}, ..},
@@ -289,7 +289,7 @@ grammar = mdo
     rule $
       choice
         [ -- Unit value
-          pLocatedToken L.OpenParen <* pToken L.CloseParen <&> \loc ->
+          pLocatedToken L.LParen <* pToken L.RParen <&> \loc ->
             Loc {expr = VUnit, ..},
           -- Boolean literal
           pLocatedBLit <&> \(loc, bLit) -> Loc {expr = BLit {..}, ..},
@@ -298,9 +298,9 @@ grammar = mdo
           -- Variable
           pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
           -- Pair
-          pPair Pair L.OpenParen,
+          pPair Pair L.LParen,
           -- Oblivious pair
-          pPair OPair L.OpenOParen,
+          pPair OPair L.LOParen,
           -- Parenthesized expression
           pParen pExpr
         ]
@@ -317,11 +317,11 @@ grammar = mdo
               choice
                 [ (Anon,) <$> pProdType,
                   do
-                    pToken L.OpenParen
+                    pToken L.LParen
                     binder <- pBinder
                     pToken L.Colon
                     typ <- pProdType
-                    pToken L.CloseParen
+                    pToken L.RParen
                     return (binder, typ)
                 ]
             loc <- pLocatedToken L.Arrow
@@ -332,7 +332,7 @@ grammar = mdo
           -- If conditional
           pIf ite_ L.If pType,
           -- Product elimination
-          pPCase pcase_ L.Case L.OpenParen pType,
+          pPCase pcase_ L.Case L.LParen pType,
           -- Case analysis
           pCase pType,
           -- Next precedence
@@ -415,7 +415,7 @@ grammar = mdo
         left <- pBinder
         pToken L.Comma
         right <- pBinder
-        pToken L.CloseParen
+        pToken L.RParen
         pToken L.Arrow
         body <- pBody
         return Loc {expr = former cond left right body, ..}
@@ -438,7 +438,7 @@ grammar = mdo
         pToken openParenToken
         prefix <- some1 $ flip (,) <$> pExpr <*> pLocatedToken L.Comma
         end <- pExpr
-        pToken L.CloseParen
+        pToken L.RParen
         return $
           let go (loc, left) right = Loc {expr = former left right, ..}
            in foldr go end prefix
@@ -448,7 +448,7 @@ grammar = mdo
         args <- some1 pAtomExpr
         return $ Loc {loc = getLoc fn, expr = former fn $ toList args}
       -- Parenthesized
-      pParen pBody = pToken L.OpenParen *> pBody <* pToken L.CloseParen
+      pParen pBody = pToken L.LParen *> pBody <* pToken L.RParen
       -- Infix
       pInfix former ops pLeft pRight = do
         left <- pLeft
@@ -462,13 +462,13 @@ grammar = mdo
       choice
         [ (,Nothing) <$> pBinder,
           do
-            pToken L.OpenParen
+            pToken L.LParen
             binder <- pBinder
             pToken L.Colon
             typ <- pType
-            pToken L.CloseParen
+            pToken L.RParen
             return (binder, Just typ),
-          pToken L.OpenParen *> pFunArg <* pToken L.CloseParen
+          pToken L.LParen *> pFunArg <* pToken L.RParen
         ]
 
   return pProg
@@ -506,13 +506,13 @@ renderToken = \case
   L.Colon -> "':'"
   L.Bar -> "'|'"
   L.Comma -> "','"
-  L.OpenAngle -> "'<'"
-  L.CloseAngle -> "'>'"
-  L.OpenAttr -> "\"#[\""
-  L.CloseBrace -> "']'"
-  L.OpenParen -> "'('"
-  L.OpenOParen -> "\"~(\""
-  L.CloseParen -> "')'"
+  L.LAngle -> "'<'"
+  L.RAngle -> "'>'"
+  L.LAttr -> "\"#[\""
+  L.RBrace -> "']'"
+  L.LParen -> "'('"
+  L.LOParen -> "\"~(\""
+  L.RParen -> "')'"
   L.TUnit -> "Unit"
   L.TBool -> "Bool"
   L.OBool -> "~Bool"
