@@ -525,22 +525,25 @@ prettyExpr GV {..} = return $ pretty ref
 prettyExpr Pi {..} = do
   x <- freshName
   binderDoc <- prettyBinder x (Just typ)
-  bodyDoc <- prettyExpr $ instantiate1 (return x) body
+  bodyDoc <- prettyExpr $ instantiate1Name x body
   return $ parens binderDoc <+> "->" <+> bodyDoc
 prettyExpr Lam {..} = do
   x <- freshName
   binderDoc <- prettyBinder x maybeType
-  bodyDoc <- prettyExpr $ instantiate1 (return x) body
+  bodyDoc <- prettyExpr $ instantiate1Name x body
   return $ backslash <> binderDoc <+> "->" <+> bodyDoc
+prettyExpr App {appKind = Just InfixApp, args = left:right:_, ..} = do
+  fnDoc <- prettyExpr fn
+  prettyInfix fnDoc left right
+prettyExpr App {appKind = Just InfixApp} = oops "Not enough infix operands"
 prettyExpr App {..} = do
   fnDoc <- prettyExpr fn
-  argsDoc <- mapM prettyExpr args
-  return $ fnDoc <+> hsep (parens <$> argsDoc)
+  prettyApp fnDoc args
 prettyExpr Let {..} = do
   x <- freshName
   binderDoc <- prettyBinder x maybeType
   rhsDoc <- prettyExpr rhs
-  bodyDoc <- prettyExpr $ instantiate1 (return x) body
+  bodyDoc <- prettyExpr $ instantiate1Name x body
   return $ "let" <+> binderDoc <+> equals <+> rhsDoc <+> "in" <> hardline <> bodyDoc
 prettyExpr TUnit = return "Unit"
 prettyExpr VUnit = return "()"
@@ -550,11 +553,7 @@ prettyExpr BLit {..} = return $ if bLit then "True" else "False"
 prettyExpr TInt = return "Int"
 prettyExpr OInt = return "~Int"
 prettyExpr ILit {..} = return $ pretty iLit
-prettyExpr Ite {..} = do
-  condDoc <- prettyExpr cond
-  ifTrueDoc <- prettyExpr ifTrue
-  ifFalseDoc <- prettyExpr ifFalse
-  return $ "if" <+> condDoc <+> "then" <+> ifTrueDoc <+> "else" <+> ifFalseDoc
+prettyExpr Ite {..} = prettyIte "if" cond ifTrue ifFalse
 prettyExpr Case {..} = do
   condDoc <- prettyExpr cond
   altsDoc <- mapM prettyAlt alts
@@ -562,66 +561,19 @@ prettyExpr Case {..} = do
   where
     prettyAlt CaseAlt {..} = do
       xs <- freshNames $ length binders
-      bodyDoc <-
-        prettyExpr $
-          instantiate
-            ( \n -> case xs !!? n of
-                Just x -> return x
-                Nothing -> oops "instantiating an out-of-bound name"
-            )
-            body
+      bodyDoc <- prettyExpr $ instantiateNames xs body
       return $ pipe <+> pretty ctor <> foldMap (\x -> space <> pretty x) xs <+> "->" <+> bodyDoc
-prettyExpr OIte {..} = do
-  condDoc <- prettyExpr cond
-  ifTrueDoc <- prettyExpr ifTrue
-  ifFalseDoc <- prettyExpr ifFalse
-  return $ "~if" <+> condDoc <+> "then" <+> ifTrueDoc <+> "else" <+> ifFalseDoc
-prettyExpr Prod {..} = do
-  leftDoc <- prettyExpr left
-  rightDoc <- prettyExpr right
-  return $ leftDoc <+> "*" <+> rightDoc
-prettyExpr Pair {..} = do
-  leftDoc <- prettyExpr left
-  rightDoc <- prettyExpr right
-  return $ lparen <> leftDoc <> comma <+> rightDoc <> rparen
-prettyExpr PCase {..} = do
-  condDoc <- prettyExpr cond
-  xl <- freshName
-  xr <- freshName
-  bodyDoc <- prettyExpr $ instantiate (\b -> return $ if b then xl else xr) body2
-  return $
-    "case" <+> condDoc <+> "of"
-      <+> lparen <> pretty xl <> comma
-      <+> pretty xr <> rparen
-      <+> "->"
-      <+> bodyDoc
-prettyExpr OProd {..} = do
-  leftDoc <- prettyExpr left
-  rightDoc <- prettyExpr right
-  return $ leftDoc <+> "~*" <+> rightDoc
-prettyExpr OPair {..} = do
-  leftDoc <- prettyExpr left
-  rightDoc <- prettyExpr right
-  return $ "~" <> lparen <> leftDoc <> comma <+> rightDoc <> rparen
-prettyExpr OPCase {..} = do
-  condDoc <- prettyExpr cond
-  xl <- freshName
-  xr <- freshName
-  bodyDoc <- prettyExpr $ instantiate (\b -> return $ if b then xl else xr) body2
-  return $
-    "~case" <+> condDoc <+> "of"
-      <+> "~" <> lparen <> pretty xl <> comma
-      <+> pretty xr <> rparen
-      <+> "->"
-      <+> bodyDoc
-prettyExpr OSum {..} = do
-  leftDoc <- prettyExpr left
-  rightDoc <- prettyExpr right
-  return $ leftDoc <+> "~+" <+> rightDoc
+prettyExpr OIte {..} = prettyIte "~if" cond ifTrue ifFalse
+prettyExpr Prod {..} = prettyInfix "*" left right
+prettyExpr Pair {..} = prettyPair lparen left right
+prettyExpr PCase {..} = prettyPCase "case" lparen cond body2
+prettyExpr OProd {..} = prettyInfix "~*" left right
+prettyExpr OPair {..} = prettyPair ("~" <> lparen) left right
+prettyExpr OPCase {..} = prettyPCase "~case" ("~" <> lparen) cond body2
+prettyExpr OSum {..} = prettyInfix "~+" left right
 prettyExpr OInj {..} = do
   typeDoc <- maybe (return "") prettyInjType maybeType
-  injDoc <- prettyExpr inj
-  return $ (if tag then "~inl" else "~inr") <> typeDoc <+> injDoc
+  prettyApp ((if tag then "~inl" else "~inr") <> typeDoc) [inj]
   where
     prettyInjType typ = do
       typeDoc <- prettyExpr typ
@@ -630,8 +582,8 @@ prettyExpr OCase {..} = do
   condDoc <- prettyExpr cond
   xl <- freshName
   xr <- freshName
-  lBodyDoc <- prettyExpr $ instantiate1 (return xl) lBody
-  rBodyDoc <- prettyExpr $ instantiate1 (return xr) lBody
+  lBodyDoc <- prettyExpr $ instantiate1Name xl lBody
+  rBodyDoc <- prettyExpr $ instantiate1Name xr lBody
   return $
     "~case" <+> condDoc <+> "of"
       <+> pipe
@@ -644,17 +596,15 @@ prettyExpr OCase {..} = do
       <+> pretty xr
       <+> "->"
       <+> rBodyDoc
-prettyExpr Mux {..} = do
-  condDoc <- prettyExpr cond
-  ifTrueDoc <- prettyExpr ifTrue
-  ifFalseDoc <- prettyExpr ifFalse
-  return $ "mux" <+> condDoc <+> ifTrueDoc <+> ifFalseDoc
+prettyExpr Mux {..} = prettyApp "mux" [cond, ifTrue, ifFalse]
 prettyExpr Asc {..} = do
   typeDoc <- prettyExpr typ
   exprDoc <- prettyExpr expr
   return $ lparen <> exprDoc <+> colon <+> typeDoc <> rparen
-prettyExpr Promote {..} = ("promote" <+>) <$> prettyExpr expr
-prettyExpr Tape {..} = ("tape" <+>) <$> prettyExpr expr
+prettyExpr Promote {..} = do
+  doc <- prettyExpr expr
+  return $ "!" <> doc
+prettyExpr Tape {..} = prettyApp "tape" [expr]
 prettyExpr Loc {..} = prettyExpr expr
 
 -- | Pretty printer for Taype definitions
@@ -688,7 +638,7 @@ prettyCtors :: [NamedDef Text] -> Text -> Doc ann
 prettyCtors defs ctor = pretty ctor <> foldMap ((space <>) . pretty) types
   where
     types =
-      fromMaybe (oops $ "cannot find the definition of " <> show ctor) $
+      fromMaybe (oops $ "Cannot find the definition of " <> show ctor) $
         listToMaybe
           [ paraTypes
             | NamedDef {name, def = CtorDef {paraTypes}} <- defs,
@@ -700,6 +650,43 @@ prettyBinder binder Nothing = return $ pretty binder
 prettyBinder binder (Just typ) = do
   typeDoc <- prettyExpr typ
   return $ pretty binder <+> colon <+> typeDoc
+
+prettyIte :: Doc ann -> Expr Text -> Expr Text -> Expr Text -> Fresh (Doc ann)
+prettyIte ifDoc cond ifTrue ifFalse = do
+  condDoc <- prettyExpr cond
+  ifTrueDoc <- prettyExpr ifTrue
+  ifFalseDoc <- prettyExpr ifFalse
+  return $ ifDoc <+> condDoc <+> "then" <+> ifTrueDoc <+> "else" <+> ifFalseDoc
+
+prettyInfix :: Doc ann -> Expr Text -> Expr Text -> Fresh (Doc ann)
+prettyInfix infixDoc left right = do
+  leftDoc <- prettyExpr left
+  rightDoc <- prettyExpr right
+  return $ leftDoc <+> infixDoc <+> rightDoc
+
+prettyPair :: Doc ann -> Expr Text -> Expr Text -> Fresh (Doc ann)
+prettyPair lDoc left right = do
+  leftDoc <- prettyExpr left
+  rightDoc <- prettyExpr right
+  return $ lDoc <> leftDoc <> comma <+> rightDoc <> rparen
+
+prettyPCase :: Doc ann -> Doc ann -> Expr Text -> Scope Bool Expr Text -> Fresh (Doc ann)
+prettyPCase caseDoc lDoc cond body2 = do
+  condDoc <- prettyExpr cond
+  xl <- freshName
+  xr <- freshName
+  bodyDoc <- prettyExpr $ instantiate2Names xl xr body2
+  return $
+    caseDoc <+> condDoc <+> "of"
+      <+> lDoc <> pretty xl <> comma
+      <+> pretty xr <> rparen
+      <+> "->"
+      <+> bodyDoc
+
+prettyApp :: Doc ann -> [Expr Text] -> Fresh (Doc ann)
+prettyApp fnDoc exprs = do
+  docs <- mapM prettyExpr exprs
+  return $ fnDoc <> foldMap (space <>) docs
 
 instance Pretty Attribute where
   pretty SectionAttr = "section"
