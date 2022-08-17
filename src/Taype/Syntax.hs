@@ -41,9 +41,18 @@ module Taype.Syntax
     findDupBinderName,
 
     -- * Specialized locally nameless abstraction and instantiation
+    abstract1By,
+    abstract2By,
+    abstractManyBy,
     abstract1Binder,
     abstract2Binders,
     abstractBinders,
+    instantiate1By,
+    instantiate2By,
+    instantiateManyBy,
+    instantiate1Name,
+    instantiate2Names,
+    instantiateNames,
     instantiate1Binder,
     instantiate2Binders,
     instantiateBinders,
@@ -390,34 +399,61 @@ findDupBinderName binders = find ((> 1) . length) groups >>= viaNonEmpty head
   where
     groups = groupBy binderNameEq binders
 
-abstract1Binder :: (Monad f, Eq a) => BinderM a -> f a -> Scope () f a
-abstract1Binder binder = abstract $ \name ->
-  if isBinderName name binder
+abstract1By :: Monad f => (a -> b -> Bool) -> b -> f a -> Scope () f a
+abstract1By eq b = abstract $ \a ->
+  if eq a b
     then Just ()
     else Nothing
 
-abstract2Binders :: (Monad f, Eq a) => BinderM a -> BinderM a -> f a -> Scope Bool f a
-abstract2Binders left right = abstract $ \name ->
+abstract2By :: Monad f => (a -> b -> Bool) -> b -> b -> f a -> Scope Bool f a
+abstract2By eq left right = abstract $ \a ->
   if
-      | isBinderName name left -> Just True
-      | isBinderName name right -> Just False
+      | eq a left -> Just True
+      | eq a right -> Just False
       | otherwise -> Nothing
 
+abstractManyBy :: Monad f => (a -> b -> Bool) -> [b] -> f a -> Scope Int f a
+abstractManyBy eq bs = abstract $ \a -> findIndex (eq a) bs
+
+abstract1Binder :: (Monad f, Eq a) => BinderM a -> f a -> Scope () f a
+abstract1Binder = abstract1By isBinderName
+
+abstract2Binders :: (Monad f, Eq a) => BinderM a -> BinderM a -> f a -> Scope Bool f a
+abstract2Binders = abstract2By isBinderName
+
 abstractBinders :: (Monad f, Eq a) => [BinderM a] -> f a -> Scope Int f a
-abstractBinders binders = abstract $ \name -> findIndex (isBinderName name) binders
+abstractBinders = abstractManyBy isBinderName
 
-instantiate1Binder :: (Monad f) => BinderM a -> Scope n f a -> f a
-instantiate1Binder = instantiate . const . return . fromBinder
+instantiate1By :: Monad f => (b -> f a) -> b -> Scope n f a -> f a
+instantiate1By proj = instantiate . const . proj
 
-instantiate2Binders :: (Monad f) => BinderM a -> BinderM a -> Scope Bool f a -> f a
-instantiate2Binders left right = instantiate $ \b ->
-  return . fromBinder $ if b then left else right
+instantiate2By :: Monad f => (b -> f a) -> b -> b -> Scope Bool f a -> f a
+instantiate2By proj left right = instantiate $ \i ->
+  proj $ if i then left else right
 
-instantiateBinders :: (Monad f) => [BinderM a] -> Scope Int f a -> f a
-instantiateBinders binders = instantiate $ \i ->
-  case binders !!? i of
-    Just binder -> return $ fromBinder binder
-    Nothing -> oops "Instantiating an out-of-bound binder"
+instantiateManyBy :: Monad f => (b -> f a) -> [b] -> Scope Int f a -> f a
+instantiateManyBy proj bs = instantiate $ \i ->
+  case bs !!? i of
+    Just b -> proj b
+    Nothing -> oops "Out-of-bound instantiation"
+
+instantiate1Name :: Monad f => a -> Scope n f a -> f a
+instantiate1Name = instantiate1By return
+
+instantiate2Names :: Monad f => a -> a -> Scope Bool f a -> f a
+instantiate2Names = instantiate2By return
+
+instantiateNames :: Monad f => [a] -> Scope Int f a -> f a
+instantiateNames = instantiateManyBy return
+
+instantiate1Binder :: Monad f => BinderM a -> Scope n f a -> f a
+instantiate1Binder = instantiate1By $ return . fromBinder
+
+instantiate2Binders :: Monad f => BinderM a -> BinderM a -> Scope Bool f a -> f a
+instantiate2Binders = instantiate2By $ return . fromBinder
+
+instantiateBinders :: Monad f => [BinderM a] -> Scope Int f a -> f a
+instantiateBinders = instantiateManyBy $ return . fromBinder
 
 lam_ :: (Eq a) => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a
 lam_ binder maybeType body =
