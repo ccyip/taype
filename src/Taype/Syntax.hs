@@ -382,19 +382,19 @@ fromBinder :: BinderM a -> a
 fromBinder (Named _ name) = name
 fromBinder Anon = oops "Instantiating an anonymous binder"
 
-isBinderName :: (Eq a) => a -> BinderM a -> Bool
+isBinderName :: Eq a => a -> BinderM a -> Bool
 isBinderName x (Named _ y) = x == y
 isBinderName _ Anon = False
 
 -- | Check if two binders have the same name. Two anonymous binder DO NOT have
 -- the same name
-binderNameEq :: (Eq a) => BinderM a -> BinderM a -> Bool
+binderNameEq :: Eq a => BinderM a -> BinderM a -> Bool
 binderNameEq (Named _ x) (Named _ y) = x == y
 binderNameEq _ _ = False
 
 -- | Return 'Nothing' if the list of binders do not has duplicate names, or
 -- 'Just' the duplicate binder
-findDupBinderName :: (Eq a) => [BinderM a] -> Maybe (BinderM a)
+findDupBinderName :: Eq a => [BinderM a] -> Maybe (BinderM a)
 findDupBinderName binders = find ((> 1) . length) groups >>= viaNonEmpty head
   where
     groups = groupBy binderNameEq binders
@@ -455,15 +455,15 @@ instantiate2Binders = instantiate2By $ return . fromBinder
 instantiateBinders :: Monad f => [BinderM a] -> Scope Int f a -> f a
 instantiateBinders = instantiateManyBy $ return . fromBinder
 
-lam_ :: (Eq a) => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a
+lam_ :: Eq a => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a
 lam_ binder maybeType body =
   Lam {label = Nothing, body = abstract1Binder binder body, ..}
 
 -- | A smart constructor for lambda abstraction that takes a list of arguments
-lams_ :: (Eq a) => NonEmpty (BinderM a, Maybe (Typ a)) -> Expr a -> Expr a
+lams_ :: Eq a => NonEmpty (BinderM a, Maybe (Typ a)) -> Expr a -> Expr a
 lams_ args body = foldr (uncurry lam_) body args
 
-pi_ :: (Eq a) => BinderM a -> Typ a -> Expr a -> Expr a
+pi_ :: Eq a => BinderM a -> Typ a -> Expr a -> Expr a
 pi_ binder typ body =
   Pi {label = Nothing, body = abstract1Binder binder body, ..}
 
@@ -476,12 +476,12 @@ iapp_ fn args = App {appKind = Just InfixApp, ..}
 tapp_ :: Expr a -> [Expr a] -> Typ a
 tapp_ fn args = App {appKind = Just TypeApp, ..}
 
-let_ :: (Eq a) => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a -> Expr a
+let_ :: Eq a => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a -> Expr a
 let_ binder maybeType rhs body =
   Let {label = Nothing, body = abstract1Binder binder body, ..}
 
 -- | A smart constructor for let that takes a list of bindings
-lets_ :: (Eq a) => NonEmpty (BinderM a, Maybe (Typ a), Expr a) -> Expr a -> Expr a
+lets_ :: Eq a => NonEmpty (BinderM a, Maybe (Typ a), Expr a) -> Expr a -> Expr a
 lets_ bindings body = foldr go body bindings
   where
     go (binder, maybeType, rhs) = let_ binder maybeType rhs
@@ -492,13 +492,13 @@ ite_ cond ifTrue ifFalse = Ite {maybeType = Nothing, ..}
 oite_ :: Expr a -> Expr a -> Expr a -> Expr a
 oite_ cond ifTrue ifFalse = OIte {..}
 
-case_ :: (a ~ Text) => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
+case_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 case_ cond alts = Case {maybeType = Nothing, alts = abstr <$> alts, ..}
   where
     abstr (ctor, binders, body) =
       CaseAlt {body = abstractBinders binders body, ..}
 
-ocase_ :: (Eq a) => Expr a -> BinderM a -> Expr a -> BinderM a -> Expr a -> Expr a
+ocase_ :: Eq a => Expr a -> BinderM a -> Expr a -> BinderM a -> Expr a -> Expr a
 ocase_ cond lBinder lBody rBinder rBody =
   OCase
     { maybeType = Nothing,
@@ -507,11 +507,11 @@ ocase_ cond lBinder lBody rBinder rBody =
       ..
     }
 
-pcase_ :: (Eq a) => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
+pcase_ :: Eq a => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 pcase_ cond left right body =
   PCase {maybeType = Nothing, body2 = abstract2Binders left right body, ..}
 
-opcase_ :: (Eq a) => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
+opcase_ :: Eq a => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 opcase_ cond left right body =
   OPCase {body2 = abstract2Binders left right body, ..}
 
