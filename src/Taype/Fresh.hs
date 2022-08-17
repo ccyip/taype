@@ -17,6 +17,9 @@ module Taype.Fresh
     fresh,
     freshWith,
     freshName,
+    freshes,
+    freshesWith,
+    freshNames,
   )
 where
 
@@ -42,12 +45,28 @@ fresh = do
   put (n + 1)
   return n
 
--- | Generate a fresh name with a string prefix
-freshWith :: Monad m => Text -> FreshT m Text
-freshWith prefix = do
-  n <- fresh
-  return $ prefix <> show n
+-- | Generate a fresh name given a transform function
+freshWith :: Monad m => (Int -> Text) -> FreshT m Text
+freshWith to = to <$> fresh
 
--- | Generate a fresh name with prefix \"$\"
+-- | Generate a fresh name
 freshName :: Monad m => FreshT m Text
-freshName = freshWith "$"
+freshName = freshWith toName
+
+-- | Generate some fresh integers
+freshes :: Monad m => Int -> FreshT m [Int]
+freshes k = do
+  n <- get
+  put (n + k)
+  return $ take k [n ..]
+
+-- | Generate some fresh names given a transform function
+freshesWith :: Monad m => (Int -> Text) -> Int -> FreshT m [Text]
+freshesWith to k = to <<$>> freshes k
+
+-- | Generate some fresh names
+freshNames :: Monad m => Int -> FreshT m [Text]
+freshNames = freshesWith toName
+
+toName :: Int -> Text
+toName n = "$" <> show n
