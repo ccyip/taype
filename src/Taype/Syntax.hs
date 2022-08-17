@@ -485,8 +485,188 @@ instance Pretty (Expr Text) where
 
 prettyExpr :: Expr Text -> Fresh (Doc ann)
 prettyExpr V {..} = return $ pretty name
+prettyExpr GV {..} = return $ pretty ref
+prettyExpr Pi {..} = do
+  x <- freshName
+  binderDoc <- prettyBinder x (Just typ)
+  bodyDoc <- prettyExpr $ instantiate1 (return x) body
+  return $ parens binderDoc <+> "->" <+> bodyDoc
 prettyExpr Lam {..} = do
   x <- freshName
-  return $ "\\" <+> pretty x <+> "->" <+> pretty (instantiate1 (V x) body)
-prettyExpr App {..} = return $ pretty fn <+> hsep (pretty <$> args)
-prettyExpr _ = return "<not implemented>"
+  binderDoc <- prettyBinder x maybeType
+  bodyDoc <- prettyExpr $ instantiate1 (return x) body
+  return $ backslash <> binderDoc <+> "->" <+> bodyDoc
+prettyExpr App {..} = do
+  fnDoc <- prettyExpr fn
+  argsDoc <- mapM prettyExpr args
+  return $ fnDoc <+> hsep (parens <$> argsDoc)
+prettyExpr Let {..} = do
+  x <- freshName
+  binderDoc <- prettyBinder x maybeType
+  rhsDoc <- prettyExpr rhs
+  bodyDoc <- prettyExpr $ instantiate1 (return x) body
+  return $ "let" <+> binderDoc <+> equals <+> rhsDoc <+> "in" <> hardline <> bodyDoc
+prettyExpr TUnit = return "Unit"
+prettyExpr VUnit = return "()"
+prettyExpr TBool = return "Bool"
+prettyExpr OBool = return "~Bool"
+prettyExpr BLit {..} = return $ if bLit then "True" else "False"
+prettyExpr TInt = return "Int"
+prettyExpr OInt = return "~Int"
+prettyExpr ILit {..} = return $ pretty iLit
+prettyExpr Ite {..} = do
+  condDoc <- prettyExpr cond
+  ifTrueDoc <- prettyExpr ifTrue
+  ifFalseDoc <- prettyExpr ifFalse
+  return $ "if" <+> condDoc <+> "then" <+> ifTrueDoc <+> "else" <+> ifFalseDoc
+prettyExpr Case {..} = do
+  condDoc <- prettyExpr cond
+  altsDoc <- mapM prettyAlt alts
+  return $ "case" <+> condDoc <+> "of" <+> sep (toList altsDoc)
+  where
+    prettyAlt CaseAlt {..} = do
+      xs <- freshNames $ length binders
+      bodyDoc <-
+        prettyExpr $
+          instantiate
+            ( \n -> case xs !!? n of
+                Just x -> return x
+                Nothing -> oops "instantiating an out-of-bound name"
+            )
+            body
+      return $ pipe <+> pretty ctor <> foldMap (\x -> space <> pretty x) xs <+> "->" <+> bodyDoc
+prettyExpr OIte {..} = do
+  condDoc <- prettyExpr cond
+  ifTrueDoc <- prettyExpr ifTrue
+  ifFalseDoc <- prettyExpr ifFalse
+  return $ "~if" <+> condDoc <+> "then" <+> ifTrueDoc <+> "else" <+> ifFalseDoc
+prettyExpr Prod {..} = do
+  leftDoc <- prettyExpr left
+  rightDoc <- prettyExpr right
+  return $ leftDoc <+> "*" <+> rightDoc
+prettyExpr Pair {..} = do
+  leftDoc <- prettyExpr left
+  rightDoc <- prettyExpr right
+  return $ lparen <> leftDoc <> comma <+> rightDoc <> rparen
+prettyExpr PCase {..} = do
+  condDoc <- prettyExpr cond
+  xl <- freshName
+  xr <- freshName
+  bodyDoc <- prettyExpr $ instantiate (\b -> return $ if b then xl else xr) body2
+  return $
+    "case" <+> condDoc <+> "of"
+      <+> lparen <> pretty xl <> comma
+      <+> pretty xr <> rparen
+      <+> "->"
+      <+> bodyDoc
+prettyExpr OProd {..} = do
+  leftDoc <- prettyExpr left
+  rightDoc <- prettyExpr right
+  return $ leftDoc <+> "~*" <+> rightDoc
+prettyExpr OPair {..} = do
+  leftDoc <- prettyExpr left
+  rightDoc <- prettyExpr right
+  return $ "~" <> lparen <> leftDoc <> comma <+> rightDoc <> rparen
+prettyExpr OPCase {..} = do
+  condDoc <- prettyExpr cond
+  xl <- freshName
+  xr <- freshName
+  bodyDoc <- prettyExpr $ instantiate (\b -> return $ if b then xl else xr) body2
+  return $
+    "~case" <+> condDoc <+> "of"
+      <+> "~" <> lparen <> pretty xl <> comma
+      <+> pretty xr <> rparen
+      <+> "->"
+      <+> bodyDoc
+prettyExpr OSum {..} = do
+  leftDoc <- prettyExpr left
+  rightDoc <- prettyExpr right
+  return $ leftDoc <+> "~+" <+> rightDoc
+prettyExpr OInj {..} = do
+  typeDoc <- maybe (return "") prettyInjType maybeType
+  injDoc <- prettyExpr inj
+  return $ (if tag then "~inl" else "~inr") <> typeDoc <+> injDoc
+  where
+    prettyInjType typ = do
+      typeDoc <- prettyExpr typ
+      return $ langle <> typeDoc <> rangle
+prettyExpr OCase {..} = do
+  condDoc <- prettyExpr cond
+  xl <- freshName
+  xr <- freshName
+  lBodyDoc <- prettyExpr $ instantiate1 (return xl) lBody
+  rBodyDoc <- prettyExpr $ instantiate1 (return xr) lBody
+  return $
+    "~case" <+> condDoc <+> "of"
+      <+> pipe
+      <+> "~inl"
+      <+> pretty xl
+      <+> "->"
+      <+> lBodyDoc
+      <+> pipe
+      <+> "~inr"
+      <+> pretty xr
+      <+> "->"
+      <+> rBodyDoc
+prettyExpr Mux {..} = do
+  condDoc <- prettyExpr cond
+  ifTrueDoc <- prettyExpr ifTrue
+  ifFalseDoc <- prettyExpr ifFalse
+  return $ "mux" <+> condDoc <+> ifTrueDoc <+> ifFalseDoc
+prettyExpr Asc {..} = do
+  typeDoc <- prettyExpr typ
+  exprDoc <- prettyExpr expr
+  return $ lparen <> exprDoc <+> colon <+> typeDoc <> rparen
+prettyExpr Promote {..} = ("promote" <+>) <$> prettyExpr expr
+prettyExpr Tape {..} = ("tape" <+>) <$> prettyExpr expr
+prettyExpr Loc {..} = prettyExpr expr
+
+-- | Pretty printer for Taype definitions
+instance Pretty (NamedDef Text) where
+  pretty _ = "<cannot print a standalone definition>"
+  prettyList defs = foldMap go defs <> hardline
+    where
+      go def = prettyDef defs def <> hardline <> hardline
+
+prettyDef :: [NamedDef Text] -> NamedDef Text -> Doc ann
+prettyDef defs NamedDef {name, def} = case def of
+  FunDef {..} ->
+    "#" <> lbracket <> pretty attr <> rbracket <> hardline
+      <> "fn" <+> pretty name <+> colon <+> pretty typ <+> equals
+      <> pretty expr
+  ADTDef {..} ->
+    "data" <+> pretty name <+> equals
+      <+> concatWith (\x y -> x <+> pipe <+> y) (prettyCtors defs <$> ctors)
+  OADTDef {..} ->
+    "obliv" <+> pretty name <+> rest
+    where
+      rest = runFresh $ do
+        x <- freshName
+        binderDoc <- prettyBinder x (Just typ)
+        bodyDoc <- prettyExpr (instantiate1 (return x) body)
+        return $ parens binderDoc <+> equals <> hardline <> bodyDoc
+  -- Do not show builtin definition or constructors
+  _ -> mempty
+
+prettyCtors :: [NamedDef Text] -> Text -> Doc ann
+prettyCtors defs ctor = pretty ctor <> foldMap ((space <>) . pretty) types
+  where
+    types =
+      fromMaybe (oops $ "cannot find the definition of " <> show ctor) $
+        listToMaybe
+          [ paraTypes
+            | NamedDef {name, def = CtorDef {paraTypes}} <- defs,
+              name == ctor
+          ]
+
+prettyBinder :: Text -> Maybe (Typ Text) -> Fresh (Doc ann)
+prettyBinder binder Nothing = return $ pretty binder
+prettyBinder binder (Just typ) = do
+  typeDoc <- prettyExpr typ
+  return $ pretty binder <+> colon <+> typeDoc
+
+instance Pretty Attribute where
+  pretty SectionAttr = "section"
+  pretty RetractionAttr = "retraction"
+  pretty SafeAttr = "safe"
+  pretty LeakyAttr = "leaky"
