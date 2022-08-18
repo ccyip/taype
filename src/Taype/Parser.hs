@@ -227,12 +227,6 @@ grammar = mdo
             pToken L.Arrow
             rBody <- pExpr
             return Loc {expr = ocase_ cond lBinder lBody rBinder rBody, ..},
-          -- Ascription
-          do
-            expr <- pCompareExpr
-            loc <- pLocatedToken L.Colon
-            typ <- pType
-            return Loc {expr = Asc {..}, ..},
           -- Next precedence
           pCompareExpr
         ]
@@ -301,6 +295,12 @@ grammar = mdo
           pPair Pair L.LParen,
           -- Oblivious pair
           pPair OPair L.LOParen,
+          -- Ascription
+          pParen $ do
+            expr <- pExpr
+            loc <- pLocatedToken L.Colon
+            typ <- pType
+            return Loc {expr = Asc {..}, ..},
           -- Parenthesized expression
           pParen pExpr
         ]
