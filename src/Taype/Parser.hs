@@ -482,8 +482,8 @@ parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> Left $ renderParserError rpt
     ([defs], _) -> Right $ close <$> defs
-    (defs, _) ->
-      oops $ "Ambiguous grammar: there are " <> show (length defs) <> " parses!"
+    (parses, _) ->
+      oops $ "Ambiguous grammar: there are " <> show (length parses) <> " parses!"
   where
     close NamedDef {..} = NamedDef {def = def >>>= GV, ..}
 
