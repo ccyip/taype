@@ -56,6 +56,7 @@ data Token
   | Case
   | OCase
   | Of
+  | End
   | Tape
   | OInj Bool
   | Ident Text
@@ -109,6 +110,7 @@ pToken =
           Case <$ symbol "case",
           OCase <$ symbol "~case",
           Of <$ symbol "of",
+          End <$ symbol "end",
           OInj True <$ symbol "~inl",
           OInj False <$ symbol "~inr",
           Tape <$ symbol "tape"
@@ -174,6 +176,7 @@ reserved =
     "case",
     "~case",
     "of",
+    "end",
     "~inl",
     "~inr",
     "tape",

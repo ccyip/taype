@@ -226,6 +226,7 @@ grammar = mdo
             rBinder <- pBinder
             pToken L.Arrow
             rBody <- pExpr
+            pToken L.End
             return Loc {expr = ocase_ cond lBinder lBody rBinder rBody, ..},
           -- Next precedence
           pCompareExpr
@@ -418,6 +419,7 @@ grammar = mdo
         pToken L.RParen
         pToken L.Arrow
         body <- pBody
+        pToken L.End
         return Loc {expr = former cond left right body, ..}
       -- Public case-like elimination
       pCase pBody = do
@@ -432,6 +434,7 @@ grammar = mdo
         pToken L.Of
         optional $ pToken L.Bar
         alts <- pAlt `sepBy1` pToken L.Bar
+        pToken L.End
         return Loc {expr = case_ cond alts, ..}
       -- Pair-like
       pPair former openParenToken = do
@@ -532,6 +535,7 @@ renderToken = \case
   L.Case -> "case"
   L.OCase -> "~case"
   L.Of -> "of"
+  L.End -> "end"
   L.Tape -> "tape"
   L.OInj tag -> if tag then "~inl" else "~inr"
   L.Ident ident -> "identifier \"" <> ident <> "\""
