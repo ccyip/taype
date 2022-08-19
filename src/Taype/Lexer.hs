@@ -11,12 +11,18 @@
 -- Portability: portable
 --
 -- Lexer for taype.
-module Taype.Lexer (Token (..), LocatedToken (..), lex) where
+module Taype.Lexer
+  ( Token (..),
+    LocatedToken (..),
+    lex,
+    printTokens,
+  )
+where
 
 import Data.Char
 import qualified Data.Text as T
 import Taype.Error
-import Text.Megaparsec hiding (Token, token)
+import Text.Megaparsec hiding (Token, token, tokens)
 import qualified Text.Megaparsec.Char as C
 import qualified Text.Megaparsec.Char.Lexer as L
 
@@ -219,3 +225,12 @@ renderLexerError ParseErrorBundle {bundleErrors = err :| _} =
     showErrorItem (Label lab) = toText $ toList lab
     showErrorItem EndOfInput = "end of input"
     proxy = Proxy :: Proxy Text
+
+printTokens :: FilePath -> Text -> [LocatedToken] -> IO ()
+printTokens file code tokens = mapM_ go positions
+  where
+    go (LocatedToken {..}, SourcePos {..}) =
+      putTextLn $
+        showLocation file (unPos sourceLine) (unPos sourceColumn) <> ": "
+          <> show token
+    (positions, _) = attachSourcePos offset tokens $ initPosState file code

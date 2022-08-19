@@ -5,7 +5,11 @@
 module Taype.Error
   ( oops,
     LocatedError (..),
+    initPosState,
+    getLocation,
     renderLocation,
+    showLocation,
+    showUnknownLocation,
     renderFancyLocation,
     renderError,
   )
@@ -24,18 +28,20 @@ data LocatedError = LocatedError
   }
   deriving stock (Eq, Show)
 
+initPosState :: FilePath -> Text -> PosState Text
+initPosState file code =
+  PosState
+    { pstateInput = code,
+      pstateOffset = 0,
+      pstateSourcePos = initialPos file,
+      pstateTabWidth = defaultTabWidth,
+      pstateLinePrefix = ""
+    }
+
 getLocation :: FilePath -> Text -> Int -> (Int, Int, Maybe String)
 getLocation file code offset = (line, col, maybeOffender)
   where
-    initState =
-      PosState
-        { pstateInput = code,
-          pstateOffset = 0,
-          pstateSourcePos = initialPos file,
-          pstateTabWidth = defaultTabWidth,
-          pstateLinePrefix = ""
-        }
-    (maybeOffender, st) = reachOffset offset initState
+    (maybeOffender, st) = reachOffset offset $ initPosState file code
     pos = pstateSourcePos st
     line = unPos (sourceLine pos)
     col = unPos (sourceColumn pos)
