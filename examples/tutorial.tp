@@ -16,6 +16,7 @@ fn lookup : Int -> List -> Bool = \ x xs ->
   case xs of
   | Nil -> False
   | Cons y xs' -> if x == y then True else lookup x xs'
+  end
 
 -- Here is an insertion function that inserts the new element to the right place
 -- of a sorted list. For simplicity, the lookup function we just defined does
@@ -24,6 +25,7 @@ fn insert : Int -> List -> List = \ x xs ->
   case xs of
   | Nil -> Cons x Nil
   | Cons y xs' -> if x <= y then Cons x xs else Cons y (insert x xs')
+  end
 
 -- Now let's implement a corresponding oblivious list. By convention, we prefix
 -- the oblivious type with "~". All builtin oblivious operations are also
@@ -42,7 +44,8 @@ fn s_list : (k : Int) -> List -> ~List k = \ k xs ->
   then ()
   else tape (case xs of
              | Nil -> ~inl ()
-             | Cons x xs' -> ~inr (tape (s_int x), s_list (k-1) xs'))
+             | Cons x xs' -> ~inr (tape (s_int x), s_list (k-1) xs')
+             end)
 
 #[retraction]
 fn r_list : (k : Int) -> ~List k -> List = \ k ->
@@ -52,6 +55,8 @@ fn r_list : (k : Int) -> ~List k -> List = \ k ->
                | ~inl _ -> Nil
                | ~inr p -> ~case p of
                            ~(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
+                           end
+               end
 
 -- Finally, we can simply lift the public functions to the oblivious
 -- counterparts, by composing them with section and retraction.
