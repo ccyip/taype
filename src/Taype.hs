@@ -15,6 +15,7 @@ import Prettyprinter.Render.Text
 import Taype.Syntax
 import Taype.Lexer (lex)
 import Taype.Parser (parse)
+import Taype.Environment
 import Taype.Error
 import Taype.Cute
 
@@ -24,9 +25,9 @@ test file = do
   let code = decodeUtf8 content
   case process file code of
     Left err -> putTextLn $ renderError file code err
-    Right defs -> putDoc $ prettyDefs defs
+    Right (defs, ctx) -> putDoc $ prettyDefs defs ctx
 
-process :: FilePath -> Text -> Either LocatedError [(Text, Def Text)]
+process :: FilePath -> Text -> Either LocatedError ([Text], GCtx a)
 process file code = do
   tokens <- lex file code
   parse tokens

@@ -10,6 +10,7 @@ module Taype.Environment
   ( Env (..),
     Options (..),
     GCtx,
+    initGCtx,
   )
 where
 
@@ -24,3 +25,6 @@ data Options = Options
   }
 
 type GCtx a = HashMap Text (Def a)
+
+initGCtx :: GCtx a
+initGCtx = mempty

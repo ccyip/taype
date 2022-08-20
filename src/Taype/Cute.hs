@@ -15,8 +15,10 @@
 module Taype.Cute (prettyExpr, prettyDefs, prettyDef) where
 
 import Bound
+import Data.HashMap.Strict ((!?))
 import Prettyprinter hiding (hang, indent)
 import qualified Prettyprinter as PP
+import Taype.Environment
 import Taype.Error
 import Taype.Fresh
 import Taype.Syntax
@@ -128,58 +130,55 @@ prettyExpr Tape {..} = prettyApp "tape" [expr]
 prettyExpr Loc {..} = prettyExpr expr
 
 -- | Pretty printer for Taype definitions
-prettyDefs :: [(Text, Def Text)] -> Doc ann
-prettyDefs defs = foldMap (uncurry (prettyDef defs)) defs <> hardline
+prettyDefs :: [Text] -> GCtx Text -> Doc ann
+prettyDefs defs gctx = foldMap (`prettyDef` gctx) defs <> hardline
 
-prettyDef :: [(Text, Def Text)] -> Text -> Def Text -> Doc ann
-prettyDef defs name def = case def of
-  FunDef {..} ->
-    "#" <> brackets (pretty attr) <> hardline
-      <> "fn"
-      <+> pretty name
-      <+> colon
-      <+> alignType (runFresh $ prettyExpr typ)
-      <+> equals
-      <> hardline
-      <> indent (runFresh $ prettyExpr expr)
-      <> defSep
-  ADTDef {..} ->
-    "data" <+> pretty name
-      <+> align
-        ( group
-            ( equals
-                <+> concatWith
-                  (\x y -> x <> line <> pipe <+> y)
-                  (prettyCtors defs <$> ctors)
-            )
-        )
-      <> defSep
-  OADTDef {..} ->
-    "obliv" <+> pretty name <+> rest
-      <> defSep
-    where
-      rest = runFresh $ do
-        x <- freshName
-        binderDoc <- prettyBinder x (Just typ)
-        bodyDoc <- prettyExpr (instantiate1Name x body)
-        return $ parens binderDoc <+> equals <> hardline <> bodyDoc
-  -- Do not show builtin definition or constructors
-  _ -> mempty
+prettyDef :: Text -> GCtx Text -> Doc ann
+prettyDef name gctx =
+  case fromMaybe (oops "definition not in context") (gctx !? name) of
+    FunDef {..} ->
+      "#" <> brackets (pretty attr) <> hardline
+        <> "fn"
+        <+> pretty name
+        <+> colon
+        <+> alignType (runFresh $ prettyExpr typ)
+        <+> equals
+        <> hardline
+        <> indent (runFresh $ prettyExpr expr)
+        <> defSep
+    ADTDef {..} ->
+      "data" <+> pretty name
+        <+> align
+          ( group
+              ( equals
+                  <+> concatWith
+                    (\x y -> x <> line <> pipe <+> y)
+                    ((`prettyCtors` gctx) <$> ctors)
+              )
+          )
+        <> defSep
+    OADTDef {..} ->
+      "obliv" <+> pretty name <+> rest
+        <> defSep
+      where
+        rest = runFresh $ do
+          x <- freshName
+          binderDoc <- prettyBinder x (Just typ)
+          bodyDoc <- prettyExpr (instantiate1Name x body)
+          return $ parens binderDoc <+> equals <> hardline <> bodyDoc
+    -- Do not show builtin definition or constructors
+    _ -> mempty
   where
     defSep = hardline <> hardline
 
-prettyCtors :: [(Text, Def Text)] -> Text -> Doc ann
-prettyCtors defs ctor =
+prettyCtors :: Text -> GCtx Text -> Doc ann
+prettyCtors ctor gctx =
   hang $
     pretty ctor <> group (foldMap ((line <>) . runFresh . prettySubExprAgg) types)
   where
-    types =
-      fromMaybe (oops $ "Cannot find the definition of " <> show ctor) $
-        listToMaybe
-          [ paraTypes
-            | (name, CtorDef {paraTypes}) <- defs,
-              name == ctor
-          ]
+    types = case gctx !? ctor of
+      Just (CtorDef {..}) -> paraTypes
+      _ -> oops $ "Cannot find the definition of constructor " <> show ctor
 
 prettyBinder :: Text -> Maybe (Typ Text) -> Fresh (Doc ann)
 prettyBinder x Nothing = return $ pretty x

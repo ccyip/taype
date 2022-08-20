@@ -19,7 +19,9 @@ module Taype.Parser (parse) where
 import Bound
 import Control.Applicative.Combinators (choice)
 import Control.Applicative.Combinators.NonEmpty (sepBy1)
+import qualified Data.HashMap.Strict as M
 import Data.List.NonEmpty (some1)
+import Taype.Environment
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
 import qualified Taype.Lexer as L
@@ -460,16 +462,34 @@ grammar = mdo
 
   return pProg
 
--- | Main parser
-parse :: [LocatedToken] -> Either LocatedError [(Text, Def a)]
+-- | Main parser which returns a global context with the list of definition
+-- names
+parse :: [LocatedToken] -> Either LocatedError ([Text], GCtx a)
 parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> Left $ renderParserError rpt
-    ([defs], _) -> Right $ close <$> defs
+    ([defs], _) ->
+      ([name | (name, def) <- defs, notCtorDef def],)
+        <$> makeGCtx defs
     (parses, _) ->
       oops $ "Ambiguous grammar: there are " <> show (length parses) <> " parses!"
   where
-    close = second (>>>= GV)
+    notCtorDef CtorDef {} = False
+    notCtorDef _ = True
+
+makeGCtx :: [(Text, Def Text)] -> Either LocatedError (GCtx a)
+makeGCtx = foldlM go initGCtx
+  where
+    go gctx (name, def) =
+      if M.member name gctx
+        then
+          Left $
+            LocatedError
+              { errLoc = getDefLoc def,
+                errCategory = "Parsing Error",
+                errMsg = "definition " <> name <> " already exists"
+              }
+        else Right $ M.insert name (def >>>= GV) gctx
 
 renderParserError :: Report Text [LocatedToken] -> LocatedError
 renderParserError Report {..} =

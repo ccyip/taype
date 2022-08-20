@@ -7,6 +7,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE LambdaCase  #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 -- |
@@ -26,6 +27,7 @@ module Taype.Syntax
     CaseAlt (..),
     Def,
     DefB (..),
+    getDefLoc,
     Attribute (..),
     LabelPolyStrategy (..),
 
@@ -247,12 +249,19 @@ data DefB f a
     CtorDef {loc :: Int, paraTypes :: [f a], dataType :: Text}
   | -- | Builtin operation
     BuiltinDef
-      { loc :: Int,
-        paraTypes :: [f a],
+      { paraTypes :: [f a],
         resType :: f a,
         strategy :: LabelPolyStrategy
       }
   deriving stock (Eq, Show, Functor, Foldable, Traversable)
+
+getDefLoc :: DefB f a -> Int
+getDefLoc = \case
+  FunDef {..} -> loc
+  ADTDef {..} -> loc
+  OADTDef {..} -> loc
+  CtorDef {..} -> loc
+  BuiltinDef {} -> -1
 
 data Attribute = SectionAttr | RetractionAttr | SafeAttr | LeakyAttr
   deriving stock (Eq, Show)
