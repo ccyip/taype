@@ -54,8 +54,10 @@ library
   hs-source-dirs:      src
   exposed-modules:     Taype
                        Taype.Error
-                       Taype.Syntax
                        Taype.Fresh
+                       Taype.Pretty
+                       Taype.Syntax
+                       Taype.Environment
                        Taype.Lexer
                        Taype.Parser
   build-depends:       bound

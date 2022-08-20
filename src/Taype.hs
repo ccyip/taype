@@ -11,12 +11,12 @@ module Taype
   )
 where
 
-import Prettyprinter
 import Prettyprinter.Render.Text
 import Taype.Syntax
 import Taype.Lexer (lex)
 import Taype.Parser (parse)
 import Taype.Error
+import Taype.Pretty
 
 test :: FilePath -> IO ()
 test file = do
@@ -24,7 +24,7 @@ test file = do
   let code = decodeUtf8 content
   case process file code of
     Left err -> putTextLn $ renderError file code err
-    Right defs -> putDoc $ pretty defs
+    Right defs -> putDoc $ prettyDefs defs
 
 process :: FilePath -> Text -> Either LocatedError [NamedDef Text]
 process file code = do
