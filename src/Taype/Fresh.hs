@@ -1,3 +1,5 @@
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
@@ -11,9 +13,10 @@
 module Taype.Fresh
   ( Name,
     FreshT,
+    MonadFresh,
     runFreshT,
-    Fresh,
-    runFresh,
+    FreshM,
+    runFreshM,
     fresh,
     freshWith,
     freshName,
@@ -27,45 +30,46 @@ where
 type Name = Int
 
 -- | Fresh name monad transformer is just state monad transformer
-type FreshT m a = StateT Name m a
+type FreshT = StateT Name
+type MonadFresh = MonadState Name
 
 runFreshT :: Monad m => FreshT m a -> m a
 runFreshT m = evalStateT m 0
 
 -- | Fresh name monad
-type Fresh a = FreshT Identity a
+type FreshM = FreshT Identity
 
-runFresh :: Fresh a -> a
-runFresh = runIdentity . runFreshT
+runFreshM :: FreshM a -> a
+runFreshM = runIdentity . runFreshT
 
 -- | Generate a fresh name as integer
-fresh :: Monad m => FreshT m Int
+fresh :: MonadFresh m => m Int
 fresh = do
   n <- get
   put (n + 1)
   return n
 
 -- | Generate a fresh name given a transform function
-freshWith :: Monad m => (Int -> Text) -> FreshT m Text
+freshWith :: MonadFresh m => (Int -> Text) -> m Text
 freshWith to = to <$> fresh
 
 -- | Generate a fresh name
-freshName :: Monad m => FreshT m Text
+freshName :: MonadFresh m => m Text
 freshName = freshWith toName
 
 -- | Generate some fresh integers
-freshes :: Monad m => Int -> FreshT m [Int]
+freshes :: MonadFresh m => Int -> m [Int]
 freshes k = do
   n <- get
   put (n + k)
   return $ take k [n ..]
 
 -- | Generate some fresh names given a transform function
-freshesWith :: Monad m => (Int -> Text) -> Int -> FreshT m [Text]
+freshesWith :: MonadFresh m => (Int -> Text) -> Int -> m [Text]
 freshesWith to k = to <<$>> freshes k
 
 -- | Generate some fresh names
-freshNames :: Monad m => Int -> FreshT m [Text]
+freshNames :: MonadFresh m => Int -> m [Text]
 freshNames = freshesWith toName
 
 toName :: Int -> Text

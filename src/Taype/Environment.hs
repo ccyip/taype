@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
 -- SPDX-License-Identifier: MIT
@@ -9,6 +11,7 @@
 module Taype.Environment
   ( Env (..),
     Options (..),
+    defaultOptions,
     GCtx,
     initGCtx,
   )
@@ -21,8 +24,18 @@ data Env a = Env {options :: Options, gctx :: GCtx a}
 data Options = Options
   { optPrintTokens :: Bool,
     optPrintLabels :: Bool,
-    optInternalNames :: Bool
+    optInternalNames :: Bool,
+    optNamePrefix :: Text
   }
+
+defaultOptions :: Options
+defaultOptions =
+  Options
+    { optPrintTokens = False,
+      optPrintLabels = False,
+      optInternalNames = False,
+      optNamePrefix = "$"
+    }
 
 type GCtx a = HashMap Text (Def a)
 
