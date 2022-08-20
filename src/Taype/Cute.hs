@@ -128,11 +128,11 @@ prettyExpr Tape {..} = prettyApp "tape" [expr]
 prettyExpr Loc {..} = prettyExpr expr
 
 -- | Pretty printer for Taype definitions
-prettyDefs :: [NamedDef Text] -> Doc ann
-prettyDefs defs = foldMap (prettyDef defs) defs <> hardline
+prettyDefs :: [(Text, Def Text)] -> Doc ann
+prettyDefs defs = foldMap (uncurry (prettyDef defs)) defs <> hardline
 
-prettyDef :: [NamedDef Text] -> NamedDef Text -> Doc ann
-prettyDef defs NamedDef {name, def} = case def of
+prettyDef :: [(Text, Def Text)] -> Text -> Def Text -> Doc ann
+prettyDef defs name def = case def of
   FunDef {..} ->
     "#" <> brackets (pretty attr) <> hardline
       <> "fn"
@@ -168,7 +168,7 @@ prettyDef defs NamedDef {name, def} = case def of
   where
     defSep = hardline <> hardline
 
-prettyCtors :: [NamedDef Text] -> Text -> Doc ann
+prettyCtors :: [(Text, Def Text)] -> Text -> Doc ann
 prettyCtors defs ctor =
   hang $
     pretty ctor <> group (foldMap ((line <>) . runFresh . prettySubExprAgg) types)
@@ -177,7 +177,7 @@ prettyCtors defs ctor =
       fromMaybe (oops $ "Cannot find the definition of " <> show ctor) $
         listToMaybe
           [ paraTypes
-            | NamedDef {name, def = CtorDef {paraTypes}} <- defs,
+            | (name, CtorDef {paraTypes}) <- defs,
               name == ctor
           ]
 

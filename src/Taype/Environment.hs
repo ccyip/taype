@@ -23,4 +23,4 @@ data Options = Options
     optInternalNames :: Bool
   }
 
-type GCtx a = HashMap Text (NamedDef a)
+type GCtx a = HashMap Text (Def a)

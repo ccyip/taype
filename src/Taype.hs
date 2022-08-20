@@ -26,7 +26,7 @@ test file = do
     Left err -> putTextLn $ renderError file code err
     Right defs -> putDoc $ prettyDefs defs
 
-process :: FilePath -> Text -> Either LocatedError [NamedDef Text]
+process :: FilePath -> Text -> Either LocatedError [(Text, Def Text)]
 process file code = do
   tokens <- lex file code
   parse tokens

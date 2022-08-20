@@ -104,7 +104,7 @@ infixToTypeFormer "~*" = OProd
 infixToTypeFormer "~+" = OSum
 infixToTypeFormer _ = oops "unknown type infix"
 
-grammar :: Grammar r (Parser r [NamedDef Text])
+grammar :: Grammar r (Parser r [(Text, Def Text)])
 grammar = mdo
   -- A program is a list of global definitions
   pProg <- rule $ concat <$> many pDef
@@ -123,16 +123,8 @@ grammar = mdo
             return $
               let ctorDefs = toList $ ctorToDef <$> ctors
                   ctorToDef ((ctorLoc, ctorName), paraTypes) =
-                    NamedDef
-                      { name = ctorName,
-                        loc = ctorLoc,
-                        def = CtorDef {dataType = name, ..}
-                      }
-               in NamedDef
-                    { def = ADTDef {ctors = snd . fst <$> ctors},
-                      ..
-                    } :
-                  ctorDefs,
+                    (ctorName, CtorDef {loc = ctorLoc, dataType = name, ..})
+               in (name, ADTDef {ctors = snd . fst <$> ctors, ..}) : ctorDefs,
           -- Oblivious ADT definition
           do
             pToken L.Obliv
@@ -148,13 +140,7 @@ grammar = mdo
             ~(argName, typ) <- pArg
             pToken L.Equals
             body <- pType
-            return $
-              one $
-                NamedDef
-                  { def =
-                      OADTDef {body = abstract1 argName body, ..},
-                    ..
-                  },
+            return $ one (name, OADTDef {body = abstract1 argName body, ..}),
           -- Function definition
           do
             let pAttr = do
@@ -176,16 +162,14 @@ grammar = mdo
             pToken L.Equals
             expr <- pExpr
             return $
-              one $
-                NamedDef
-                  { def =
-                      FunDef
-                        { attr = fromMaybe LeakyAttr attr,
-                          label = Nothing,
-                          ..
-                        },
-                    ..
-                  }
+              one
+                ( name,
+                  FunDef
+                    { attr = fromMaybe LeakyAttr attr,
+                      label = Nothing,
+                      ..
+                    }
+                )
         ]
 
   -- Expression
@@ -477,7 +461,7 @@ grammar = mdo
   return pProg
 
 -- | Main parser
-parse :: [LocatedToken] -> Either LocatedError [NamedDef a]
+parse :: [LocatedToken] -> Either LocatedError [(Text, Def a)]
 parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> Left $ renderParserError rpt
@@ -485,7 +469,7 @@ parse tokens =
     (parses, _) ->
       oops $ "Ambiguous grammar: there are " <> show (length parses) <> " parses!"
   where
-    close NamedDef {..} = NamedDef {def = def >>>= GV, ..}
+    close = second (>>>= GV)
 
 renderParserError :: Report Text [LocatedToken] -> LocatedError
 renderParserError Report {..} =

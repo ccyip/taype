@@ -25,9 +25,7 @@ module Taype.Syntax
     AppKind (..),
     CaseAlt (..),
     Def,
-    NamedDef,
     DefB (..),
-    NamedDefB (..),
     Attribute (..),
     LabelPolyStrategy (..),
 
@@ -79,9 +77,9 @@ import Control.Monad
 import Data.Deriving
 import Data.Functor.Classes
 import Data.List (findIndex, groupBy)
+import Prettyprinter
 import Taype.Error
 import qualified Text.Show
-import Prettyprinter
 
 -- | Taype expression, including the surface and the core syntax
 data Expr a
@@ -231,24 +229,30 @@ instance IsString a => IsString (BinderM a) where
 -- | Global definition
 type Def = DefB Expr
 
-type NamedDef = NamedDefB Expr
-
 -- | Generalized global definition
 data DefB f a
   = -- Function
-    FunDef {attr :: Attribute, typ :: f a, label :: Maybe Label, expr :: f a}
+    FunDef
+      { loc :: Int,
+        attr :: Attribute,
+        typ :: f a,
+        label :: Maybe Label,
+        expr :: f a
+      }
   | -- | Algebraic data type. Do not support empty type
-    ADTDef {ctors :: NonEmpty Text}
+    ADTDef {loc :: Int, ctors :: NonEmpty Text}
   | -- | Oblivious algebraic data type. Only support one argument for now
-    OADTDef {typ :: f a, body :: Scope () f a}
+    OADTDef {loc :: Int, typ :: f a, body :: Scope () f a}
   | -- | Constructor
-    CtorDef {paraTypes :: [f a], dataType :: Text}
+    CtorDef {loc :: Int, paraTypes :: [f a], dataType :: Text}
   | -- | Builtin operation
-    BuiltinDef {paraTypes :: [f a], resType :: f a, strategy :: LabelPolyStrategy}
+    BuiltinDef
+      { loc :: Int,
+        paraTypes :: [f a],
+        resType :: f a,
+        strategy :: LabelPolyStrategy
+      }
   deriving stock (Eq, Show, Functor, Foldable, Traversable)
-
-data NamedDefB f a = NamedDef {name :: Text, loc :: Int, def :: DefB f a}
-  deriving stock (Eq, Show)
 
 data Attribute = SectionAttr | RetractionAttr | SafeAttr | LeakyAttr
   deriving stock (Eq, Show)
@@ -353,7 +357,7 @@ instance Bound CaseAlt where
 instance Bound DefB where
   FunDef {..} >>>= f = FunDef {typ = typ >>= f, expr = expr >>= f, ..}
   ADTDef {..} >>>= _ = ADTDef {..}
-  OADTDef {..} >>>= f = OADTDef {typ = typ >>= f, body = body >>>= f}
+  OADTDef {..} >>>= f = OADTDef {typ = typ >>= f, body = body >>>= f, ..}
   CtorDef {..} >>>= f = CtorDef {paraTypes = paraTypes <&> (>>= f), ..}
   BuiltinDef {..} >>>= f =
     BuiltinDef
