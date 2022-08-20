@@ -12,7 +12,7 @@
 -- Portability: portable
 --
 -- Pretty printing.
-module Taype.Pretty (prettyExpr, prettyDefs, prettyDef) where
+module Taype.Cute (prettyExpr, prettyDefs, prettyDef) where
 
 import Bound
 import Prettyprinter hiding (hang, indent)

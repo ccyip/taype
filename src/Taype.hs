@@ -16,7 +16,7 @@ import Taype.Syntax
 import Taype.Lexer (lex)
 import Taype.Parser (parse)
 import Taype.Error
-import Taype.Pretty
+import Taype.Cute
 
 test :: FilePath -> IO ()
 test file = do

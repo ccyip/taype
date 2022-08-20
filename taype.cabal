@@ -55,7 +55,7 @@ library
   exposed-modules:     Taype
                        Taype.Error
                        Taype.Fresh
-                       Taype.Pretty
+                       Taype.Cute
                        Taype.Syntax
                        Taype.Environment
                        Taype.Lexer
