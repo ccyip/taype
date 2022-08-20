@@ -85,6 +85,7 @@ import Prettyprinter
 import Taype.Error
 import Taype.Fresh
 import qualified Text.Show
+import Prelude hiding (group)
 
 -- | Taype expression, including the surface and the core syntax
 data Expr a
@@ -527,12 +528,14 @@ prettyExpr Pi {..} = do
   x <- freshName
   binderDoc <- prettyBinder x (Just typ)
   bodyDoc <- prettyExpr $ instantiate1Name x body
-  return $ parens binderDoc <+> "->" <+> bodyDoc
+  return $ parens binderDoc <+> "->" <> line <> bodyDoc
 prettyExpr Lam {..} = do
   x <- freshName
-  binderDoc <- prettyBinder x maybeType
+  binderDoc <- prettyEnclosedBinder x maybeType
   bodyDoc <- prettyExpr $ instantiate1Name x body
-  return $ backslash <> binderDoc <+> "->" <+> bodyDoc
+  return $
+    hang indentLevel $
+      backslash <> binderDoc <+> "->" <> group (line <> bodyDoc)
 prettyExpr e@App {appKind = Just InfixApp, args = left : right : _, ..} = do
   fnDoc <- prettySubExprAgg fn
   prettyInfix e fnDoc left right
@@ -545,7 +548,10 @@ prettyExpr Let {..} = do
   binderDoc <- prettyBinder x maybeType
   rhsDoc <- prettyExpr rhs
   bodyDoc <- prettyExpr $ instantiate1Name x body
-  return $ "let" <+> binderDoc <+> equals <+> rhsDoc <+> "in" <> hardline <> bodyDoc
+  return $
+    align $
+      "let" <+> hang indentLevel (binderDoc <+> equals <> softline <> rhsDoc)
+        <+> "in" <> group (line <> bodyDoc)
 prettyExpr TUnit = return "Unit"
 prettyExpr VUnit = return "()"
 prettyExpr TBool = return "Bool"
@@ -558,15 +564,25 @@ prettyExpr Ite {..} = prettyIte "if" cond ifTrue ifFalse
 prettyExpr Case {..} = do
   condDoc <- prettyExpr cond
   altsDoc <- mapM prettyAlt alts
-  return $ "case" <+> condDoc <+> "of" <+> sep (toList altsDoc)
+  return $
+    align $
+      "case" <+> condDoc <+> "of"
+        <> foldMap (hardline <>) (toList altsDoc)
+        <> hardline
+        <> "end"
   where
     prettyAlt CaseAlt {..} = do
       xs <- freshNames $ length binders
       bodyDoc <- prettyExpr $ instantiateNames xs body
       return $
-        pipe <+> pretty ctor <> foldMap (\x -> space <> pretty x) xs
-          <+> "->"
-          <+> bodyDoc
+        pipe
+          <+> hang
+            indentLevel
+            ( pretty ctor <> group (foldMap ((line <>) . pretty) xs)
+                <+> "->"
+                <> softline
+                <> bodyDoc
+            )
 prettyExpr OIte {..} = prettyIte "~if" cond ifTrue ifFalse
 prettyExpr e@Prod {..} = prettyInfix e "*" left right
 prettyExpr Pair {..} = prettyPair lparen left right
@@ -576,7 +592,7 @@ prettyExpr OPair {..} = prettyPair ("~" <> lparen) left right
 prettyExpr OPCase {..} = prettyPCase "~case" ("~" <> lparen) cond body2
 prettyExpr e@OSum {..} = prettyInfix e "~+" left right
 prettyExpr OInj {..} = do
-  typeDoc <- maybe (return "") prettyInjType maybeType
+  typeDoc <- fromMaybe "" <$> mapM prettyInjType maybeType
   prettyApp ((if tag then "~inl" else "~inr") <> typeDoc) [inj]
   where
     prettyInjType typ = angles <$> prettyExpr typ
@@ -585,24 +601,32 @@ prettyExpr OCase {..} = do
   xl <- freshName
   xr <- freshName
   lBodyDoc <- prettyExpr $ instantiate1Name xl lBody
-  rBodyDoc <- prettyExpr $ instantiate1Name xr lBody
+  rBodyDoc <- prettyExpr $ instantiate1Name xr rBody
   return $
-    "~case" <+> condDoc <+> "of"
-      <+> pipe
-      <+> "~inl"
-      <+> pretty xl
-      <+> "->"
-      <+> lBodyDoc
-      <+> pipe
-      <+> "~inr"
-      <+> pretty xr
-      <+> "->"
-      <+> rBodyDoc
+    align $
+      "~case" <+> condDoc <+> "of" <> hardline
+        <> pipe
+          <+> hang
+            indentLevel
+            ( "~inl" <+> pretty xl <+> "->"
+                <> softline
+                <> lBodyDoc
+            )
+        <> hardline
+        <> pipe
+          <+> hang
+            indentLevel
+            ( "~inr" <+> pretty xr <+> "->"
+                <> softline
+                <> rBodyDoc
+            )
+        <> hardline
+        <> "end"
 prettyExpr Mux {..} = prettyApp "mux" [cond, ifTrue, ifFalse]
 prettyExpr Asc {..} = do
   typeDoc <- prettyExpr typ
   exprDoc <- prettyExpr expr
-  return $ exprDoc <+> colon <+> typeDoc
+  return $ parens $ align $ exprDoc <> line <> colon <+> typeDoc
 prettyExpr Promote {..} = do
   doc <- prettySubExprAgg expr
   return $ "!" <> doc
@@ -614,15 +638,34 @@ instance Pretty (NamedDef Text) where
   pretty _ = "<cannot print a standalone definition>"
   prettyList defs = foldMap (prettyDef defs) defs <> hardline
 
+instance Pretty Attribute where
+  pretty SectionAttr = "section"
+  pretty RetractionAttr = "retraction"
+  pretty SafeAttr = "safe"
+  pretty LeakyAttr = "leaky"
+
 prettyDef :: [NamedDef Text] -> NamedDef Text -> Doc ann
 prettyDef defs NamedDef {name, def} = case def of
   FunDef {..} ->
-    "#" <> lbracket <> pretty attr <> rbracket <> hardline
-      <> "fn" <+> pretty name <+> colon <+> pretty typ <+> equals <+> pretty expr
+    "#" <> brackets (pretty attr) <> hardline
+      <> "fn"
+      <+> pretty name
+      <+> colon
+      <+> alignType (pretty typ)
+      <+> equals
+      <> hardline
+      <> indent indentLevel (pretty expr)
       <> defSep
   ADTDef {..} ->
-    "data" <+> pretty name <+> equals
-      <+> concatWith (\x y -> x <+> pipe <+> y) (prettyCtors defs <$> ctors)
+    "data" <+> pretty name
+      <+> align
+        ( group
+            ( equals
+                <+> concatWith
+                  (\x y -> x <> line <> pipe <+> y)
+                  (prettyCtors defs <$> ctors)
+            )
+        )
       <> defSep
   OADTDef {..} ->
     "obliv" <+> pretty name <+> rest
@@ -640,7 +683,8 @@ prettyDef defs NamedDef {name, def} = case def of
 
 prettyCtors :: [NamedDef Text] -> Text -> Doc ann
 prettyCtors defs ctor =
-  pretty ctor <> foldMap ((space <>) . runFresh . prettySubExprAgg) types
+  hang indentLevel $
+    pretty ctor <> group (foldMap ((line <>) . runFresh . prettySubExprAgg) types)
   where
     types =
       fromMaybe (oops $ "Cannot find the definition of " <> show ctor) $
@@ -654,26 +698,37 @@ prettyBinder :: Text -> Maybe (Typ Text) -> Fresh (Doc ann)
 prettyBinder x Nothing = return $ pretty x
 prettyBinder x (Just typ) = do
   typeDoc <- prettyExpr typ
-  return $ pretty x <+> colon <+> typeDoc
+  return $ hang indentLevel $ pretty x <> softline <> colon <+> alignType typeDoc
+
+prettyEnclosedBinder :: Text -> Maybe (Typ Text) -> Fresh (Doc ann)
+prettyEnclosedBinder x maybeType = do
+  doc <- prettyBinder x maybeType
+  return $ if isJust maybeType then parens doc else doc
 
 prettyIte :: Doc ann -> Expr Text -> Expr Text -> Expr Text -> Fresh (Doc ann)
 prettyIte ifDoc cond ifTrue ifFalse = do
   condDoc <- prettyExpr cond
   ifTrueDoc <- prettyExpr ifTrue
   ifFalseDoc <- prettyExpr ifFalse
-  return $ ifDoc <+> condDoc <+> "then" <+> ifTrueDoc <+> "else" <+> ifFalseDoc
+  return $
+    group $
+      ifDoc <+> condDoc
+        <> line
+        <> "then" <+> ifTrueDoc
+        <> line
+        <> "else" <+> ifFalseDoc
 
 prettyInfix :: Expr Text -> Doc ann -> Expr Text -> Expr Text -> Fresh (Doc ann)
 prettyInfix super infixDoc left right = do
   leftDoc <- prettySubExpr super left
   rightDoc <- prettySubExpr super right
-  return $ leftDoc <+> infixDoc <+> rightDoc
+  return $ hang indentLevel $ leftDoc <> softline <> infixDoc <+> rightDoc
 
 prettyPair :: Doc ann -> Expr Text -> Expr Text -> Fresh (Doc ann)
 prettyPair lDoc left right = do
   leftDoc <- prettyExpr left
   rightDoc <- prettyExpr right
-  return $ lDoc <> leftDoc <> comma <+> rightDoc <> rparen
+  return $ lDoc <> align (leftDoc <> comma <> softline <> rightDoc <> rparen)
 
 prettyPCase :: Doc ann -> Doc ann -> Expr Text -> Scope Bool Expr Text -> Fresh (Doc ann)
 prettyPCase caseDoc lDoc cond body2 = do
@@ -682,28 +737,44 @@ prettyPCase caseDoc lDoc cond body2 = do
   xr <- freshName
   bodyDoc <- prettyExpr $ instantiate2Names xl xr body2
   return $
-    caseDoc <+> condDoc <+> "of"
-      <+> lDoc <> pretty xl <> comma
-      <+> pretty xr <> rparen
-      <+> "->"
-      <+> bodyDoc
+    align $
+      caseDoc <+> condDoc <+> "of" <> hardline
+        <> hang
+          indentLevel
+          ( lDoc
+              <> pretty xl
+              <> comma
+              <+> pretty xr
+              <> rparen
+              <+> "->"
+              <> softline
+              <> bodyDoc
+          )
+        <> hardline
+        <> "end"
 
 prettyApp :: Doc ann -> [Expr Text] -> Fresh (Doc ann)
 prettyApp fnDoc exprs = do
   docs <- mapM prettySubExprAgg exprs
-  return $ fnDoc <> foldMap (space <>) docs
+  return $
+    hang indentLevel $
+      fnDoc <> group (foldMap (line <>) docs)
 
 -- | Add parentheses to the expressions according to their precedence level
 prettySubExpr :: Expr Text -> Expr Text -> Fresh (Doc ann)
-prettySubExpr super sub = do
-  doc <- prettyExpr sub
-  return $ if exprLevel super > exprLevel sub then doc else parens doc
+prettySubExpr super sub = prettySubExprIf sub $ exprLevel super > exprLevel sub
 
 -- | Add parentheses to the expressions more aggressively
 prettySubExprAgg :: Expr Text -> Fresh (Doc ann)
-prettySubExprAgg sub = do
+prettySubExprAgg sub = prettySubExprIf sub $ exprLevel sub == 0
+
+prettySubExprIf :: Expr Text -> Bool -> Fresh (Doc ann)
+prettySubExprIf sub b = do
   doc <- prettyExpr sub
-  return $ if exprLevel sub == 0 then doc else parens doc
+  return $ if b then doc else parens doc
+
+alignType :: Doc ann -> Doc ann
+alignType = align . group
 
 exprLevel :: Expr a -> Int
 exprLevel = \case
@@ -732,8 +803,5 @@ exprLevel = \case
   Loc {..} -> exprLevel expr
   _ -> 90
 
-instance Pretty Attribute where
-  pretty SectionAttr = "section"
-  pretty RetractionAttr = "retraction"
-  pretty SafeAttr = "safe"
-  pretty LeakyAttr = "leaky"
+indentLevel :: Int
+indentLevel = 2
