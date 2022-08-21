@@ -49,7 +49,7 @@ newtype CuteM a = CuteM { unCuteM :: FreshT (Reader Options) a }
   deriving newtype (Functor, Applicative, Monad, MonadFresh, MonadReader Options)
 
 runCuteM :: Options -> CuteM a -> a
-runCuteM opt (CuteM m) = runReader (runFreshT m) opt
+runCuteM opts (CuteM m) = runReader (runFreshT m) opts
 
 instance IsString a => IsString (CuteM a) where
   fromString = return . fromString

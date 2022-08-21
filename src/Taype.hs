@@ -9,7 +9,7 @@
 --
 -- Top-level functions.
 module Taype
-  ( test,
+  ( run,
   )
 where
 
@@ -20,15 +20,17 @@ import Taype.Error
 import Taype.Lexer (lex, printTokens)
 import Taype.Parser (parse)
 
-test :: Options -> FilePath -> IO ()
-test options file = do
+run :: Options -> IO ()
+run options@Options {optFile = file} = do
   content <- readFileBS file
   let code = decodeUtf8 content
-  case process file code of
-    Left err -> putTextLn $ renderError file code err
-    Right (defs, gctx) -> putDoc $ cuteDefs defs Env {..}
+  result <- runExceptT $ process file code options
+  whenLeft_ result $ putTextLn . renderError file code
 
-process :: FilePath -> Text -> Either LocatedError ([Text], GCtx a)
-process file code = do
-  tokens <- lex file code
-  parse tokens
+process :: FilePath -> Text -> Options -> ExceptT LocatedError IO ()
+process file code options@Options {..} = do
+  tokens <- hoistEither $ lex file code
+  when optPrintTokens $ printTokens file code tokens >> putStr "\n"
+  (defs, gctx) <- hoistEither $ parse tokens
+  -- Always print out the source code for now
+  lift $ putDoc $ cuteDefs defs Env {..}

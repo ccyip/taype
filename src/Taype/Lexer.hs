@@ -228,7 +228,7 @@ renderLexerError ParseErrorBundle {bundleErrors = err :| _} =
     showErrorItem EndOfInput = "end of input"
     proxy = Proxy :: Proxy Text
 
-printTokens :: FilePath -> Text -> [LocatedToken] -> IO ()
+printTokens :: MonadIO m => FilePath -> Text -> [LocatedToken] -> m ()
 printTokens file code tokens = mapM_ go positions
   where
     go (LocatedToken {..}, SourcePos {..}) =

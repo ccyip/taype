@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DerivingStrategies #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -11,7 +11,6 @@
 module Taype.Environment
   ( Env (..),
     Options (..),
-    defaultOptions,
     GCtx,
     initGCtx,
   )
@@ -22,20 +21,14 @@ import Taype.Syntax
 data Env a = Env {options :: Options, gctx :: GCtx a}
 
 data Options = Options
-  { optPrintTokens :: Bool,
-    optPrintLabels :: Bool,
+  { optFile :: FilePath,
     optInternalNames :: Bool,
-    optNamePrefix :: Text
+    optNamePrefix :: Text,
+    optPrintLabels :: Bool,
+    optPrintTokens :: Bool,
+    optPrintSource :: Bool
   }
-
-defaultOptions :: Options
-defaultOptions =
-  Options
-    { optPrintTokens = False,
-      optPrintLabels = False,
-      optInternalNames = False,
-      optNamePrefix = "$"
-    }
+  deriving stock (Eq, Show)
 
 type GCtx a = HashMap Text (Def a)
 
