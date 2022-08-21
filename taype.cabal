@@ -24,13 +24,6 @@ source-repository head
   location:            https://github.com/ccyip/taype.git
 
 common common-options
-  build-depends:       base >= 4.14.3.0 && < 4.16
-                     , relude
-
-  mixins:              base hiding (Prelude)
-                     , relude (Relude as Prelude)
-                     , relude
-
   ghc-options:         -Wall
                        -Wcompat
                        -Widentities
@@ -60,19 +53,25 @@ library
                        Taype.Environment
                        Taype.Lexer
                        Taype.Parser
-  build-depends:       bound
+  mixins:              base hiding (Prelude)
+                     , relude (Relude as Prelude)
+                     , relude
+  build-depends:       base >= 4.14.3.0 && < 4.16
+                     , relude
+                     , bound
                      , deriving-compat
                      , prettyprinter
                      , megaparsec
                      , Earley
                      , parser-combinators
+                     , optparse-applicative
 
 executable taype
   import:              common-options
   hs-source-dirs:      app
   main-is:             Main.hs
-  build-depends:       taype
-                     , optparse-applicative
+  build-depends:       base
+                     , taype
   ghc-options:         -threaded
                        -rtsopts
                        -with-rtsopts=-N
