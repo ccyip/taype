@@ -16,7 +16,8 @@ module Taype
 where
 
 import Options.Applicative
-import Prettyprinter.Render.Text
+import Prettyprinter.Render.Text (putDoc)
+import Prettyprinter.Util (putDocW)
 import Taype.Cute
 import Taype.Environment
 import Taype.Error
@@ -36,7 +37,9 @@ process file code options@Options {..} = do
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
   (defs, gctx) <- hoistEither $ parse tokens
   -- Always print out the source code for now
-  lift $ putDoc $ cuteDefs defs Env {..}
+  lift $ printDoc $ cuteDefs defs Env {..}
+  where
+    printDoc = maybe putDoc putDocW optWidth
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)
@@ -71,4 +74,9 @@ opts = do
     switch $
       long "print-source" <> short 's'
         <> help "Whether to print the source code (for internal debugging)"
+  optWidth <-
+    optional $
+      option auto $
+        long "width" <> short 'w'
+          <> help "Window width (for debugging pretty printer)"
   return Options {..}

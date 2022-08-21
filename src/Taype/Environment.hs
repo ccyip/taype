@@ -26,7 +26,8 @@ data Options = Options
     optNamePrefix :: Text,
     optPrintLabels :: Bool,
     optPrintTokens :: Bool,
-    optPrintSource :: Bool
+    optPrintSource :: Bool,
+    optWidth :: Maybe Int
   }
   deriving stock (Eq, Show)
 
