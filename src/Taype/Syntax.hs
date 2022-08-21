@@ -3,11 +3,11 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE LambdaCase  #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 -- |
@@ -93,12 +93,14 @@ data Expr a
     Pi
       { typ :: Typ a,
         label :: Maybe Label,
+        binder :: Binder,
         body :: Scope () Typ a
       }
   | -- | Lambda abstraction
     Lam
       { maybeType :: Maybe (Typ a),
         label :: Maybe Label,
+        binder :: Binder,
         body :: Scope () Expr a
       }
   | -- | Application, including function application, type application, etc
@@ -112,6 +114,7 @@ data Expr a
       { maybeType :: Maybe (Typ a),
         label :: Maybe Label,
         rhs :: Expr a,
+        binder :: Binder,
         body :: Scope () Expr a
       }
   | -- | Unit type
@@ -158,6 +161,7 @@ data Expr a
     PCase
       { maybeType :: Maybe (Typ a),
         cond :: Expr a,
+        binder2 :: (Binder, Binder),
         body2 :: Scope Bool Expr a
       }
   | -- | Oblivious product type
@@ -167,6 +171,7 @@ data Expr a
   | -- | Case analysis for oblivious product
     OPCase
       { cond :: Expr a,
+        binder2 :: (Binder, Binder),
         body2 :: Scope Bool Expr a
       }
   | -- | Oblivious sum type
@@ -181,7 +186,9 @@ data Expr a
     OCase
       { maybeType :: Maybe (Typ a),
         cond :: Expr a,
+        lBinder :: Binder,
         lBody :: Scope () Expr a,
+        rBinder :: Binder,
         rBody :: Scope () Expr a
       }
   | -- | Oblivious conditional, i.e. multiplexer
@@ -472,15 +479,15 @@ instantiate2Binders = instantiate2By $ return . fromBinder
 instantiateBinders :: Monad f => [BinderM a] -> Scope Int f a -> f a
 instantiateBinders = instantiateManyBy $ return . fromBinder
 
-lam_ :: Eq a => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a
+lam_ :: a ~ Text => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a
 lam_ binder maybeType body =
   Lam {label = Nothing, body = abstract1Binder binder body, ..}
 
 -- | A smart constructor for lambda abstraction that takes a list of arguments
-lams_ :: Eq a => NonEmpty (BinderM a, Maybe (Typ a)) -> Expr a -> Expr a
+lams_ :: a ~ Text => NonEmpty (BinderM a, Maybe (Typ a)) -> Expr a -> Expr a
 lams_ args body = foldr (uncurry lam_) body args
 
-pi_ :: Eq a => BinderM a -> Typ a -> Expr a -> Expr a
+pi_ :: a ~ Text => BinderM a -> Typ a -> Expr a -> Expr a
 pi_ binder typ body =
   Pi {label = Nothing, body = abstract1Binder binder body, ..}
 
@@ -493,12 +500,12 @@ iapp_ fn args = App {appKind = Just InfixApp, ..}
 tapp_ :: Expr a -> [Expr a] -> Typ a
 tapp_ fn args = App {appKind = Just TypeApp, ..}
 
-let_ :: Eq a => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a -> Expr a
+let_ :: a ~ Text => BinderM a -> Maybe (Typ a) -> Expr a -> Expr a -> Expr a
 let_ binder maybeType rhs body =
   Let {label = Nothing, body = abstract1Binder binder body, ..}
 
 -- | A smart constructor for let that takes a list of bindings
-lets_ :: Eq a => NonEmpty (BinderM a, Maybe (Typ a), Expr a) -> Expr a -> Expr a
+lets_ :: a ~ Text => NonEmpty (BinderM a, Maybe (Typ a), Expr a) -> Expr a -> Expr a
 lets_ bindings body = foldr go body bindings
   where
     go (binder, maybeType, rhs) = let_ binder maybeType rhs
@@ -515,7 +522,7 @@ case_ cond alts = Case {maybeType = Nothing, alts = abstr <$> alts, ..}
     abstr (ctor, binders, body) =
       CaseAlt {body = abstractBinders binders body, ..}
 
-ocase_ :: Eq a => Expr a -> BinderM a -> Expr a -> BinderM a -> Expr a -> Expr a
+ocase_ :: a ~ Text => Expr a -> BinderM a -> Expr a -> BinderM a -> Expr a -> Expr a
 ocase_ cond lBinder lBody rBinder rBody =
   OCase
     { maybeType = Nothing,
@@ -524,10 +531,19 @@ ocase_ cond lBinder lBody rBinder rBody =
       ..
     }
 
-pcase_ :: Eq a => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
-pcase_ cond left right body =
-  PCase {maybeType = Nothing, body2 = abstract2Binders left right body, ..}
+pcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
+pcase_ cond lBinder rBinder body =
+  PCase
+    { maybeType = Nothing,
+      binder2 = (lBinder, rBinder),
+      body2 = abstract2Binders lBinder rBinder body,
+      ..
+    }
 
-opcase_ :: Eq a => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
-opcase_ cond left right body =
-  OPCase {body2 = abstract2Binders left right body, ..}
+opcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
+opcase_ cond lBinder rBinder body =
+  OPCase
+    { binder2 = (lBinder, rBinder),
+      body2 = abstract2Binders lBinder rBinder body,
+      ..
+    }
