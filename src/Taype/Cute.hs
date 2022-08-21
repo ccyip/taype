@@ -69,11 +69,11 @@ instance Cute Text
 cuteExpr :: Expr Text -> CuteM (Doc ann)
 cuteExpr V {..} = cute name
 cuteExpr GV {..} = cute ref
-cuteExpr Pi {..} = do
+cuteExpr e@Pi {..} = do
   x <- freshNameOrBinder binder
-  binderDoc <- cuteBinder x (Just typ)
+  binderDoc <- cuteTypeBinder e x typ binder
   bodyDoc <- cuteExpr $ instantiate1Name x body
-  return $ parens binderDoc <+> "->" <> line <> bodyDoc
+  return $ binderDoc <+> "->" <> line <> bodyDoc
 cuteExpr Lam {..} = do
   x <- freshNameOrBinder binder
   binderDoc <- cuteEnclosedBinder x maybeType
@@ -208,6 +208,13 @@ cuteEnclosedBinder :: Text -> Maybe (Typ Text) -> CuteM (Doc ann)
 cuteEnclosedBinder x maybeType = do
   doc <- cuteBinder x maybeType
   return $ if isJust maybeType then parens doc else doc
+
+cuteTypeBinder :: Typ Text -> Text -> Typ Text -> Binder -> CuteM (Doc ann)
+cuteTypeBinder super x typ = \case
+  Named _ _ -> go
+  Anon -> ifM (asks optInternalNames) go (cuteSubExpr super typ)
+  where
+    go = parens <$> cuteBinder x (Just typ)
 
 cuteIte :: Doc ann -> Expr Text -> Expr Text -> Expr Text -> CuteM (Doc ann)
 cuteIte accent cond ifTrue ifFalse = do
