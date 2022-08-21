@@ -133,16 +133,16 @@ grammar = mdo
             ~(loc, name) <- pLocatedIdent
             let pArg = do
                   pToken L.LParen
-                  argName <- pIdent
+                  binder <- pBinder
                   pToken L.Colon
                   typ <- pType
                   pToken L.RParen
-                  return (argName, typ)
+                  return (binder, typ)
             -- Only support one argument for oblivious type at the moment
-            ~(argName, typ) <- pArg
+            ~(binder, typ) <- pArg
             pToken L.Equals
             body <- pType
-            return $ one (name, OADTDef {body = abstract1 argName body, ..}),
+            return $ one (name, OADTDef {body = abstract1Binder binder body, ..}),
           -- Function definition
           do
             let pAttr = do

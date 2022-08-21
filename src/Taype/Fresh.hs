@@ -19,10 +19,6 @@ module Taype.Fresh
     runFreshM,
     fresh,
     freshWith,
-    freshName,
-    freshes,
-    freshesWith,
-    freshNames,
   )
 where
 
@@ -52,25 +48,3 @@ fresh = do
 -- | Generate a fresh name given a transform function
 freshWith :: MonadFresh m => (Int -> Text) -> m Text
 freshWith to = to <$> fresh
-
--- | Generate a fresh name
-freshName :: MonadFresh m => m Text
-freshName = freshWith toName
-
--- | Generate some fresh integers
-freshes :: MonadFresh m => Int -> m [Int]
-freshes k = do
-  n <- get
-  put (n + k)
-  return $ take k [n ..]
-
--- | Generate some fresh names given a transform function
-freshesWith :: MonadFresh m => (Int -> Text) -> Int -> m [Text]
-freshesWith to k = to <<$>> freshes k
-
--- | Generate some fresh names
-freshNames :: MonadFresh m => Int -> m [Text]
-freshNames = freshesWith toName
-
-toName :: Int -> Text
-toName n = "$" <> show n

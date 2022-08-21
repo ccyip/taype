@@ -1,11 +1,11 @@
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
-{-# LANGUAGE DerivingStrategies #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -18,7 +18,7 @@
 module Taype.Cute
   ( Cute,
     cute,
-    CuteM(..),
+    CuteM (..),
     runCuteM,
     cuteExpr,
     cuteDefs,
@@ -45,7 +45,8 @@ hang = PP.hang indentLevel
 indent :: Doc ann -> Doc ann
 indent = PP.indent indentLevel
 
-newtype CuteM a = CuteM { unCuteM :: FreshT (Reader Options) a }
+-- | A context for fresh name generation and environment
+newtype CuteM a = CuteM {unCuteM :: FreshT (Reader Options) a}
   deriving newtype (Functor, Applicative, Monad, MonadFresh, MonadReader Options)
 
 runCuteM :: Options -> CuteM a -> a
@@ -61,6 +62,7 @@ class Cute a where
   cute = return <$> pretty
 
 instance Cute Int
+
 instance Cute Text
 
 -- | Pretty printer for Taype expressions
@@ -68,12 +70,12 @@ cuteExpr :: Expr Text -> CuteM (Doc ann)
 cuteExpr V {..} = cute name
 cuteExpr GV {..} = cute ref
 cuteExpr Pi {..} = do
-  x <- freshName
+  x <- freshNameOrBinder binder
   binderDoc <- cuteBinder x (Just typ)
   bodyDoc <- cuteExpr $ instantiate1Name x body
   return $ parens binderDoc <+> "->" <> line <> bodyDoc
 cuteExpr Lam {..} = do
-  x <- freshName
+  x <- freshNameOrBinder binder
   binderDoc <- cuteEnclosedBinder x maybeType
   bodyDoc <- cuteExpr $ instantiate1Name x body
   return $ hang $ backslash <> binderDoc <+> "->" <> group (line <> bodyDoc)
@@ -85,7 +87,7 @@ cuteExpr App {..} = do
   fnDoc <- cuteSubExprAgg fn
   cuteApp fnDoc args
 cuteExpr Let {..} = do
-  x <- freshName
+  x <- freshNameOrBinder binder
   binderDoc <- cuteBinder x maybeType
   rhsDoc <- cuteExpr rhs
   bodyDoc <- cuteExpr $ instantiate1Name x body
@@ -111,23 +113,13 @@ cuteExpr Case {..} = do
         <> foldMap (hardline <>) (toList altsDoc)
         <> hardline
         <> "end"
-  where
-    cuteAlt CaseAlt {..} = do
-      xs <- freshNames $ length binders
-      bodyDoc <- cuteExpr $ instantiateNames xs body
-      return $
-        pipe
-          <+> hang
-            ( pretty ctor <> group (foldMap ((line <>) . pretty) xs)
-                <+> "->" <> softline <> bodyDoc
-            )
 cuteExpr OIte {..} = cuteIte "~" cond ifTrue ifFalse
 cuteExpr e@Prod {..} = cuteInfix e "*" left right
 cuteExpr Pair {..} = cutePair "" left right
-cuteExpr PCase {..} = cutePCase "" cond body2
+cuteExpr PCase {..} = cutePCase "" cond lBinder rBinder body2
 cuteExpr e@OProd {..} = cuteInfix e "~*" left right
 cuteExpr OPair {..} = cutePair "~" left right
-cuteExpr OPCase {..} = cutePCase "~" cond body2
+cuteExpr OPCase {..} = cutePCase "~" cond lBinder rBinder body2
 cuteExpr e@OSum {..} = cuteInfix e "~+" left right
 cuteExpr OInj {..} = do
   typeDoc <- fromMaybe "" <$> mapM cuteInjType maybeType
@@ -136,8 +128,8 @@ cuteExpr OInj {..} = do
     cuteInjType typ = angles <$> cuteExpr typ
 cuteExpr OCase {..} = do
   condDoc <- cuteExpr cond
-  xl <- freshName
-  xr <- freshName
+  xl <- freshNameOrBinder lBinder
+  xr <- freshNameOrBinder rBinder
   lBodyDoc <- cuteExpr $ instantiate1Name xl lBody
   rBodyDoc <- cuteExpr $ instantiate1Name xr rBody
   return $
@@ -198,7 +190,7 @@ cuteDef name Env {..} =
       "obliv" <+> pretty name <+> rest
       where
         rest = go $ do
-          x <- freshName
+          x <- freshNameOrBinder binder
           binderDoc <- cuteBinder x (Just typ)
           bodyDoc <- cuteExpr (instantiate1Name x body)
           return $ parens binderDoc <+> equals <> hardline <> bodyDoc
@@ -244,11 +236,17 @@ cutePair accent left right = do
     accent <> lparen
       <> align (leftDoc <> comma <> softline <> rightDoc <> rparen)
 
-cutePCase :: Doc ann -> Expr Text -> Scope Bool Expr Text -> CuteM (Doc ann)
-cutePCase accent cond body2 = do
+cutePCase ::
+  Doc ann ->
+  Expr Text ->
+  Binder ->
+  Binder ->
+  Scope Bool Expr Text ->
+  CuteM (Doc ann)
+cutePCase accent cond lBinder rBinder body2 = do
   condDoc <- cuteExpr cond
-  xl <- freshName
-  xr <- freshName
+  xl <- freshNameOrBinder lBinder
+  xr <- freshNameOrBinder rBinder
   bodyDoc <- cuteExpr $ instantiate2Names xl xr body2
   return $
     align $
@@ -264,6 +262,17 @@ cuteApp :: Doc ann -> [Expr Text] -> CuteM (Doc ann)
 cuteApp fnDoc exprs = do
   docs <- mapM cuteSubExprAgg exprs
   return $ hang $ fnDoc <> group (foldMap (line <>) docs)
+
+cuteAlt :: CaseAlt Expr Text -> CuteM (Doc ann)
+cuteAlt CaseAlt {..} = do
+  xs <- freshNamesOrBinders binders
+  bodyDoc <- cuteExpr $ instantiateNames xs body
+  return $
+    pipe
+      <+> hang
+        ( pretty ctor <> group (foldMap ((line <>) . pretty) xs)
+            <+> "->" <> softline <> bodyDoc
+        )
 
 -- | Add parentheses to the expressions according to their precedence level
 cuteSubExpr :: Expr Text -> Expr Text -> CuteM (Doc ann)
@@ -307,3 +316,13 @@ exprLevel = \case
   Tape {} -> 10
   Loc {..} -> exprLevel expr
   _ -> 90
+
+freshNameOrBinder :: Binder -> CuteM Text
+freshNameOrBinder binder = do
+  Options {..} <- ask
+  -- Always generate new name even if we use binder
+  x <- freshWith $ (optNamePrefix <>) . show
+  return $ if optInternalNames then x else toText binder
+
+freshNamesOrBinders :: [Binder] -> CuteM [Text]
+freshNamesOrBinders = mapM freshNameOrBinder

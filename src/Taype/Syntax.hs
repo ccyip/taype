@@ -161,7 +161,8 @@ data Expr a
     PCase
       { maybeType :: Maybe (Typ a),
         cond :: Expr a,
-        binder2 :: (Binder, Binder),
+        lBinder :: Binder,
+        rBinder :: Binder,
         body2 :: Scope Bool Expr a
       }
   | -- | Oblivious product type
@@ -171,7 +172,8 @@ data Expr a
   | -- | Case analysis for oblivious product
     OPCase
       { cond :: Expr a,
-        binder2 :: (Binder, Binder),
+        lBinder :: Binder,
+        rBinder :: Binder,
         body2 :: Scope Bool Expr a
       }
   | -- | Oblivious sum type
@@ -235,6 +237,10 @@ data BinderM a = Named Int a | Anon
 instance IsString a => IsString (BinderM a) where
   fromString = Named (-1) . fromString
 
+instance ToText a => ToText (BinderM a) where
+  toText (Named _ a) = toText a
+  toText Anon = "_"
+
 -- | Global definition
 type Def = DefB Expr
 
@@ -251,7 +257,7 @@ data DefB f a
   | -- | Algebraic data type. Do not support empty type
     ADTDef {loc :: Int, ctors :: NonEmpty Text}
   | -- | Oblivious algebraic data type. Only support one argument for now
-    OADTDef {loc :: Int, typ :: f a, body :: Scope () f a}
+    OADTDef {loc :: Int, typ :: f a, binder :: Binder, body :: Scope () f a}
   | -- | Constructor
     CtorDef {loc :: Int, paraTypes :: [f a], dataType :: Text}
   | -- | Builtin operation
@@ -533,17 +539,8 @@ ocase_ cond lBinder lBody rBinder rBody =
 
 pcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 pcase_ cond lBinder rBinder body =
-  PCase
-    { maybeType = Nothing,
-      binder2 = (lBinder, rBinder),
-      body2 = abstract2Binders lBinder rBinder body,
-      ..
-    }
+  PCase {maybeType = Nothing, body2 = abstract2Binders lBinder rBinder body, ..}
 
 opcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 opcase_ cond lBinder rBinder body =
-  OPCase
-    { binder2 = (lBinder, rBinder),
-      body2 = abstract2Binders lBinder rBinder body,
-      ..
-    }
+  OPCase {body2 = abstract2Binders lBinder rBinder body, ..}
