@@ -44,6 +44,9 @@ indentLevel = 2
 hang :: Doc ann -> Doc ann
 hang = PP.hang indentLevel
 
+indent :: Doc ann -> Doc ann
+indent = PP.indent indentLevel
+
 sepWith :: Foldable t => Doc ann -> t (Doc ann) -> Doc ann
 sepWith s = concatWith (\x y -> x <> s <> y)
 
@@ -202,7 +205,6 @@ cuteTypeBinder super x typ = \case
   where
     go = parens <$> cuteBinder x (Just typ)
 
--- Quite hacky
 cuteLam :: Bool -> Expr Text -> CuteM (Doc ann)
 cuteLam isRoot e = do
   (binderDocs, bodyDoc) <- go e
@@ -210,23 +212,17 @@ cuteLam isRoot e = do
     if null binderDocs
       then if isRoot then sep1 bodyDoc else oops "Lambda has no binder"
       else
-        if isRoot
+        if isRoot -- Quite hacky here
           then
             group
               ( flatAlt
-                  ( hardline <> group (mkBindersDoc binderDocs)
-                      <> nest indentLevel hardline
-                  )
+                  (hardline <> group (mkBindersDoc binderDocs) <> hardline)
                   (space <> mkBindersDoc binderDocs)
               )
               <> column
                 ( \k ->
                     nesting
-                      ( \i ->
-                          if k - i <= indentLevel
-                            then align bodyDoc
-                            else sep1 bodyDoc
-                      )
+                      (\i -> if k <= i then indent bodyDoc else sep1 bodyDoc)
                 )
           else hang $ group (mkBindersDoc binderDocs) <> sep1 bodyDoc
   where
