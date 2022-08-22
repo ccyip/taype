@@ -502,8 +502,8 @@ renderParserError Report {..} =
     }
   where
     unexpectedToken = listToMaybe unconsumed
-    errMsg = maybe "unexpected end of input" showUnexpected unexpectedToken
-    showUnexpected LocatedToken {..} = "unexpected " <> renderToken token
+    errMsg = maybe "Unexpected end of input" showUnexpected unexpectedToken
+    showUnexpected LocatedToken {..} = "Unexpected " <> renderToken token
 
 renderToken :: Token -> Text
 renderToken = \case

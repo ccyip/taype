@@ -222,9 +222,9 @@ renderLexerError ParseErrorBundle {bundleErrors = err :| _} =
       errCategory = "Lexing Error"
     }
   where
-    showError (TrivialError _ u _) = maybe "unknown error" showUnexpected u
-    showError (FancyError _ _) = "unknown error"
-    showUnexpected = ("unexpected " <>) . showErrorItem
+    showError (TrivialError _ u _) = maybe "Unknown error" showUnexpected u
+    showError (FancyError _ _) = "Unknown error"
+    showUnexpected = ("Unexpected " <>) . showErrorItem
     showErrorItem (Tokens ts) = toText (showTokens proxy ts)
     showErrorItem (Label lab) = toText $ toList lab
     showErrorItem EndOfInput = "end of input"
