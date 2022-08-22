@@ -307,7 +307,7 @@ grammar = mdo
                     pToken L.LParen
                     binder <- pBinder
                     pToken L.Colon
-                    typ <- pProdType
+                    typ <- pType
                     pToken L.RParen
                     return (binder, typ)
                 ]
