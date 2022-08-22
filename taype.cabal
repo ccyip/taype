@@ -65,6 +65,7 @@ library
                      , Earley
                      , parser-combinators
                      , optparse-applicative
+                     , mtl
 
 executable taype
   import:              common-options

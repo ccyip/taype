@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -19,6 +20,7 @@ module Taype.Lexer
   )
 where
 
+import Control.Monad.Error.Class
 import Data.Char
 import qualified Data.Text as T
 import Taype.Error
@@ -209,12 +211,12 @@ pTokens :: Parser [LocatedToken]
 pTokens = space *> manyTill pLocatedToken eof
 
 -- | Taype lexer
-lex :: FilePath -> Text -> Either Error [LocatedToken]
-lex = first renderLexerError <<$>> parse pTokens
+lex :: MonadError Err m => FilePath -> Text -> m [LocatedToken]
+lex file code = liftEither $ first renderLexerError (parse pTokens file code)
 
-renderLexerError :: ParseErrorBundle Text Void -> Error
+renderLexerError :: ParseErrorBundle Text Void -> Err
 renderLexerError ParseErrorBundle {bundleErrors = err :| _} =
-  Error
+  Err
     { errLoc = errorOffset err,
       errMsg = showError err,
       errCategory = "Lexing Error"

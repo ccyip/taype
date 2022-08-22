@@ -4,7 +4,7 @@
 
 module Taype.Error
   ( oops,
-    Error (..),
+    Err (..),
     initPosState,
     getLocation,
     renderLocation,
@@ -21,7 +21,7 @@ import Text.Megaparsec
 oops :: Text -> a
 oops msg = error $ "Oops! This should not happen:\n" <> msg
 
-data Error = Error
+data Err = Err
   { errLoc :: Int,
     errMsg :: Text,
     errCategory :: Text
@@ -86,8 +86,8 @@ renderFancyLocation file code offset
         pointerPadding = T.replicate (col - 1) " "
         sep = " | "
 
-renderError :: FilePath -> Text -> Error -> Text
-renderError file code Error {..} =
+renderError :: FilePath -> Text -> Err -> Text
+renderError file code Err {..} =
   "!!" <> errCategory <> "!!\n"
     <> renderFancyLocation file code errLoc
     <> errMsg

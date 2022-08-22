@@ -1,4 +1,5 @@
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -17,6 +18,7 @@
 module Taype.Parser (parse) where
 
 import Bound
+import Control.Monad.Error.Class
 import Control.Applicative.Combinators (choice)
 import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import qualified Data.HashMap.Strict as M
@@ -464,10 +466,10 @@ grammar = mdo
 
 -- | Main parser which returns a global context with the list of definition
 -- names
-parse :: [LocatedToken] -> Either Error ([Text], GCtx a)
+parse :: MonadError Err m => [LocatedToken] -> m ([Text], GCtx a)
 parse tokens =
   case fullParses (parser grammar) tokens of
-    ([], rpt) -> Left $ renderParserError rpt
+    ([], rpt) -> throwError $ renderParserError rpt
     ([defs], _) ->
       ([name | (name, def) <- defs, notCtorDef def],)
         <$> makeGCtx defs
@@ -477,23 +479,23 @@ parse tokens =
     notCtorDef CtorDef {} = False
     notCtorDef _ = True
 
-makeGCtx :: [(Text, Def Text)] -> Either Error (GCtx a)
+makeGCtx :: MonadError Err m => [(Text, Def Text)] -> m (GCtx a)
 makeGCtx = foldlM go initGCtx
   where
     go gctx (name, def) =
       if M.member name gctx
         then
-          Left $
-            Error
+          throwError $
+            Err
               { errLoc = getDefLoc def,
                 errCategory = "Parsing Error",
                 errMsg = "definition " <> name <> " already exists"
               }
-        else Right $ M.insert name (def >>>= GV) gctx
+        else return $ M.insert name (def >>>= GV) gctx
 
-renderParserError :: Report Text [LocatedToken] -> Error
+renderParserError :: Report Text [LocatedToken] -> Err
 renderParserError Report {..} =
-  Error
+  Err
     { errLoc = maybe (-1) offset unexpectedToken,
       errCategory = "Parsing Error",
       errMsg

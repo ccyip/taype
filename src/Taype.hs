@@ -15,6 +15,7 @@ module Taype
   )
 where
 
+import Bound
 import Options.Applicative
 import Prettyprinter.Render.Text (putDoc)
 import Prettyprinter.Util (putDocW)
@@ -31,15 +32,17 @@ run options@Options {optFile = file} = do
   result <- runExceptT $ process file code options
   whenLeft_ result $ putTextLn . renderError file code
 
-process :: FilePath -> Text -> Options -> ExceptT LocatedError IO ()
+process :: FilePath -> Text -> Options -> ExceptT Err IO ()
 process file code options@Options {..} = do
-  tokens <- hoistEither $ lex file code
+  tokens <- lex file code
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
-  (defs, gctx) <- hoistEither $ parse tokens
-  -- Always print out the source code for now
-  lift $ printDoc $ cuteDefs defs Env {..}
+  (defs, gctx) <- parse tokens
+  -- 'gctx' needs to be closed again because the pretty printer instantiates the
+  -- phantom type variable with 'Text'
+  when optPrintSource $ printDoc $ cuteDefs options (close gctx) defs
   where
-    printDoc = maybe putDoc putDocW optWidth
+    printDoc = lift . maybe putDoc putDocW optWidth
+    close gctx = fromMaybe (oops "global context is not closed") $ closed gctx
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)
