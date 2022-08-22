@@ -464,7 +464,7 @@ grammar = mdo
 
 -- | Main parser which returns a global context with the list of definition
 -- names
-parse :: [LocatedToken] -> Either LocatedError ([Text], GCtx a)
+parse :: [LocatedToken] -> Either Error ([Text], GCtx a)
 parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> Left $ renderParserError rpt
@@ -477,23 +477,23 @@ parse tokens =
     notCtorDef CtorDef {} = False
     notCtorDef _ = True
 
-makeGCtx :: [(Text, Def Text)] -> Either LocatedError (GCtx a)
+makeGCtx :: [(Text, Def Text)] -> Either Error (GCtx a)
 makeGCtx = foldlM go initGCtx
   where
     go gctx (name, def) =
       if M.member name gctx
         then
           Left $
-            LocatedError
+            Error
               { errLoc = getDefLoc def,
                 errCategory = "Parsing Error",
                 errMsg = "definition " <> name <> " already exists"
               }
         else Right $ M.insert name (def >>>= GV) gctx
 
-renderParserError :: Report Text [LocatedToken] -> LocatedError
+renderParserError :: Report Text [LocatedToken] -> Error
 renderParserError Report {..} =
-  LocatedError
+  Error
     { errLoc = maybe (-1) offset unexpectedToken,
       errCategory = "Parsing Error",
       errMsg

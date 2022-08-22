@@ -209,12 +209,12 @@ pTokens :: Parser [LocatedToken]
 pTokens = space *> manyTill pLocatedToken eof
 
 -- | Taype lexer
-lex :: FilePath -> Text -> Either LocatedError [LocatedToken]
+lex :: FilePath -> Text -> Either Error [LocatedToken]
 lex = first renderLexerError <<$>> parse pTokens
 
-renderLexerError :: ParseErrorBundle Text Void -> LocatedError
+renderLexerError :: ParseErrorBundle Text Void -> Error
 renderLexerError ParseErrorBundle {bundleErrors = err :| _} =
-  LocatedError
+  Error
     { errLoc = errorOffset err,
       errMsg = showError err,
       errCategory = "Lexing Error"
