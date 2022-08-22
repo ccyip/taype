@@ -70,6 +70,9 @@ instance Cute Int
 
 instance Cute Text
 
+instance Cute (Expr Text) where
+  cute = cuteExpr
+
 -- | Pretty printer for Taype expressions
 cuteExpr :: Expr Text -> CuteM (Doc ann)
 cuteExpr V {..} = cute name
