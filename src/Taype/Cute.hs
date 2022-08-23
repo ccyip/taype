@@ -82,7 +82,7 @@ cuteExpr V {..} = cute name
 cuteExpr GV {..} = cute ref
 cuteExpr e@Pi {..} = do
   x <- freshNameOrBinder binder
-  binderDoc <- cuteTypeBinder e x typ binder
+  binderDoc <- cuteTypeBinder e x label typ binder
   bodyDoc <- cuteExpr $ instantiate1Name x body
   return $ binderDoc <+> "->" <> line <> bodyDoc
 cuteExpr e@Lam {} = cuteLam False e
@@ -153,8 +153,7 @@ cuteDef name Env {..} =
       where
         funDoc =
           hang $
-            "fn" <+> pretty name
-              <> sep1 (colon <+> align (go (cuteExpr typ)) <+> equals)
+            "fn" <+> go (cuteBinder name label (Just typ)) <+> equals
               <> go (cuteLam True expr)
     ADTDef {..} ->
       "data" <+> pretty name
@@ -169,21 +168,26 @@ cuteDef name Env {..} =
                 <> group (foldMap ((line <>) . go . cuteSubExprAgg) paraTypes)
           _ -> oops $ "Cannot find the definition of constructor " <> show ctor
     OADTDef {..} ->
-      "obliv" <+> pretty name <+> rest
+      hang $ "obliv" <+> pretty name <+> rest
       where
         rest = go $ do
           x <- freshNameOrBinder binder
-          binderDoc <- cuteBinder x (Just typ)
+          binderDoc <- cuteBinder x (Just SafeL) (Just typ)
           bodyDoc <- cuteExpr (instantiate1Name x body)
           return $ parens binderDoc <+> equals <> hardline <> bodyDoc
     _ -> oops "builtin functions or constructors in the definitions"
   where
     go = runCuteM options
 
-cuteBinder :: Text -> Maybe (Typ Text) -> CuteM (Doc ann)
-cuteBinder x Nothing = cute x
-cuteBinder x (Just typ) = do
+cuteBinder :: Text -> Maybe Label -> Maybe (Typ Text) -> CuteM (Doc ann)
+cuteBinder x l Nothing =
+  ifM
+    (asks optPrintLabels &&^ return (isJust l))
+    ((<>) . parens <$> cute x <*> cuteLabel l)
+    (cute x)
+cuteBinder x l (Just typ) = do
   typeDoc <- cuteExpr typ
+  labelDoc <- ifM (asks optPrintLabels) (cuteLabel l) ""
   return $
     hang $
       pretty x
@@ -191,19 +195,38 @@ cuteBinder x (Just typ) = do
                then (space <>)
                else sep1
            )
-          (colon <+> align typeDoc)
+          (colon <> labelDoc <+> align typeDoc)
 
-cuteEnclosedBinder :: Text -> Maybe (Typ Text) -> CuteM (Doc ann)
-cuteEnclosedBinder x maybeType = do
-  doc <- cuteBinder x maybeType
+cuteEnclosedBinder :: Text -> Maybe Label -> Maybe (Typ Text) -> CuteM (Doc ann)
+cuteEnclosedBinder x l maybeType = do
+  doc <- cuteBinder x l maybeType
   return $ if isJust maybeType then parens doc else doc
 
-cuteTypeBinder :: Typ Text -> Text -> Typ Text -> Binder -> CuteM (Doc ann)
-cuteTypeBinder super x typ = \case
+cuteTypeBinder ::
+  Typ Text ->
+  Text ->
+  Maybe Label ->
+  Typ Text ->
+  Binder ->
+  CuteM (Doc ann)
+cuteTypeBinder super x l typ = \case
   Named _ _ -> go
-  Anon -> ifM (asks optInternalNames) go (cuteSubExpr super typ)
+  Anon ->
+    ifM
+      (asks optInternalNames)
+      go
+      ( ifM
+          (asks optPrintLabels &&^ return (isJust l))
+          ((<>) . parens <$> cuteExpr typ <*> cuteLabel l)
+          (cuteSubExpr super typ)
+      )
   where
-    go = parens <$> cuteBinder x (Just typ)
+    go = parens <$> cuteBinder x l (Just typ)
+
+cuteLabel :: Maybe Label -> CuteM (Doc ann)
+cuteLabel Nothing = ""
+cuteLabel (Just SafeL) = "⊥"
+cuteLabel (Just LeakyL) = "⊤"
 
 cuteLam :: Bool -> Expr Text -> CuteM (Doc ann)
 cuteLam isRoot e = do
@@ -230,7 +253,7 @@ cuteLam isRoot e = do
     go :: Expr Text -> CuteM ([Doc ann], Doc ann)
     go Lam {..} = do
       x <- freshNameOrBinder binder
-      binderDoc <- cuteEnclosedBinder x maybeType
+      binderDoc <- cuteEnclosedBinder x label maybeType
       (binderDocs, bodyDoc) <- go $ instantiate1Name x body
       return (binderDoc : binderDocs, bodyDoc)
     go Loc {..} = go expr
@@ -255,7 +278,7 @@ cuteLet e = do
     go :: Expr Text -> CuteM ([(Doc ann, Doc ann)], Doc ann)
     go Let {..} = do
       x <- freshNameOrBinder binder
-      binderDoc <- cuteBinder x maybeType
+      binderDoc <- cuteBinder x label maybeType
       rhsDoc <- cuteExpr rhs
       (bindingDocs, bodyDoc) <- go $ instantiate1Name x body
       return ((binderDoc, rhsDoc) : bindingDocs, bodyDoc)
