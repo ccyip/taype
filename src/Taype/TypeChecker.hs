@@ -27,7 +27,8 @@ import Taype.Syntax
 -- | Bidirectionally type check an expression. It is in synthesis / inference
 -- mode if the second argument is 'Nothing', or in checking mode otherwise.
 -- Labels are always inferred. This function returns the well-kinded type of the
--- expression and the fully elaborated expression in core Taype ANF
+-- expression and the fully elaborated expression in core Taype ANF. The given
+-- type in checking mode must also be well-kinded
 typing :: Expr Name -> Maybe (Ty Name) -> TcM (Ty Name, Label, Expr Name)
 typing ILit {..} Nothing = return (TInt, SafeL, ILit {..})
 -- TODO
@@ -72,7 +73,8 @@ checkLabel (Just l') l = when (l' /= l) $ err "label mismatch"
 mustLabel :: Maybe Label -> Label
 mustLabel = fromMaybe $ oops "Label not available"
 
--- | Check the equivalence of two expressions
+-- | Check the equivalence of two expressions. They must be already well-kinded
+-- or well-typed
 equate :: Expr Name -> Expr Name -> TcM ()
 equate e e' | e == e' = pass
 -- TODO
