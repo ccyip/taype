@@ -15,7 +15,6 @@ module Taype
   )
 where
 
-import Bound
 import Options.Applicative
 import Prettyprinter.Render.Text (putDoc)
 import Prettyprinter.Util (putDocW)
@@ -24,6 +23,8 @@ import Taype.Environment
 import Taype.Error
 import Taype.Lexer (lex, printTokens)
 import Taype.Parser (parse)
+import Taype.Syntax
+import Taype.TypeChecker
 
 run :: Options -> IO ()
 run options@Options {optFile = file} = do
@@ -37,8 +38,12 @@ process file code options@Options {..} = do
   tokens <- lex file code
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
   (defs, initGCtx) <- parse tokens
+  -- The label does not matter here
+  let env = Env {gctx = initGCtx, ctx = [], label = LeakyL, ..}
+  preGCtx <- preCheckGCtx env
   when optPrintSource $ cuteGCtx preGCtx defs
-  when optPrintSource $ cuteGCtx initGCtx defs
+  gctx <- checkGCtx $ env {gctx = preGCtx}
+  cuteGCtx gctx defs
   where
     -- Global context needs to be closed again before printing because the pretty
     -- printer instantiates the type variable with 'Text'
