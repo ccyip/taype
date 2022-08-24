@@ -35,7 +35,7 @@ module Taype.Environment
 where
 
 import Taype.Error
-import Taype.Fresh
+import Taype.Name
 import Taype.Syntax
 
 data Env = Env

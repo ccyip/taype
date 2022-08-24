@@ -47,7 +47,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Taype
                        Taype.Error
-                       Taype.Fresh
+                       Taype.Name
                        Taype.Cute
                        Taype.Syntax
                        Taype.Environment

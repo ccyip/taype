@@ -34,7 +34,7 @@ import Prettyprinter hiding (hang, indent)
 import qualified Prettyprinter as PP
 import Taype.Environment
 import Taype.Error
-import Taype.Fresh
+import Taype.Name
 import Taype.Syntax
 import Prelude hiding (group)
 

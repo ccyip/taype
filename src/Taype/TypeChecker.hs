@@ -21,7 +21,7 @@ import Bound
 import Control.Monad.Error.Class
 import Taype.Environment
 import Taype.Error
-import Taype.Fresh
+import Taype.Name
 import Taype.Syntax
 
 -- | Bidirectionally type check an expression. It is in synthesis / inference

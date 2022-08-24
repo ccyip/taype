@@ -4,7 +4,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -40,19 +39,10 @@ module Taype.Syntax
     binderNameEq,
     findDupBinderName,
 
-    -- * Specialized locally nameless abstraction and instantiation
-    abstract1By,
-    abstract2By,
-    abstractManyBy,
+    -- * Locally nameless abstraction and instantiation for binders
     abstract1Binder,
     abstract2Binders,
     abstractBinders,
-    instantiate1By,
-    instantiate2By,
-    instantiateManyBy,
-    instantiate1Name,
-    instantiate2Names,
-    instantiateNames,
     instantiate1Binder,
     instantiate2Binders,
     instantiateBinders,
@@ -82,9 +72,10 @@ import Bound
 import Control.Monad
 import Data.Deriving
 import Data.Functor.Classes
-import Data.List (findIndex, groupBy)
+import Data.List (groupBy)
 import Prettyprinter
 import Taype.Error
+import Taype.Name
 import qualified Text.Show
 
 -- | Taype expression, including the surface and the core syntax
@@ -450,22 +441,6 @@ findDupBinderName binders = find ((> 1) . length) groups >>= viaNonEmpty head
   where
     groups = groupBy binderNameEq binders
 
-abstract1By :: Monad f => (a -> b -> Bool) -> b -> f a -> Scope () f a
-abstract1By eq b = abstract $ \a ->
-  if eq a b
-    then Just ()
-    else Nothing
-
-abstract2By :: Monad f => (a -> b -> Bool) -> b -> b -> f a -> Scope Bool f a
-abstract2By eq left right = abstract $ \a ->
-  if
-      | eq a left -> Just True
-      | eq a right -> Just False
-      | otherwise -> Nothing
-
-abstractManyBy :: Monad f => (a -> b -> Bool) -> [b] -> f a -> Scope Int f a
-abstractManyBy eq bs = abstract $ \a -> findIndex (eq a) bs
-
 abstract1Binder :: (Monad f, Eq a) => BinderM a -> f a -> Scope () f a
 abstract1Binder = abstract1By isBinderName
 
@@ -474,28 +449,6 @@ abstract2Binders = abstract2By isBinderName
 
 abstractBinders :: (Monad f, Eq a) => [BinderM a] -> f a -> Scope Int f a
 abstractBinders = abstractManyBy isBinderName
-
-instantiate1By :: Monad f => (b -> f a) -> b -> Scope n f a -> f a
-instantiate1By proj = instantiate . const . proj
-
-instantiate2By :: Monad f => (b -> f a) -> b -> b -> Scope Bool f a -> f a
-instantiate2By proj left right = instantiate $ \i ->
-  proj $ if i then left else right
-
-instantiateManyBy :: Monad f => (b -> f a) -> [b] -> Scope Int f a -> f a
-instantiateManyBy proj bs = instantiate $ \i ->
-  case bs !!? i of
-    Just b -> proj b
-    Nothing -> oops "Out-of-bound instantiation"
-
-instantiate1Name :: Monad f => a -> Scope n f a -> f a
-instantiate1Name = instantiate1By return
-
-instantiate2Names :: Monad f => a -> a -> Scope Bool f a -> f a
-instantiate2Names = instantiate2By return
-
-instantiateNames :: Monad f => [a] -> Scope Int f a -> f a
-instantiateNames = instantiateManyBy return
 
 instantiate1Binder :: Monad f => BinderM a -> Scope n f a -> f a
 instantiate1Binder = instantiate1By $ return . fromBinder
