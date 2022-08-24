@@ -139,8 +139,8 @@ preCheckDef def = return def
 preCheckType :: Ty Name -> TcM (Ty Name)
 preCheckType Pi {..} = do
   t <- preCheckType ty
-  x <- fresh
-  e <- preCheckType $ instantiate1Name x bnd
+  (x, body) <- unbind1 bnd
+  e <- preCheckType body
   l <- labeling label
   return
     Pi
@@ -170,14 +170,14 @@ preCheckSecRetType l t = do
   typ1' <- preCheckType typ1
   -- The first argument is the public view which must have safe label
   checkLabel label1 SafeL
-  x1 <- fresh
-  (typ2, label2, binder2, bnd2) <- isPi $ instantiate1Name x1 bnd1
+  (x1, body1) <- unbind1 bnd1
+  (typ2, label2, binder2, bnd2) <- isPi body1
   typ2' <- preCheckType typ2
   -- The label of the second argument depends on whether it is section or
   -- retraction
   checkLabel label2 l
-  x2 <- fresh
-  bnd2' <- preCheckType $ instantiate1Name x2 bnd2
+  (x2, body2) <- unbind1 bnd2
+  bnd2' <- preCheckType body2
   return
     Pi
       { ty = typ1',

@@ -81,9 +81,9 @@ cuteExpr :: Expr Text -> CuteM (Doc ann)
 cuteExpr V {..} = cute name
 cuteExpr GV {..} = cute ref
 cuteExpr e@Pi {..} = do
-  x <- freshNameOrBinder binder
+  (x, body) <- unbind1NameOrBinder binder bnd
   binderDoc <- cuteTypeBinder e x label ty binder
-  bodyDoc <- cuteExpr $ instantiate1Name x bnd
+  bodyDoc <- cuteExpr body
   return $ binderDoc <+> "->" <> line <> bodyDoc
 cuteExpr e@Lam {} = cuteLam False e
 cuteExpr e@App {appKind = Just InfixApp, args = left : right : _, ..} = do
@@ -122,10 +122,10 @@ cuteExpr OInj {..} = do
     cuteInjType ty = angles <$> cuteExpr ty
 cuteExpr OCase {..} = do
   condDoc <- cuteExpr cond
-  xl <- freshNameOrBinder lBinder
-  xr <- freshNameOrBinder rBinder
-  lBodyDoc <- cuteExpr $ instantiate1Name xl lBnd
-  rBodyDoc <- cuteExpr $ instantiate1Name xr rBnd
+  (xl, lBody) <- unbind1NameOrBinder lBinder lBnd
+  (xr, rBody) <- unbind1NameOrBinder rBinder rBnd
+  lBodyDoc <- cuteExpr lBody
+  rBodyDoc <- cuteExpr rBody
   return $
     cuteCaseDoc "~" True condDoc $
       cuteAltDocs [("~inl", [xl], lBodyDoc), ("~inr", [xr], rBodyDoc)]
@@ -171,9 +171,9 @@ cuteDef options gctx name =
       hang $ "obliv" <+> pretty name <+> rest
       where
         rest = go $ do
-          x <- freshNameOrBinder binder
+          (x, body) <- unbind1NameOrBinder binder bnd
           binderDoc <- cuteBinder x (Just SafeL) (Just ty)
-          bodyDoc <- cuteExpr (instantiate1Name x bnd)
+          bodyDoc <- cuteExpr body
           return $ parens binderDoc <+> equals <> hardline <> bodyDoc
     _ -> oops "builtin functions or constructors in the definitions"
   where
@@ -252,9 +252,9 @@ cuteLam isRoot e = do
     mkBindersDoc binderDocs = backslash <> align (vsep binderDocs) <+> "->"
     go :: Expr Text -> CuteM ([Doc ann], Doc ann)
     go Lam {..} = do
-      x <- freshNameOrBinder binder
+      (x, body) <- unbind1NameOrBinder binder bnd
       binderDoc <- cuteEnclosedBinder x label mTy
-      (binderDocs, bodyDoc) <- go $ instantiate1Name x bnd
+      (binderDocs, bodyDoc) <- go body
       return (binderDoc : binderDocs, bodyDoc)
     go Loc {..} = go expr
     go expr = ([],) <$> cuteExpr expr
@@ -277,10 +277,10 @@ cuteLet e = do
     mkBindingDoc (binderDoc, rhsDoc) = hang $ binderDoc <+> equals <> sep1 rhsDoc
     go :: Expr Text -> CuteM ([(Doc ann, Doc ann)], Doc ann)
     go Let {..} = do
-      x <- freshNameOrBinder binder
+      (x, body) <- unbind1NameOrBinder binder bnd
       binderDoc <- cuteBinder x label mTy
       rhsDoc <- cuteExpr rhs
-      (bindingDocs, bodyDoc) <- go $ instantiate1Name x bnd
+      (bindingDocs, bodyDoc) <- go body
       return ((binderDoc, rhsDoc) : bindingDocs, bodyDoc)
     go Loc {..} = go expr
     go expr = ([],) <$> cuteExpr expr
@@ -319,9 +319,8 @@ cutePCase ::
   CuteM (Doc ann)
 cutePCase accent cond lBinder rBinder bnd2 = do
   condDoc <- cuteExpr cond
-  xl <- freshNameOrBinder lBinder
-  xr <- freshNameOrBinder rBinder
-  bodyDoc <- cuteExpr $ instantiate2Names xl xr bnd2
+  (xl, xr, body) <- unbind2NamesOrBinders lBinder rBinder bnd2
+  bodyDoc <- cuteExpr body
   return $
     cuteCaseDoc
       accent
@@ -342,8 +341,8 @@ cuteApp fnDoc exprs = do
 
 cuteCaseAlt :: CaseAlt Expr Text -> CuteM (Doc ann)
 cuteCaseAlt CaseAlt {..} = do
-  xs <- freshNamesOrBinders binders
-  bodyDoc <- cuteExpr $ instantiateNames xs bnd
+  (xs, body) <- unbindManyNamesOrBinders binders bnd
+  bodyDoc <- cuteExpr body
   return $ cuteAltDoc ctor xs bodyDoc
 
 cuteCaseDoc :: Foldable t => Doc ann -> Bool -> Doc ann -> t (Doc ann) -> Doc ann
@@ -417,5 +416,14 @@ freshNameOrBinder binder = do
   x <- freshWith $ (optNamePrefix <>) . show
   return $ if optInternalNames then x else toText binder
 
-freshNamesOrBinders :: [Binder] -> CuteM [Text]
-freshNamesOrBinders = mapM freshNameOrBinder
+unbind1NameOrBinder :: Monad f => Binder -> Scope n f Text -> CuteM (Text, f Text)
+unbind1NameOrBinder = unbind1By . freshNameOrBinder
+
+unbind2NamesOrBinders ::
+  Monad f => Binder -> Binder -> Scope Bool f Text -> CuteM (Text, Text, f Text)
+unbind2NamesOrBinders binder1 binder2 =
+  unbind2By (freshNameOrBinder binder1) (freshNameOrBinder binder2)
+
+unbindManyNamesOrBinders ::
+  Monad f => [Binder] -> Scope Int f Text -> CuteM ([Text], f Text)
+unbindManyNamesOrBinders = unbindManyBy . mapM freshNameOrBinder
