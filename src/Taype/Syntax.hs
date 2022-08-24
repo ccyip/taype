@@ -22,7 +22,7 @@ module Taype.Syntax
   ( -- * Syntax
     Expr (..),
     Typ,
-    Label,
+    Label (..),
     AppKind (..),
     CaseAlt (..),
     Def,
@@ -216,7 +216,8 @@ data Expr a
 type Typ = Expr
 
 -- | A leakage label is just a Boolean
-type Label = Bool
+data Label = SafeL | LeakyL
+  deriving stock (Eq, Show)
 
 -- | Application kinds
 data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
