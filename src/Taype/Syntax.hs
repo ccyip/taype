@@ -89,14 +89,14 @@ data Expr a
       { ty :: Ty a,
         label :: Maybe Label,
         binder :: Binder,
-        body :: Scope () Ty a
+        bnd :: Scope () Ty a
       }
   | -- | Lambda abstraction
     Lam
       { mTy :: Maybe (Ty a),
         label :: Maybe Label,
         binder :: Binder,
-        body :: Scope () Expr a
+        bnd :: Scope () Expr a
       }
   | -- | Application, including function application, type application, etc
     App
@@ -110,7 +110,7 @@ data Expr a
         label :: Maybe Label,
         rhs :: Expr a,
         binder :: Binder,
-        body :: Scope () Expr a
+        bnd :: Scope () Expr a
       }
   | -- | Unit type
     TUnit
@@ -158,7 +158,7 @@ data Expr a
         cond :: Expr a,
         lBinder :: Binder,
         rBinder :: Binder,
-        body2 :: Scope Bool Expr a
+        bnd2 :: Scope Bool Expr a
       }
   | -- | Oblivious product type
     OProd {left :: Ty a, right :: Ty a}
@@ -169,7 +169,7 @@ data Expr a
       { cond :: Expr a,
         lBinder :: Binder,
         rBinder :: Binder,
-        body2 :: Scope Bool Expr a
+        bnd2 :: Scope Bool Expr a
       }
   | -- | Oblivious sum type
     OSum {left :: Ty a, right :: Ty a}
@@ -184,9 +184,9 @@ data Expr a
       { mTy :: Maybe (Ty a),
         cond :: Expr a,
         lBinder :: Binder,
-        lBody :: Scope () Expr a,
+        lBnd :: Scope () Expr a,
         rBinder :: Binder,
-        rBody :: Scope () Expr a
+        rBnd :: Scope () Expr a
       }
   | -- | Oblivious conditional, i.e. multiplexer
     Mux
@@ -219,7 +219,7 @@ data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
 data CaseAlt f a = CaseAlt
   { ctor :: Text,
     binders :: [Binder],
-    body :: Scope Int f a
+    bnd :: Scope Int f a
   }
   deriving stock (Functor, Foldable, Traversable)
 
@@ -266,7 +266,7 @@ data DefB f a
   | -- | Algebraic data type. Do not support empty type
     ADTDef {loc :: Int, ctors :: NonEmpty Text}
   | -- | Oblivious algebraic data type. Only support one argument for now
-    OADTDef {loc :: Int, ty :: f a, binder :: Binder, body :: Scope () f a}
+    OADTDef {loc :: Int, ty :: f a, binder :: Binder, bnd :: Scope () f a}
   | -- | Constructor
     CtorDef {loc :: Int, paraTypes :: [f a], dataType :: Text}
   | -- | Builtin operation
@@ -307,14 +307,14 @@ instance Applicative Expr where
 instance Monad Expr where
   V {..} >>= f = f name
   GV {..} >>= _ = GV {..}
-  Pi {..} >>= f = Pi {ty = ty >>= f, body = body >>>= f, ..}
-  Lam {..} >>= f = Lam {mTy = mTy <&> (>>= f), body = body >>>= f, ..}
+  Pi {..} >>= f = Pi {ty = ty >>= f, bnd = bnd >>>= f, ..}
+  Lam {..} >>= f = Lam {mTy = mTy <&> (>>= f), bnd = bnd >>>= f, ..}
   App {..} >>= f = App {fn = fn >>= f, args = args <&> (>>= f), ..}
   Let {..} >>= f =
     Let
       { mTy = mTy <&> (>>= f),
         rhs = rhs >>= f,
-        body = body >>>= f,
+        bnd = bnd >>>= f,
         ..
       }
   TUnit >>= _ = TUnit
@@ -352,7 +352,7 @@ instance Monad Expr where
     PCase
       { mTy = mTy <&> (>>= f),
         cond = cond >>= f,
-        body2 = body2 >>>= f,
+        bnd2 = bnd2 >>>= f,
         ..
       }
   OProd {..} >>= f = OProd {left = left >>= f, right = right >>= f, ..}
@@ -360,7 +360,7 @@ instance Monad Expr where
   OPCase {..} >>= f =
     OPCase
       { cond = cond >>= f,
-        body2 = body2 >>>= f,
+        bnd2 = bnd2 >>>= f,
         ..
       }
   OSum {..} >>= f = OSum {left = left >>= f, right = right >>= f, ..}
@@ -369,8 +369,8 @@ instance Monad Expr where
     OCase
       { mTy = mTy <&> (>>= f),
         cond = cond >>= f,
-        lBody = lBody >>>= f,
-        rBody = rBody >>>= f,
+        lBnd = lBnd >>>= f,
+        rBnd = rBnd >>>= f,
         ..
       }
   Mux {..} >>= f =
@@ -386,12 +386,12 @@ instance Monad Expr where
   Loc {..} >>= f = Loc {expr = expr >>= f, ..}
 
 instance Bound CaseAlt where
-  CaseAlt {..} >>>= f = CaseAlt {body = body >>>= f, ..}
+  CaseAlt {..} >>>= f = CaseAlt {bnd = bnd >>>= f, ..}
 
 instance Bound DefB where
   FunDef {..} >>>= f = FunDef {ty = ty >>= f, expr = expr >>= f, ..}
   ADTDef {..} >>>= _ = ADTDef {..}
-  OADTDef {..} >>>= f = OADTDef {ty = ty >>= f, body = body >>>= f, ..}
+  OADTDef {..} >>>= f = OADTDef {ty = ty >>= f, bnd = bnd >>>= f, ..}
   CtorDef {..} >>>= f = CtorDef {paraTypes = paraTypes <&> (>>= f), ..}
   BuiltinDef {..} >>>= f =
     BuiltinDef
@@ -403,9 +403,9 @@ instance Bound DefB where
 instance (Eq1 f, Monad f) => Eq1 (CaseAlt f) where
   liftEq
     eq
-    (CaseAlt {ctor, body})
-    (CaseAlt {ctor = ctor', body = body'}) =
-      ctor == ctor' && liftEq eq body body'
+    (CaseAlt {ctor, bnd})
+    (CaseAlt {ctor = ctor', bnd = bnd'}) =
+      ctor == ctor' && liftEq eq bnd bnd'
 
 deriveEq1 ''Expr
 
@@ -461,7 +461,7 @@ instantiateBinders = instantiateManyBy $ return . fromBinder
 
 lam_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a
 lam_ binder mTy body =
-  Lam {label = Nothing, body = abstract1Binder binder body, ..}
+  Lam {label = Nothing, bnd = abstract1Binder binder body, ..}
 
 -- | A smart constructor for lambda abstraction that takes a list of arguments
 lams_ :: a ~ Text => NonEmpty (BinderM a, Maybe (Ty a)) -> Expr a -> Expr a
@@ -469,7 +469,7 @@ lams_ args body = foldr (uncurry lam_) body args
 
 pi_ :: a ~ Text => BinderM a -> Ty a -> Expr a -> Expr a
 pi_ binder ty body =
-  Pi {label = Nothing, body = abstract1Binder binder body, ..}
+  Pi {label = Nothing, bnd = abstract1Binder binder body, ..}
 
 app_ :: Expr a -> [Expr a] -> Expr a
 app_ fn args = App {appKind = Nothing, ..}
@@ -482,7 +482,7 @@ tapp_ fn args = App {appKind = Just TypeApp, ..}
 
 let_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a -> Expr a
 let_ binder mTy rhs body =
-  Let {label = Nothing, body = abstract1Binder binder body, ..}
+  Let {label = Nothing, bnd = abstract1Binder binder body, ..}
 
 -- | A smart constructor for let that takes a list of bindings
 lets_ :: a ~ Text => NonEmpty (BinderM a, Maybe (Ty a), Expr a) -> Expr a -> Expr a
@@ -500,24 +500,24 @@ case_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 case_ cond alts = Case {mTy = Nothing, alts = abstr <$> alts, ..}
   where
     abstr (ctor, binders, body) =
-      CaseAlt {body = abstractBinders binders body, ..}
+      CaseAlt {bnd = abstractBinders binders body, ..}
 
 ocase_ :: a ~ Text => Expr a -> BinderM a -> Expr a -> BinderM a -> Expr a -> Expr a
 ocase_ cond lBinder lBody rBinder rBody =
   OCase
     { mTy = Nothing,
-      lBody = abstract1Binder lBinder lBody,
-      rBody = abstract1Binder rBinder rBody,
+      lBnd = abstract1Binder lBinder lBody,
+      rBnd = abstract1Binder rBinder rBody,
       ..
     }
 
 pcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 pcase_ cond lBinder rBinder body =
-  PCase {mTy = Nothing, body2 = abstract2Binders lBinder rBinder body, ..}
+  PCase {mTy = Nothing, bnd2 = abstract2Binders lBinder rBinder body, ..}
 
 opcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 opcase_ cond lBinder rBinder body =
-  OPCase {body2 = abstract2Binders lBinder rBinder body, ..}
+  OPCase {bnd2 = abstract2Binders lBinder rBinder body, ..}
 
 mustClosed :: Traversable f => Text -> f a -> f b
 mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a

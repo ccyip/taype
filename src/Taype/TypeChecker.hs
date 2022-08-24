@@ -89,7 +89,7 @@ isPi :: Ty Name -> TcM (Ty Name, Maybe Label, Binder, Scope () Ty Name)
 isPi t = do
   tnf <- whnf t
   case tnf of
-    Pi {..} -> return (ty, label, binder, body)
+    Pi {..} -> return (ty, label, binder, bnd)
     -- TODO
     _ -> err "not a pi"
 
@@ -140,13 +140,13 @@ preCheckType :: Ty Name -> TcM (Ty Name)
 preCheckType Pi {..} = do
   t <- preCheckType ty
   x <- fresh
-  e <- preCheckType $ instantiate1Name x body
+  e <- preCheckType $ instantiate1Name x bnd
   l <- labeling label
   return
     Pi
       { label = Just l,
         ty = t,
-        body = abstract1 x e,
+        bnd = abstract1 x e,
         ..
       }
 preCheckType Prod {..} = do
@@ -162,7 +162,7 @@ preCheckType e = return e
 preCheckSecRetType :: Label -> Ty Name -> TcM (Ty Name)
 preCheckSecRetType l t = do
   -- A section/retraction must be a function type with two arguments
-  (typ1, label1, binder1, body1) <- isPi t
+  (typ1, label1, binder1, bnd1) <- isPi t
   -- All the calls to 'preCheckType' are bogus. If the argument types or the
   -- result type contain more pi-types, this is not a valid section/retraction
   -- function, which will be detected in the next phase. However, we pre-check
@@ -171,25 +171,25 @@ preCheckSecRetType l t = do
   -- The first argument is the public view which must have safe label
   checkLabel label1 SafeL
   x1 <- fresh
-  (typ2, label2, binder2, body2) <- isPi $ instantiate1Name x1 body1
+  (typ2, label2, binder2, bnd2) <- isPi $ instantiate1Name x1 bnd1
   typ2' <- preCheckType typ2
   -- The label of the second argument depends on whether it is section or
   -- retraction
   checkLabel label2 l
   x2 <- fresh
-  body2' <- preCheckType $ instantiate1Name x2 body2
+  bnd2' <- preCheckType $ instantiate1Name x2 bnd2
   return
     Pi
       { ty = typ1',
         label = Just SafeL,
         binder = binder1,
-        body =
+        bnd =
           abstract1 x1 $
             Pi
               { ty = typ2',
                 label = Just l,
                 binder = binder2,
-                body = abstract1 x2 body2'
+                bnd = abstract1 x2 bnd2'
               }
       }
 

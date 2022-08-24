@@ -83,7 +83,7 @@ cuteExpr GV {..} = cute ref
 cuteExpr e@Pi {..} = do
   x <- freshNameOrBinder binder
   binderDoc <- cuteTypeBinder e x label ty binder
-  bodyDoc <- cuteExpr $ instantiate1Name x body
+  bodyDoc <- cuteExpr $ instantiate1Name x bnd
   return $ binderDoc <+> "->" <> line <> bodyDoc
 cuteExpr e@Lam {} = cuteLam False e
 cuteExpr e@App {appKind = Just InfixApp, args = left : right : _, ..} = do
@@ -110,10 +110,10 @@ cuteExpr Case {..} = do
 cuteExpr OIte {..} = cuteIte "~" cond ifTrue ifFalse
 cuteExpr e@Prod {..} = cuteInfix e "*" left right
 cuteExpr Pair {..} = cutePair "" left right
-cuteExpr PCase {..} = cutePCase "" cond lBinder rBinder body2
+cuteExpr PCase {..} = cutePCase "" cond lBinder rBinder bnd2
 cuteExpr e@OProd {..} = cuteInfix e "~*" left right
 cuteExpr OPair {..} = cutePair "~" left right
-cuteExpr OPCase {..} = cutePCase "~" cond lBinder rBinder body2
+cuteExpr OPCase {..} = cutePCase "~" cond lBinder rBinder bnd2
 cuteExpr e@OSum {..} = cuteInfix e "~+" left right
 cuteExpr OInj {..} = do
   typeDoc <- fromMaybe "" <$> mapM cuteInjType mTy
@@ -124,8 +124,8 @@ cuteExpr OCase {..} = do
   condDoc <- cuteExpr cond
   xl <- freshNameOrBinder lBinder
   xr <- freshNameOrBinder rBinder
-  lBodyDoc <- cuteExpr $ instantiate1Name xl lBody
-  rBodyDoc <- cuteExpr $ instantiate1Name xr rBody
+  lBodyDoc <- cuteExpr $ instantiate1Name xl lBnd
+  rBodyDoc <- cuteExpr $ instantiate1Name xr rBnd
   return $
     cuteCaseDoc "~" True condDoc $
       cuteAltDocs [("~inl", [xl], lBodyDoc), ("~inr", [xr], rBodyDoc)]
@@ -173,7 +173,7 @@ cuteDef options gctx name =
         rest = go $ do
           x <- freshNameOrBinder binder
           binderDoc <- cuteBinder x (Just SafeL) (Just ty)
-          bodyDoc <- cuteExpr (instantiate1Name x body)
+          bodyDoc <- cuteExpr (instantiate1Name x bnd)
           return $ parens binderDoc <+> equals <> hardline <> bodyDoc
     _ -> oops "builtin functions or constructors in the definitions"
   where
@@ -254,7 +254,7 @@ cuteLam isRoot e = do
     go Lam {..} = do
       x <- freshNameOrBinder binder
       binderDoc <- cuteEnclosedBinder x label mTy
-      (binderDocs, bodyDoc) <- go $ instantiate1Name x body
+      (binderDocs, bodyDoc) <- go $ instantiate1Name x bnd
       return (binderDoc : binderDocs, bodyDoc)
     go Loc {..} = go expr
     go expr = ([],) <$> cuteExpr expr
@@ -280,7 +280,7 @@ cuteLet e = do
       x <- freshNameOrBinder binder
       binderDoc <- cuteBinder x label mTy
       rhsDoc <- cuteExpr rhs
-      (bindingDocs, bodyDoc) <- go $ instantiate1Name x body
+      (bindingDocs, bodyDoc) <- go $ instantiate1Name x bnd
       return ((binderDoc, rhsDoc) : bindingDocs, bodyDoc)
     go Loc {..} = go expr
     go expr = ([],) <$> cuteExpr expr
@@ -317,11 +317,11 @@ cutePCase ::
   Binder ->
   Scope Bool Expr Text ->
   CuteM (Doc ann)
-cutePCase accent cond lBinder rBinder body2 = do
+cutePCase accent cond lBinder rBinder bnd2 = do
   condDoc <- cuteExpr cond
   xl <- freshNameOrBinder lBinder
   xr <- freshNameOrBinder rBinder
-  bodyDoc <- cuteExpr $ instantiate2Names xl xr body2
+  bodyDoc <- cuteExpr $ instantiate2Names xl xr bnd2
   return $
     cuteCaseDoc
       accent
@@ -343,7 +343,7 @@ cuteApp fnDoc exprs = do
 cuteCaseAlt :: CaseAlt Expr Text -> CuteM (Doc ann)
 cuteCaseAlt CaseAlt {..} = do
   xs <- freshNamesOrBinders binders
-  bodyDoc <- cuteExpr $ instantiateNames xs body
+  bodyDoc <- cuteExpr $ instantiateNames xs bnd
   return $ cuteAltDoc ctor xs bodyDoc
 
 cuteCaseDoc :: Foldable t => Doc ann -> Bool -> Doc ann -> t (Doc ann) -> Doc ann
