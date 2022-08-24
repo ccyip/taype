@@ -1,4 +1,6 @@
-- Equality check ignoring locations and user names
+- Bidirectional label checking
+- Error takes a list of Cute instances and return Doc
+- Uniplate inspired transform and universe
 - Case pattern variables should not allow duplicates
 - Scrap my boilerplate: instances for Monad, Eq1, etc
 - Support tuple pattern in product case and oblivious sum case
