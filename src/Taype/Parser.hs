@@ -18,9 +18,9 @@
 module Taype.Parser (parse) where
 
 import Bound
-import Control.Monad.Error.Class
 import Control.Applicative.Combinators (choice)
 import Control.Applicative.Combinators.NonEmpty (sepBy1)
+import Control.Monad.Error.Class
 import qualified Data.HashMap.Strict as M
 import Data.List.NonEmpty (some1)
 import Taype.Environment
@@ -480,18 +480,17 @@ parse tokens =
     notCtorDef _ = True
 
 makeGCtx :: MonadError Err m => [(Text, Def Text)] -> m (GCtx a)
-makeGCtx = foldlM go initGCtx
+makeGCtx = foldlM go preludeGCtx
   where
-    go gctx (name, def) =
-      if M.member name gctx
-        then
-          throwError $
-            Err
-              { errLoc = getDefLoc def,
-                errCategory = "Parsing Error",
-                errMsg = "definition " <> name <> " already exists"
-              }
-        else return $ M.insert name (def >>>= GV) gctx
+    go gctx (name, def)
+      | M.member name gctx =
+        throwError $
+          Err
+            { errLoc = getDefLoc def,
+              errCategory = "Parsing Error",
+              errMsg = "definition " <> name <> " already exists"
+            }
+    go gctx (name, def) = return $ M.insert name (def >>>= GV) gctx
 
 renderParserError :: Report Text [LocatedToken] -> Err
 renderParserError Report {..} =
