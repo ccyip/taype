@@ -59,9 +59,13 @@ fn r_list : (k : Int) -> ~List k -> List = \ k ->
                end
 
 -- Finally, we can simply lift the public functions to the oblivious
--- counterparts, by composing them with section and retraction.
+-- counterparts, by composing them with section and retraction. The safe
+-- attribute indicates that these functions and their arguments are free of
+-- potential leakage.
+#[safe]
 fn ~lookup : (k : Int) -> ~Int -> ~List k -> ~Bool = \ k x xs ->
   tape (s_bool (lookup (r_int x) (r_list k xs)))
 
+#[safe]
 fn ~insert : (k : Int) -> ~Int -> ~List k -> ~List (k+1) = \ k x xs ->
   s_list (k+1) (insert (r_int x) (r_list k xs))
