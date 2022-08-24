@@ -281,13 +281,16 @@ getDefLoc = \case
   BuiltinDef {} -> -1
 
 data Attribute = SectionAttr | RetractionAttr | SafeAttr | LeakyAttr
-  deriving stock (Eq, Show)
+  deriving stock (Eq)
+
+instance Show Attribute where
+  show SectionAttr = "section"
+  show RetractionAttr = "retraction"
+  show SafeAttr = "safe"
+  show LeakyAttr = "leaky"
 
 instance Pretty Attribute where
-  pretty SectionAttr = "section"
-  pretty RetractionAttr = "retraction"
-  pretty SafeAttr = "safe"
-  pretty LeakyAttr = "leaky"
+  pretty = show
 
 data LabelPolyStrategy = JoinStrategy | TopStrategy
   deriving stock (Eq, Show)
