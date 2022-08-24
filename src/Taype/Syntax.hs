@@ -25,6 +25,7 @@ module Taype.Syntax
     Label (..),
     AppKind (..),
     CaseAlt (..),
+    Kind (..),
     Def,
     DefB (..),
     getDefLoc,
@@ -230,6 +231,19 @@ data CaseAlt f a = CaseAlt
     body :: Scope Int f a
   }
   deriving stock (Functor, Foldable, Traversable)
+
+-- | Kinds
+data Kind = AnyK | PublicK | OblivK | MixedK
+  deriving stock (Eq)
+
+instance Show Kind where
+  show AnyK = "*@A"
+  show PublicK = "*@P"
+  show OblivK = "*@O"
+  show MixedK = "*@M"
+
+instance Pretty Kind where
+  pretty = show
 
 -- | A binder is either a name, or anonymous, i.e. \"_\", with location
 type Binder = BinderM Text
