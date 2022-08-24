@@ -141,12 +141,12 @@ cuteExpr Tape {..} = cuteApp "tape" [expr]
 cuteExpr Loc {..} = cuteExpr expr
 
 -- | Cute printer for Taype definitions
-cuteDefs :: [Text] -> Env Text -> Doc ann
-cuteDefs defs env =
-  foldMap (\name -> cuteDef name env <> hardline <> hardline) defs
+cuteDefs :: Options -> GCtx Text -> [Text] -> Doc ann
+cuteDefs options gctx =
+  foldMap $ \name -> cuteDef options gctx name <> hardline <> hardline
 
-cuteDef :: Text -> Env Text -> Doc ann
-cuteDef name Env {..} =
+cuteDef :: Options -> GCtx Text -> Text -> Doc ann
+cuteDef options gctx name =
   case fromMaybe (oops "definition not in context") (gctx !? name) of
     FunDef {..} ->
       "#" <> brackets (pretty attr) <> hardline <> funDoc

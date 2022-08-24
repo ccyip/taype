@@ -36,13 +36,16 @@ process :: FilePath -> Text -> Options -> ExceptT Err IO ()
 process file code options@Options {..} = do
   tokens <- lex file code
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
-  (defs, gctx) <- parse tokens
-  -- 'gctx' needs to be closed again because the pretty printer instantiates the
-  -- phantom type variable with 'Text'
-  when optPrintSource $ printDoc $ cuteDefs options (close gctx) defs
+  (defs, initGCtx) <- parse tokens
+  when optPrintSource $ cuteGCtx preGCtx defs
+  when optPrintSource $ cuteGCtx initGCtx defs
   where
-    printDoc = lift . maybe putDoc putDocW optWidth
-    close gctx = fromMaybe (oops "global context is not closed") $ closed gctx
+    -- Global context needs to be closed again before printing because the pretty
+    -- printer instantiates the type variable with 'Text'
+    cuteGCtx gctx defs =
+      lift $
+        maybe putDoc putDocW optWidth $
+          cuteDefs options (mustClosed "Global context" <$> gctx) defs
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)

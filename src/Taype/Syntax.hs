@@ -71,6 +71,9 @@ module Taype.Syntax
     ocase_,
     pcase_,
     opcase_,
+
+    -- * Other utilities
+    mustClosed,
   )
 where
 
@@ -544,3 +547,6 @@ pcase_ cond lBinder rBinder body =
 opcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 opcase_ cond lBinder rBinder body =
   OPCase {body2 = abstract2Binders lBinder rBinder body, ..}
+
+mustClosed :: Traversable f => Text -> f a -> f b
+mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a

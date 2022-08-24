@@ -1,4 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -9,16 +11,44 @@
 --
 -- Environment including options, typing context, locations, etc
 module Taype.Environment
-  ( Env (..),
+  ( -- * Environment
+    Env (..),
+
+    -- * Commandline options
     Options (..),
+
+    -- * Global context
     GCtx,
-    initGCtx,
+    preludeGCtx,
+
+    -- * Local context
+    Ctx,
+
+    -- * Type checking monad
+    TcM,
+    runTcM,
+
+    -- * Manipulating environment
+    getLabel,
+    withLabel,
   )
 where
 
+import Taype.Error
+import Taype.Fresh
 import Taype.Syntax
 
-data Env a = Env {options :: Options, gctx :: GCtx a}
+data Env = Env
+  { options :: Options,
+    -- Global definition context. Function types must be in core Taype ANF and
+    -- well-kinded before type checking
+    gctx :: GCtx Name,
+    -- Local typing context. Every type must be in core Taype ANF and
+    -- well-kinded
+    ctx :: Ctx Name,
+    -- Default label for inference
+    label :: Label
+  }
 
 data Options = Options
   { optFile :: FilePath,
@@ -33,5 +63,21 @@ data Options = Options
 
 type GCtx a = HashMap Text (Def a)
 
-initGCtx :: GCtx a
-initGCtx = mempty
+preludeGCtx :: GCtx a
+preludeGCtx = mempty
+
+type Ctx a = [(a, (Expr a, Label))]
+
+-- | The type checking monad
+type TcM = FreshT (ReaderT Env (ExceptT Err IO))
+
+runTcM :: Env -> TcM a -> ExceptT Err IO a
+runTcM env m = runReaderT (runFreshT m) env
+
+getLabel ::  MonadReader Env m => m Label
+getLabel = do
+  Env {..} <- ask
+  return label
+
+withLabel :: MonadReader Env m => Label -> m a -> m a
+withLabel l = local (\Env {..} -> Env {label = l, ..})
