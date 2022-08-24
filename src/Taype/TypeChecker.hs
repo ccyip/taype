@@ -28,12 +28,10 @@ import Taype.Syntax
 -- mode if the second argument is 'Nothing', or in checking mode otherwise.
 -- Labels are always inferred. This function returns the well-kinded type of the
 -- expression and the fully elaborated expression in core Taype ANF
-typing :: Expr Name -> Maybe (Typ Name) -> TcM (Typ Name, Label, Expr Name)
+typing :: Expr Name -> Maybe (Ty Name) -> TcM (Ty Name, Label, Expr Name)
 typing ILit {..} Nothing = return (TInt, SafeL, ILit {..})
-
 -- TODO
-typing Loc{..} mt = typing expr mt
-
+typing Loc {..} mt = typing expr mt
 -- Checking
 typing e (Just t) = do
   (t', l, e') <- infer e
@@ -47,16 +45,16 @@ typing _ Nothing =
 
 -- | Kind check a type. This function returns the kind of a type and its fully
 -- elaborated counterpart in core Taype in ANF
-kinding :: Typ Name -> TcM (Kind, Typ Name)
+kinding :: Ty Name -> TcM (Kind, Ty Name)
 kinding TInt = return (PublicK, TInt)
 kinding _ = wip
 
 -- | Infer the type of the expression
-infer :: Expr Name -> TcM (Typ Name, Label, Expr Name)
+infer :: Expr Name -> TcM (Ty Name, Label, Expr Name)
 infer e = typing e Nothing
 
 -- | Check the type of the expression
-check :: Expr Name -> Typ Name -> TcM (Label, Expr Name)
+check :: Expr Name -> Ty Name -> TcM (Label, Expr Name)
 check e t = typing e (Just t) <&> \(_, l, e') -> (l, e')
 
 -- | Infer label if not privided
@@ -87,11 +85,11 @@ whnf Asc {..} = whnf expr
 -- TODO
 whnf e = return e
 
-isPi :: Typ Name -> TcM (Typ Name, Maybe Label, Binder, Scope () Typ Name)
+isPi :: Ty Name -> TcM (Ty Name, Maybe Label, Binder, Scope () Ty Name)
 isPi t = do
   tnf <- whnf t
   case tnf of
-    Pi {..} -> return (typ, label, binder, body)
+    Pi {..} -> return (ty, label, binder, body)
     -- TODO
     _ -> err "not a pi"
 
@@ -112,25 +110,25 @@ checkGCtxWith chk env@Env {..} = runTcM env $ mapM go gctx
 checkDef :: Def Name -> TcM (Def Name)
 checkDef FunDef {..} = do
   -- TODO
-  (_, typ') <- kinding typ
-  -- TODO: typ or typ'?
-  (l, expr') <- check expr typ
+  (_, ty') <- kinding ty
+  -- TODO: ty or ty'?
+  (l, expr') <- check expr ty
   -- TODO: bidirectional label checking or convert label here
   checkLabel (Just l) $ mustLabel label
-  return FunDef {typ = typ', expr = expr', ..}
+  return FunDef {ty = ty', expr = expr', ..}
 checkDef _ = wip
 
 -- | Pre-type check top-level definitions
 preCheckDef :: Def Name -> TcM (Def Name)
 preCheckDef FunDef {..} = do
-  typ' <- go
+  ty' <- go
   checkLabel label label'
-  return FunDef {typ = typ', label = Just label', ..}
+  return FunDef {ty = ty', label = Just label', ..}
   where
     go = case attr of
-      SectionAttr -> preCheckSectionType typ
-      RetractionAttr -> preCheckRetractionType typ
-      _ -> withLabel label' $ preCheckType typ
+      SectionAttr -> preCheckSectionType ty
+      RetractionAttr -> preCheckRetractionType ty
+      _ -> withLabel label' $ preCheckType ty
     label' = case attr of
       SectionAttr -> SafeL
       RetractionAttr -> LeakyL
@@ -138,16 +136,16 @@ preCheckDef FunDef {..} = do
       LeakyAttr -> LeakyL
 preCheckDef def = return def
 
-preCheckType :: Typ Name -> TcM (Typ Name)
+preCheckType :: Ty Name -> TcM (Ty Name)
 preCheckType Pi {..} = do
-  t <- preCheckType typ
+  t <- preCheckType ty
   x <- fresh
   e <- preCheckType $ instantiate1Name x body
   l <- labeling label
   return
     Pi
       { label = Just l,
-        typ = t,
+        ty = t,
         body = abstract1 x e,
         ..
       }
@@ -161,7 +159,7 @@ preCheckType e = return e
 
 -- NOTE: be careful! The location information for the two outermost pi-types is
 -- erased
-preCheckSecRetType :: Label -> Typ Name -> TcM (Typ Name)
+preCheckSecRetType :: Label -> Ty Name -> TcM (Ty Name)
 preCheckSecRetType l t = do
   -- A section/retraction must be a function type with two arguments
   (typ1, label1, binder1, body1) <- isPi t
@@ -182,24 +180,24 @@ preCheckSecRetType l t = do
   body2' <- preCheckType $ instantiate1Name x2 body2
   return
     Pi
-      { typ = typ1',
+      { ty = typ1',
         label = Just SafeL,
         binder = binder1,
         body =
           abstract1 x1 $
             Pi
-              { typ = typ2',
+              { ty = typ2',
                 label = Just l,
                 binder = binder2,
                 body = abstract1 x2 body2'
               }
       }
 
-preCheckSectionType :: Typ Name -> TcM (Typ Name)
+preCheckSectionType :: Ty Name -> TcM (Ty Name)
 -- The second argument of a section should be leaky
 preCheckSectionType = preCheckSecRetType LeakyL
 
-preCheckRetractionType :: Typ Name -> TcM (Typ Name)
+preCheckRetractionType :: Ty Name -> TcM (Ty Name)
 -- The second argument of a retraction should be safe
 preCheckRetractionType = preCheckSecRetType SafeL
 

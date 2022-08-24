@@ -82,7 +82,7 @@ cuteExpr V {..} = cute name
 cuteExpr GV {..} = cute ref
 cuteExpr e@Pi {..} = do
   x <- freshNameOrBinder binder
-  binderDoc <- cuteTypeBinder e x label typ binder
+  binderDoc <- cuteTypeBinder e x label ty binder
   bodyDoc <- cuteExpr $ instantiate1Name x body
   return $ binderDoc <+> "->" <> line <> bodyDoc
 cuteExpr e@Lam {} = cuteLam False e
@@ -116,10 +116,10 @@ cuteExpr OPair {..} = cutePair "~" left right
 cuteExpr OPCase {..} = cutePCase "~" cond lBinder rBinder body2
 cuteExpr e@OSum {..} = cuteInfix e "~+" left right
 cuteExpr OInj {..} = do
-  typeDoc <- fromMaybe "" <$> mapM cuteInjType maybeType
+  typeDoc <- fromMaybe "" <$> mapM cuteInjType mTy
   cuteApp ((if tag then "~inl" else "~inr") <> typeDoc) [inj]
   where
-    cuteInjType typ = angles <$> cuteExpr typ
+    cuteInjType ty = angles <$> cuteExpr ty
 cuteExpr OCase {..} = do
   condDoc <- cuteExpr cond
   xl <- freshNameOrBinder lBinder
@@ -131,7 +131,7 @@ cuteExpr OCase {..} = do
       cuteAltDocs [("~inl", [xl], lBodyDoc), ("~inr", [xr], rBodyDoc)]
 cuteExpr Mux {..} = cuteApp "mux" [cond, ifTrue, ifFalse]
 cuteExpr Asc {..} = do
-  typeDoc <- cuteExpr typ
+  typeDoc <- cuteExpr ty
   exprDoc <- cuteExpr expr
   return $ parens $ hang $ align exprDoc <> sep1 (colon <+> typeDoc)
 cuteExpr Promote {..} = do
@@ -153,7 +153,7 @@ cuteDef options gctx name =
       where
         funDoc =
           hang $
-            "fn" <+> go (cuteBinder name label (Just typ)) <+> equals
+            "fn" <+> go (cuteBinder name label (Just ty)) <+> equals
               <> go (cuteLam True expr)
     ADTDef {..} ->
       "data" <+> pretty name
@@ -172,21 +172,21 @@ cuteDef options gctx name =
       where
         rest = go $ do
           x <- freshNameOrBinder binder
-          binderDoc <- cuteBinder x (Just SafeL) (Just typ)
+          binderDoc <- cuteBinder x (Just SafeL) (Just ty)
           bodyDoc <- cuteExpr (instantiate1Name x body)
           return $ parens binderDoc <+> equals <> hardline <> bodyDoc
     _ -> oops "builtin functions or constructors in the definitions"
   where
     go = runCuteM options
 
-cuteBinder :: Text -> Maybe Label -> Maybe (Typ Text) -> CuteM (Doc ann)
+cuteBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM (Doc ann)
 cuteBinder x l Nothing =
   ifM
     (asks optPrintLabels &&^ return (isJust l))
     ((<>) . parens <$> cute x <*> cuteLabel l)
     (cute x)
-cuteBinder x l (Just typ) = do
-  typeDoc <- cuteExpr typ
+cuteBinder x l (Just ty) = do
+  typeDoc <- cuteExpr ty
   labelDoc <- ifM (asks optPrintLabels) (cuteLabel l) ""
   return $
     hang $
@@ -197,19 +197,19 @@ cuteBinder x l (Just typ) = do
            )
           (colon <> labelDoc <+> align typeDoc)
 
-cuteEnclosedBinder :: Text -> Maybe Label -> Maybe (Typ Text) -> CuteM (Doc ann)
-cuteEnclosedBinder x l maybeType = do
-  doc <- cuteBinder x l maybeType
-  return $ if isJust maybeType then parens doc else doc
+cuteEnclosedBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM (Doc ann)
+cuteEnclosedBinder x l mTy = do
+  doc <- cuteBinder x l mTy
+  return $ if isJust mTy then parens doc else doc
 
 cuteTypeBinder ::
-  Typ Text ->
+  Ty Text ->
   Text ->
   Maybe Label ->
-  Typ Text ->
+  Ty Text ->
   Binder ->
   CuteM (Doc ann)
-cuteTypeBinder super x l typ = \case
+cuteTypeBinder super x l ty = \case
   Named _ _ -> go
   Anon ->
     ifM
@@ -217,11 +217,11 @@ cuteTypeBinder super x l typ = \case
       go
       ( ifM
           (asks optPrintLabels &&^ return (isJust l))
-          ((<>) . parens <$> cuteExpr typ <*> cuteLabel l)
-          (cuteSubExpr super typ)
+          ((<>) . parens <$> cuteExpr ty <*> cuteLabel l)
+          (cuteSubExpr super ty)
       )
   where
-    go = parens <$> cuteBinder x l (Just typ)
+    go = parens <$> cuteBinder x l (Just ty)
 
 cuteLabel :: Maybe Label -> CuteM (Doc ann)
 cuteLabel Nothing = ""
@@ -253,7 +253,7 @@ cuteLam isRoot e = do
     go :: Expr Text -> CuteM ([Doc ann], Doc ann)
     go Lam {..} = do
       x <- freshNameOrBinder binder
-      binderDoc <- cuteEnclosedBinder x label maybeType
+      binderDoc <- cuteEnclosedBinder x label mTy
       (binderDocs, bodyDoc) <- go $ instantiate1Name x body
       return (binderDoc : binderDocs, bodyDoc)
     go Loc {..} = go expr
@@ -278,7 +278,7 @@ cuteLet e = do
     go :: Expr Text -> CuteM ([(Doc ann, Doc ann)], Doc ann)
     go Let {..} = do
       x <- freshNameOrBinder binder
-      binderDoc <- cuteBinder x label maybeType
+      binderDoc <- cuteBinder x label mTy
       rhsDoc <- cuteExpr rhs
       (bindingDocs, bodyDoc) <- go $ instantiate1Name x body
       return ((binderDoc, rhsDoc) : bindingDocs, bodyDoc)

@@ -102,7 +102,7 @@ getLoc :: Expr a -> Int
 getLoc Loc {loc} = loc
 getLoc _ = oops "Location not available"
 
-infixToTypeFormer :: Text -> (Typ a -> Typ a -> Typ a)
+infixToTypeFormer :: Text -> (Ty a -> Ty a -> Ty a)
 infixToTypeFormer "*" = Prod
 infixToTypeFormer "~*" = OProd
 infixToTypeFormer "~+" = OSum
@@ -137,11 +137,11 @@ grammar = mdo
                   pToken L.LParen
                   binder <- pBinder
                   pToken L.Colon
-                  typ <- pType
+                  ty <- pType
                   pToken L.RParen
-                  return (binder, typ)
+                  return (binder, ty)
             -- Only support one argument for oblivious type at the moment
-            ~(binder, typ) <- pArg
+            ~(binder, ty) <- pArg
             pToken L.Equals
             body <- pType
             return $ one (name, OADTDef {body = abstract1Binder binder body, ..}),
@@ -162,7 +162,7 @@ grammar = mdo
             pToken L.Fn
             ~(loc, name) <- pLocatedIdent
             pToken L.Colon
-            typ <- pType
+            ty <- pType
             pToken L.Equals
             expr <- pExpr
             return $
@@ -251,11 +251,11 @@ grammar = mdo
           -- Oblivious injection
           do
             ~(loc, tag) <- pLocatedOInj
-            maybeType <- optional $ do
+            mTy <- optional $ do
               pToken L.LAngle
-              typ <- pType
+              ty <- pType
               pToken L.RAngle
-              return typ
+              return ty
             inj <- pAtomExpr
             return Loc {expr = OInj {..}, ..},
           -- Tape
@@ -288,7 +288,7 @@ grammar = mdo
           pParen $ do
             expr <- pExpr
             loc <- pLocatedToken L.Colon
-            typ <- pType
+            ty <- pType
             return Loc {expr = Asc {..}, ..},
           -- Parenthesized expression
           pParen pExpr
@@ -302,20 +302,20 @@ grammar = mdo
       choice
         [ -- Dependent function type
           do
-            ~(binder, typ) <-
+            ~(binder, ty) <-
               choice
                 [ (Anon,) <$> pProdType,
                   do
                     pToken L.LParen
                     binder <- pBinder
                     pToken L.Colon
-                    typ <- pType
+                    ty <- pType
                     pToken L.RParen
-                    return (binder, typ)
+                    return (binder, ty)
                 ]
             loc <- pLocatedToken L.Arrow
             body <- pType
-            return Loc {expr = pi_ binder typ body, ..},
+            return Loc {expr = pi_ binder ty body, ..},
           -- Let
           pLet pType,
           -- If conditional
@@ -376,10 +376,10 @@ grammar = mdo
       pLet pBody = do
         let pBinding = do
               binder <- pBinder
-              maybeType <- optional $ pToken L.Colon *> pType
+              mTy <- optional $ pToken L.Colon *> pType
               pToken L.Equals
               rhs <- pExpr
-              return (binder, maybeType, rhs)
+              return (binder, mTy, rhs)
         loc <- pLocatedToken L.Let
         bindings <- some1 pBinding
         pToken L.In
@@ -456,9 +456,9 @@ grammar = mdo
             pToken L.LParen
             binder <- pBinder
             pToken L.Colon
-            typ <- pType
+            ty <- pType
             pToken L.RParen
-            return (binder, Just typ),
+            return (binder, Just ty),
           pToken L.LParen *> pFunArg <* pToken L.RParen
         ]
 
