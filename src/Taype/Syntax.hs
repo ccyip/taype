@@ -73,6 +73,9 @@ import Control.Monad
 import Data.Deriving
 import Data.Functor.Classes
 import Data.List (groupBy)
+import Algebra.Lattice
+import Algebra.PartialOrd
+import Algebra.Lattice.M2
 import Prettyprinter
 import Taype.Error
 import Taype.Name
@@ -235,6 +238,26 @@ instance Show Kind where
 
 instance Pretty Kind where
   pretty = show
+
+-- Kinds form a lattice and it is isomorphic to M2.
+toM2 :: Kind -> M2
+toM2 AnyK = M2o
+toM2 PublicK = M2a
+toM2 OblivK = M2b
+toM2 MixedK = M2i
+
+fromM2 :: M2 -> Kind
+fromM2 M2o = AnyK
+fromM2 M2a = PublicK
+fromM2 M2b = OblivK
+fromM2 M2i = MixedK
+
+instance PartialOrd Kind where
+  k1 `leq` k2 = toM2 k1 `leq` toM2 k2
+
+instance Lattice Kind where
+  k1 \/ k2 = fromM2 $ toM2 k1 \/ toM2 k2
+  k1 /\ k2 = fromM2 $ toM2 k1 /\ toM2 k2
 
 -- | A binder is either a name, or anonymous, i.e. \"_\", with location
 type Binder = BinderM Text
