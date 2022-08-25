@@ -1,4 +1,11 @@
 - Bidirectional label checking
+- Use undefined instead of wip
+- Fix comments
+  + comments should end with period if they are sentences
+  + properly add new lines and headers
+- Error message for typing
+- Consider removing label from infer/check?
+- Smart constructors for internal use?
 - Error takes a list of Cute instances and return Doc
 - Uniplate inspired transform and universe
 - Case pattern variables should not allow duplicates
@@ -7,3 +14,4 @@
 - Consider using default language extensions in cabal file
 - Consider define Fresh as a newtype
 - Consider adding tests
+- Consider let taking a list of bindings. May simplify flattening let

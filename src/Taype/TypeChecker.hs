@@ -18,44 +18,94 @@ module Taype.TypeChecker
 where
 
 import Bound
+import Algebra.Lattice
+import Algebra.PartialOrd
 import Control.Monad.Error.Class
 import Taype.Environment
 import Taype.Error
 import Taype.Name
 import Taype.Syntax
 
--- | Bidirectionally type check an expression. It is in synthesis / inference
--- mode if the second argument is 'Nothing', or in checking mode otherwise.
--- Labels are always inferred. This function returns the well-kinded type of the
--- expression and the fully elaborated expression in core Taype ANF. The given
--- type in checking mode must also be well-kinded
-typing :: Expr Name -> Maybe (Ty Name) -> TcM (Ty Name, Label, Expr Name)
-typing ILit {..} Nothing = return (TInt, SafeL, ILit {..})
--- TODO
-typing Loc {..} mt = typing expr mt
--- Checking
-typing e (Just t) = do
-  (t', l, e') <- infer e
+-- | Type check an expression bidirectionally.
+--
+-- Both types (the second argument) and labels (the third argument) may be
+-- inferred or checked. They are in inference mode if they are 'Nothing', or in
+-- checking mode otherwise. This function returns the expression's type, label
+-- and its full elaboration. The returned type and expression must be in core
+-- Taype ANF. Both the given type in checking mode and the returned type must be
+-- well-kinded
+typing ::
+  Expr Name ->
+  Maybe (Ty Name) ->
+  Maybe Label ->
+  TcM (Ty Name, Label, Expr Name)
+typing ILit {..} Nothing Nothing = return (TInt, SafeL, ILit {..})
+-- TODO: record location
+typing Loc {..} mt ml = typing expr mt ml
+-- Check label
+typing e mt (Just l) = do
+  (t', l', e') <- typing e mt Nothing
+  if l' < l
+    then do
+      -- Promote label to a more permissive one
+      x <- fresh
+      return
+        ( t',
+          l,
+          Let
+            { mTy = Just t',
+              label = Just l',
+              rhs = e',
+              binder = Nothing,
+              bnd = abstract1 x $ Promote (V x)
+            }
+        )
+    else checkLabel (Just l') l >> return (t', l, e')
+
+-- Check type but infer label
+typing e (Just t) Nothing = do
+  (t', l', e') <- infer e
   equate t t'
-  return (t', l, e')
+  return (t', l', e')
 
 -- Failed to infer the type
-typing _ Nothing =
+typing _ Nothing Nothing =
   -- TODO
   err "Cannot infer the type. Perhaps you should add type ascription"
 
--- | Kind check a type. This function returns the kind of a type and its fully
--- elaborated counterpart in core Taype in ANF
-kinding :: Ty Name -> TcM (Kind, Ty Name)
-kinding TInt = return (PublicK, TInt)
+-- | Kind check a type bidirectionally.
+--
+-- It is in inference mode if the second argument is 'Nothing', otherwise in
+-- checking mode. This function returns the type's kind and its full
+-- elaboration. The returned type must be in core Taype ANF.
+kinding :: Ty Name -> Maybe Kind -> TcM (Kind, Ty Name)
+kinding TInt Nothing = return (PublicK, TInt)
+
+-- Check kind
+kinding t (Just k) = do
+  (k', t') <- inferKind t
+  -- TODO
+  unless (k' `leq` k) $ err "Kind mismatch"
+  return (k, t')
+kinding _ Nothing =
+  -- TODO
+  err "Cannot infer the kind"
 
 -- | Infer the type of the expression
 infer :: Expr Name -> TcM (Ty Name, Label, Expr Name)
-infer e = typing e Nothing
+infer e = typing e Nothing Nothing
 
 -- | Check the type of the expression
-check :: Expr Name -> Ty Name -> TcM (Label, Expr Name)
-check e t = typing e (Just t) <&> \(_, l, e') -> (l, e')
+check :: Expr Name -> Ty Name -> Maybe Label -> TcM (Label, Expr Name)
+check e t ml = typing e (Just t) ml <&> \(_, l, e') -> (l, e')
+
+-- | Infer the kind of the type
+inferKind :: Ty Name -> TcM (Kind, Ty Name)
+inferKind t = kinding t Nothing
+
+-- | Check the kind of the type
+checkKind :: Ty Name -> Kind -> TcM (Ty Name)
+checkKind t k = kinding t (Just k) <&> snd
 
 -- | Infer label if not privided
 labeling :: Maybe Label -> TcM Label
@@ -111,11 +161,9 @@ checkGCtxWith chk env@Env {..} = runTcM env $ mapM go gctx
 checkDef :: Def Name -> TcM (Def Name)
 checkDef FunDef {..} = do
   -- TODO
-  (_, ty') <- kinding ty
+  (_, ty') <- kinding ty Nothing
   -- TODO: ty or ty'?
-  (l, expr') <- check expr ty
-  -- TODO: bidirectional label checking or convert label here
-  checkLabel (Just l) $ mustLabel label
+  (_, expr') <- check expr ty label
   return FunDef {ty = ty', expr = expr', ..}
 checkDef _ = undefined
 
