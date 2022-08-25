@@ -87,7 +87,7 @@ whnf Asc {..} = whnf expr
 -- TODO
 whnf e = return e
 
-isPi :: Ty Name -> TcM (Ty Name, Maybe Label, Binder, Scope () Ty Name)
+isPi :: Ty Name -> TcM (Ty Name, Maybe Label, Maybe Binder, Scope () Ty Name)
 isPi t = do
   tnf <- whnf t
   case tnf of

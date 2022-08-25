@@ -88,14 +88,14 @@ data Expr a
     Pi
       { ty :: Ty a,
         label :: Maybe Label,
-        binder :: Binder,
+        binder :: Maybe Binder,
         bnd :: Scope () Ty a
       }
   | -- | Lambda abstraction
     Lam
       { mTy :: Maybe (Ty a),
         label :: Maybe Label,
-        binder :: Binder,
+        binder :: Maybe Binder,
         bnd :: Scope () Expr a
       }
   | -- | Application, including function application, type application, etc
@@ -109,7 +109,7 @@ data Expr a
       { mTy :: Maybe (Ty a),
         label :: Maybe Label,
         rhs :: Expr a,
-        binder :: Binder,
+        binder :: Maybe Binder,
         bnd :: Scope () Expr a
       }
   | -- | Unit type
@@ -156,8 +156,8 @@ data Expr a
     PCase
       { mTy :: Maybe (Ty a),
         cond :: Expr a,
-        lBinder :: Binder,
-        rBinder :: Binder,
+        lBinder :: Maybe Binder,
+        rBinder :: Maybe Binder,
         bnd2 :: Scope Bool Expr a
       }
   | -- | Oblivious product type
@@ -167,8 +167,8 @@ data Expr a
   | -- | Case analysis for oblivious product
     OPCase
       { cond :: Expr a,
-        lBinder :: Binder,
-        rBinder :: Binder,
+        lBinder :: Maybe Binder,
+        rBinder :: Maybe Binder,
         bnd2 :: Scope Bool Expr a
       }
   | -- | Oblivious sum type
@@ -183,9 +183,9 @@ data Expr a
     OCase
       { mTy :: Maybe (Ty a),
         cond :: Expr a,
-        lBinder :: Binder,
+        lBinder :: Maybe Binder,
         lBnd :: Scope () Expr a,
-        rBinder :: Binder,
+        rBinder :: Maybe Binder,
         rBnd :: Scope () Expr a
       }
   | -- | Oblivious conditional, i.e. multiplexer
@@ -209,7 +209,7 @@ type Ty = Expr
 
 -- | A leakage label is just a Boolean
 data Label = SafeL | LeakyL
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Ord, Show)
 
 -- | Application kinds
 data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
@@ -218,7 +218,7 @@ data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
 -- | Case alternatives
 data CaseAlt f a = CaseAlt
   { ctor :: Text,
-    binders :: [Binder],
+    binders :: [Maybe Binder],
     bnd :: Scope Int f a
   }
   deriving stock (Functor, Foldable, Traversable)
@@ -266,7 +266,7 @@ data DefB f a
   | -- | Algebraic data type. Do not support empty type
     ADTDef {loc :: Int, ctors :: NonEmpty Text}
   | -- | Oblivious algebraic data type. Only support one argument for now
-    OADTDef {loc :: Int, ty :: f a, binder :: Binder, bnd :: Scope () f a}
+    OADTDef {loc :: Int, ty :: f a, binder :: Maybe Binder, bnd :: Scope () f a}
   | -- | Constructor
     CtorDef {loc :: Int, paraTypes :: [f a], dataType :: Text}
   | -- | Builtin operation
@@ -536,7 +536,12 @@ instantiateBinders = instantiateManyBy $ return . fromBinder
 
 lam_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a
 lam_ binder mTy body =
-  Lam {label = Nothing, bnd = abstract1Binder binder body, ..}
+  Lam
+    { label = Nothing,
+      bnd = abstract1Binder binder body,
+      binder = Just binder,
+      ..
+    }
 
 -- | A smart constructor for lambda abstraction that takes a list of arguments
 lams_ :: a ~ Text => NonEmpty (BinderM a, Maybe (Ty a)) -> Expr a -> Expr a
@@ -544,7 +549,12 @@ lams_ args body = foldr (uncurry lam_) body args
 
 pi_ :: a ~ Text => BinderM a -> Ty a -> Expr a -> Expr a
 pi_ binder ty body =
-  Pi {label = Nothing, bnd = abstract1Binder binder body, ..}
+  Pi
+    { label = Nothing,
+      bnd = abstract1Binder binder body,
+      binder = Just binder,
+      ..
+    }
 
 app_ :: Expr a -> [Expr a] -> Expr a
 app_ fn args = App {appKind = Nothing, ..}
@@ -557,7 +567,12 @@ tapp_ fn args = App {appKind = Just TypeApp, ..}
 
 let_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a -> Expr a
 let_ binder mTy rhs body =
-  Let {label = Nothing, bnd = abstract1Binder binder body, ..}
+  Let
+    { label = Nothing,
+      bnd = abstract1Binder binder body,
+      binder = Just binder,
+      ..
+    }
 
 -- | A smart constructor for let that takes a list of bindings
 lets_ :: a ~ Text => NonEmpty (BinderM a, Maybe (Ty a), Expr a) -> Expr a -> Expr a
@@ -575,24 +590,41 @@ case_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 case_ cond alts = Case {mTy = Nothing, alts = abstr <$> alts, ..}
   where
     abstr (ctor, binders, body) =
-      CaseAlt {bnd = abstractBinders binders body, ..}
+      CaseAlt
+        { bnd = abstractBinders binders body,
+          binders = Just <$> binders,
+          ..
+        }
 
 ocase_ :: a ~ Text => Expr a -> BinderM a -> Expr a -> BinderM a -> Expr a -> Expr a
 ocase_ cond lBinder lBody rBinder rBody =
   OCase
     { mTy = Nothing,
+      lBinder = Just lBinder,
       lBnd = abstract1Binder lBinder lBody,
+      rBinder = Just rBinder,
       rBnd = abstract1Binder rBinder rBody,
       ..
     }
 
 pcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 pcase_ cond lBinder rBinder body =
-  PCase {mTy = Nothing, bnd2 = abstract2Binders lBinder rBinder body, ..}
+  PCase
+    { mTy = Nothing,
+      lBinder = Just lBinder,
+      rBinder = Just rBinder,
+      bnd2 = abstract2Binders lBinder rBinder body,
+      ..
+    }
 
 opcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 opcase_ cond lBinder rBinder body =
-  OPCase {bnd2 = abstract2Binders lBinder rBinder body, ..}
+  OPCase
+    { bnd2 = abstract2Binders lBinder rBinder body,
+      lBinder = Just lBinder,
+      rBinder = Just rBinder,
+      ..
+    }
 
 mustClosed :: Traversable f => Text -> f a -> f b
 mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a

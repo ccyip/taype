@@ -144,7 +144,15 @@ grammar = mdo
             ~(binder, ty) <- pArg
             pToken L.Equals
             body <- pType
-            return $ one (name, OADTDef {bnd = abstract1Binder binder body, ..}),
+            return $
+              one
+                ( name,
+                  OADTDef
+                    { bnd = abstract1Binder binder body,
+                      binder = Just binder,
+                      ..
+                    }
+                ),
           -- Function definition
           do
             let pAttr = do

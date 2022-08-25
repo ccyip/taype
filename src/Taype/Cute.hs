@@ -207,11 +207,10 @@ cuteTypeBinder ::
   Text ->
   Maybe Label ->
   Ty Text ->
-  Binder ->
+  Maybe Binder ->
   CuteM (Doc ann)
 cuteTypeBinder super x l ty = \case
-  Named _ _ -> go
-  Anon ->
+  Just Anon ->
     ifM
       (asks optInternalNames)
       go
@@ -220,6 +219,7 @@ cuteTypeBinder super x l ty = \case
           ((<>) . parens <$> cuteExpr ty <*> cuteLabel l)
           (cuteSubExpr super ty)
       )
+  _ -> go
   where
     go = parens <$> cuteBinder x l (Just ty)
 
@@ -313,8 +313,8 @@ cutePair accent left right = do
 cutePCase ::
   Doc ann ->
   Expr Text ->
-  Binder ->
-  Binder ->
+  Maybe Binder ->
+  Maybe Binder ->
   Scope Bool Expr Text ->
   CuteM (Doc ann)
 cutePCase accent cond lBinder rBinder bnd2 = do
@@ -409,21 +409,26 @@ exprLevel = \case
   Loc {..} -> exprLevel expr
   _ -> 90
 
-freshNameOrBinder :: Binder -> CuteM Text
+freshNameOrBinder :: Maybe Binder -> CuteM Text
 freshNameOrBinder binder = do
   Options {..} <- ask
   -- Always generate new name even if we use binder
   x <- freshWith $ (optNamePrefix <>) . show
-  return $ if optInternalNames then x else toText binder
+  return $ if optInternalNames then x else maybe x toText binder
 
-unbind1NameOrBinder :: Monad f => Binder -> Scope n f Text -> CuteM (Text, f Text)
+unbind1NameOrBinder ::
+  Monad f => Maybe Binder -> Scope n f Text -> CuteM (Text, f Text)
 unbind1NameOrBinder = unbind1By . freshNameOrBinder
 
 unbind2NamesOrBinders ::
-  Monad f => Binder -> Binder -> Scope Bool f Text -> CuteM (Text, Text, f Text)
+  Monad f =>
+  Maybe Binder ->
+  Maybe Binder ->
+  Scope Bool f Text ->
+  CuteM (Text, Text, f Text)
 unbind2NamesOrBinders binder1 binder2 =
   unbind2By (freshNameOrBinder binder1) (freshNameOrBinder binder2)
 
 unbindManyNamesOrBinders ::
-  Monad f => [Binder] -> Scope Int f Text -> CuteM ([Text], f Text)
+  Monad f => [Maybe Binder] -> Scope Int f Text -> CuteM ([Text], f Text)
 unbindManyNamesOrBinders = unbindManyBy . mapM freshNameOrBinder
