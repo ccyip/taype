@@ -48,7 +48,6 @@ typing _ Nothing =
 -- elaborated counterpart in core Taype in ANF
 kinding :: Ty Name -> TcM (Kind, Ty Name)
 kinding TInt = return (PublicK, TInt)
-kinding _ = wip
 
 -- | Infer the type of the expression
 infer :: Expr Name -> TcM (Ty Name, Label, Expr Name)
@@ -118,7 +117,7 @@ checkDef FunDef {..} = do
   -- TODO: bidirectional label checking or convert label here
   checkLabel (Just l) $ mustLabel label
   return FunDef {ty = ty', expr = expr', ..}
-checkDef _ = wip
+checkDef _ = undefined
 
 -- | Pre-type check top-level definitions
 preCheckDef :: Def Name -> TcM (Def Name)

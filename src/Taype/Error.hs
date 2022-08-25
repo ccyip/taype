@@ -4,7 +4,6 @@
 
 module Taype.Error
   ( oops,
-    wip,
     Err (..),
     initPosState,
     getLocation,
@@ -21,9 +20,6 @@ import Text.Megaparsec
 
 oops :: Text -> a
 oops msg = error $ "Oops! This should not happen:\n" <> msg
-
-wip :: a
-wip = oops "<not implemented yet>"
 
 data Err = Err
   { errLoc :: Int,
