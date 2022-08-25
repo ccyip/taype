@@ -67,6 +67,7 @@ library
                      , parser-combinators
                      , optparse-applicative
                      , mtl
+                     , lattices
 
 executable taype
   import:              common-options
