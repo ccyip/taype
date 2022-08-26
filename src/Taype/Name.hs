@@ -33,6 +33,8 @@ module Taype.Name
     instantiate1Name,
     instantiate2Names,
     instantiateNames,
+    abstract2,
+    abstractMany,
 
     -- * Unbound-style functions
     unbind1By,
@@ -120,6 +122,12 @@ instantiate2Names = instantiate2By return
 
 instantiateNames :: Monad f => [a] -> Scope Int f a -> f a
 instantiateNames = instantiateManyBy return
+
+abstract2 :: (Monad f, Eq a) => a -> a -> f a -> Scope Bool f a
+abstract2 = abstract2By (==)
+
+abstractMany :: (Monad f, Eq a) => [a] -> f a -> Scope Int f a
+abstractMany = abstractManyBy (==)
 
 unbind1By :: (Monad m, Monad f) => m a -> Scope n f a -> m (a, f a)
 unbind1By gen bnd = do
