@@ -17,13 +17,10 @@
 -- Parser for taype.
 module Taype.Parser (parse) where
 
-import Bound
 import Control.Applicative.Combinators (choice)
 import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import Control.Monad.Error.Class
-import qualified Data.HashMap.Strict as M
 import Data.List.NonEmpty (some1)
-import Taype.Environment
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
 import qualified Taype.Lexer as L
@@ -111,7 +108,7 @@ infixToTypeFormer _ = oops "unknown type infix"
 grammar :: Grammar r (Parser r [(Text, Def Text)])
 grammar = mdo
   -- A program is a list of global definitions
-  pProg <- rule $ concat <$> many pDef
+  pProg <- rule $ many pDef
 
   -- Global definition
   pDef <-
@@ -122,13 +119,9 @@ grammar = mdo
             pToken L.Data
             ~(loc, name) <- pLocatedIdent
             pToken L.Equals
-            let pCtor = (,) <$> pLocatedIdent <*> many pAtomType
+            let pCtor = (,) <$> pIdent <*> many pAtomType
             ctors <- pCtor `sepBy1` pToken L.Bar
-            return $
-              let ctorDefs = toList $ ctorToDef <$> ctors
-                  ctorToDef ((ctorLoc, ctorName), paraTypes) =
-                    (ctorName, CtorDef {loc = ctorLoc, dataType = name, ..})
-               in (name, ADTDef {ctors = snd . fst <$> ctors, ..}) : ctorDefs,
+            return (name, ADTDef {..}),
           -- Oblivious ADT definition
           do
             pToken L.Obliv
@@ -144,15 +137,14 @@ grammar = mdo
             ~(binder, ty) <- pArg
             pToken L.Equals
             body <- pType
-            return $
-              one
-                ( name,
-                  OADTDef
-                    { bnd = abstract1Binder binder body,
-                      binder = Just binder,
-                      ..
-                    }
-                ),
+            return
+              ( name,
+                OADTDef
+                  { bnd = abstract1Binder binder body,
+                    binder = Just binder,
+                    ..
+                  }
+              ),
           -- Function definition
           do
             let pAttr = do
@@ -173,15 +165,14 @@ grammar = mdo
             ty <- pType
             pToken L.Equals
             expr <- pExpr
-            return $
-              one
-                ( name,
-                  FunDef
-                    { attr = fromMaybe LeakyAttr attr,
-                      label = Nothing,
-                      ..
-                    }
-                )
+            return
+              ( name,
+                FunDef
+                  { attr = fromMaybe LeakyAttr attr,
+                    label = Nothing,
+                    ..
+                  }
+              )
         ]
 
   -- Expression
@@ -474,31 +465,13 @@ grammar = mdo
 
 -- | Main parser which returns a global context with the list of definition
 -- names
-parse :: MonadError Err m => [LocatedToken] -> m ([Text], GCtx a)
+parse :: MonadError Err m => [LocatedToken] -> m [(Text, Def Text)]
 parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> throwError $ renderParserError rpt
-    ([defs], _) ->
-      ([name | (name, def) <- defs, notCtorDef def],)
-        <$> makeGCtx defs
+    ([defs], _) -> return defs
     (parses, _) ->
       oops $ "Ambiguous grammar: there are " <> show (length parses) <> " parses!"
-  where
-    notCtorDef CtorDef {} = False
-    notCtorDef _ = True
-
-makeGCtx :: MonadError Err m => [(Text, Def Text)] -> m (GCtx a)
-makeGCtx = foldlM go preludeGCtx
-  where
-    go gctx (name, def)
-      | M.member name gctx =
-        throwError $
-          Err
-            { errLoc = getDefLoc def,
-              errCategory = "Parsing Error",
-              errMsg = "definition " <> name <> " already exists"
-            }
-    go gctx (name, def) = return $ M.insert name (def >>>= GV) gctx
 
 renderParserError :: Report Text [LocatedToken] -> Err
 renderParserError Report {..} =

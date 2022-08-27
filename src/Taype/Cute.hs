@@ -3,7 +3,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -158,15 +157,14 @@ cuteDef options gctx name =
     ADTDef {..} ->
       "data" <+> pretty name
         <+> align
-          (equals <+> group (sepWith (line <> pipe <> space) (cuteCtor <$> ctors)))
+          ( equals
+              <+> group (sepWith (line <> pipe <> space) (cuteCtor <$> ctors))
+          )
       where
-        cuteCtor :: Text -> Doc ann
-        cuteCtor ctor = case gctx !? ctor of
-          Just (CtorDef {paraTypes}) ->
-            hang $
-              pretty ctor
-                <> group (foldMap ((line <>) . go . cuteSubExprAgg) paraTypes)
-          _ -> oops $ "Cannot find the definition of constructor " <> show ctor
+        cuteCtor (ctor, paraTypes) =
+          hang $
+            pretty ctor
+              <> group (foldMap ((line <>) . go . cuteSubExprAgg) paraTypes)
     OADTDef {..} ->
       hang $ "obliv" <+> pretty name <+> rest
       where

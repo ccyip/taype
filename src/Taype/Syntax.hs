@@ -278,7 +278,7 @@ type Def = DefB Expr
 
 -- | Generalized global definition
 data DefB f a
-  = -- Function
+  = -- | Function
     FunDef
       { loc :: Int,
         attr :: Attribute,
@@ -287,11 +287,11 @@ data DefB f a
         expr :: f a
       }
   | -- | Algebraic data type. Do not support empty type
-    ADTDef {loc :: Int, ctors :: NonEmpty Text}
+    ADTDef {loc :: Int, ctors :: NonEmpty (Text, [f a])}
   | -- | Oblivious algebraic data type. Only support one argument for now
     OADTDef {loc :: Int, ty :: f a, binder :: Maybe Binder, bnd :: Scope () f a}
   | -- | Constructor
-    CtorDef {loc :: Int, paraTypes :: [f a], dataType :: Text}
+    CtorDef {paraTypes :: [f a], dataType :: Text}
   | -- | Builtin operation
     BuiltinDef
       { paraTypes :: [f a],
@@ -305,8 +305,7 @@ getDefLoc = \case
   FunDef {..} -> loc
   ADTDef {..} -> loc
   OADTDef {..} -> loc
-  CtorDef {..} -> loc
-  BuiltinDef {} -> -1
+  _ -> -1
 
 data Attribute = SectionAttr | RetractionAttr | SafeAttr | LeakyAttr
   deriving stock (Eq)
@@ -413,7 +412,7 @@ instance Bound CaseAlt where
 
 instance Bound DefB where
   FunDef {..} >>>= f = FunDef {ty = ty >>= f, expr = expr >>= f, ..}
-  ADTDef {..} >>>= _ = ADTDef {..}
+  ADTDef {..} >>>= f = ADTDef {ctors = ctors <&> second ((>>= f) <$>), ..}
   OADTDef {..} >>>= f = OADTDef {ty = ty >>= f, bnd = bnd >>>= f, ..}
   CtorDef {..} >>>= f = CtorDef {paraTypes = paraTypes <&> (>>= f), ..}
   BuiltinDef {..} >>>= f =

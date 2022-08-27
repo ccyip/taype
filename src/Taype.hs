@@ -18,6 +18,7 @@ where
 import Options.Applicative
 import Prettyprinter.Render.Text (putDoc)
 import Prettyprinter.Util (putDocW)
+import Bound
 import Taype.Cute
 import Taype.Environment
 import Taype.Error
@@ -37,20 +38,15 @@ process :: FilePath -> Text -> Options -> ExceptT Err IO ()
 process file code options@Options {..} = do
   tokens <- lex file code
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
-  (defs, initGCtx) <- parse tokens
-  -- The label does not matter here
-  let env = Env {gctx = initGCtx, ctx = [], bctx = [], label = LeakyL, ..}
-  preGCtx <- preCheckGCtx env
-  when optPrintSource $ cuteGCtx preGCtx defs
-  gctx <- checkGCtx $ env {gctx = preGCtx}
-  cuteGCtx gctx defs
+  namedDefs <- parse tokens
+  let names = fst <$> namedDefs
+      defs = second (>>>= GV) <$> namedDefs
+  when optPrintSource $ printDefs (fromList defs) names
+  gctx <- checkDefs options defs
+  printDefs gctx names
   where
-    -- Global context needs to be closed again before printing because the pretty
-    -- printer instantiates the type variable with 'Text'
-    cuteGCtx gctx defs =
-      lift $
-        maybe putDoc putDocW optWidth $
-          cuteDefs options (mustClosed "Global context" <$> gctx) defs
+    printDefs gctx defs =
+      lift $ maybe putDoc putDocW optWidth $ cuteDefs options gctx defs
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)

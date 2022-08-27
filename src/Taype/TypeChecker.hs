@@ -1,8 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -12,18 +12,16 @@
 -- Portability: portable
 --
 -- Bidirectional type checker for Taype.
-module Taype.TypeChecker
-  ( typing,
-    checkGCtx,
-    preCheckGCtx,
-  )
-where
+module Taype.TypeChecker (checkDefs) where
 
 import Algebra.Lattice
 import Algebra.PartialOrd
 import Bound
 import Control.Monad.Error.Class
+import Data.HashMap.Strict ((!?))
+import qualified Data.HashMap.Strict as M
 import Data.List (zip4)
+import Relude.Extra.Tuple
 import Taype.Environment
 import Taype.Error
 import Taype.Name
@@ -91,8 +89,6 @@ typing _ Nothing Nothing =
 -- checking mode. This function returns the type's kind and its full
 -- elaboration.
 --
--- The given type must be sufficiently labeled.
---
 -- The returned kind must be the same as the given kind if in checking mode.
 --
 -- The returned type must be in core Taype ANF. Of course, it must also be
@@ -124,8 +120,9 @@ kinding OSum {..} Nothing = do
 kinding Pi {..} Nothing = do
   (_, ty') <- inferKind ty
   (x, body) <- unbind1 bnd
-  (_, body') <- extendCtx1 x ty' (mustLabel label) binder $ inferKind body
-  return (MixedK, Pi {ty = ty', bnd = abstract1 x body', ..})
+  l <- labeling label
+  (_, body') <- extendCtx1 x ty' l binder $ inferKind body
+  return (MixedK, Pi {ty = ty', label = Just l, bnd = abstract1 x body', ..})
 kinding App {..} Nothing = do
   ref <- isGV fn
   ty <-
@@ -227,50 +224,38 @@ kinding Case {..} Nothing = do
   ctors <-
     lookupDef ref >>= \case
       -- TODO
-      Just ADTDef {..} -> do
-        let go ctor =
-              lookupDef ctor >>= \case
-                Just CtorDef {paraTypes} -> return (ctor, paraTypes)
-                Just _ -> err "not a constructor"
-                _ -> err "no such definition"
-        mapM go ctors
+      Just ADTDef {..} -> return ctors
       -- TODO
       Just _ -> err "not an ADT"
       Nothing -> err "no such definition"
-  case joinAlts alts ctors of
-    -- TODO
-    Left (_, _) -> err "constructors do not match"
-    Right alts' -> do
-      alts'' <- forM alts' $
-        \(ctor, paraTypes, binders, bnd) -> do
-          let n = length paraTypes
-          unless (length binders == n) $ err "arguments do not match"
-          (xs, body) <- unbindMany n bnd
-          body' <-
-            extendCtx (zip4 xs paraTypes (replicate n SafeL) binders) $
-              checkKind body OblivK
-          return $
-            CaseAlt
-              { bnd = abstractMany xs body',
-                ..
-              }
-      x <- fresh
-      return
-        ( OblivK,
-          Let
-            { mTy = Just (GV ref),
-              label = Just SafeL,
-              rhs = cond',
-              binder = Nothing,
-              bnd =
-                abstract1 x $
-                  Case
-                    { cond = V x,
-                      alts = alts'',
-                      ..
-                    }
-            }
-        )
+  augAlts <-
+    case joinAlts alts ctors of
+      -- TODO
+      Left (_, _) -> err "constructors do not match"
+      Right alts' -> return alts'
+  alts' <- mapM kindCaseAlt augAlts
+  x <- fresh
+  return
+    ( OblivK,
+      Let
+        { mTy = Just (GV ref),
+          label = Just SafeL,
+          rhs = cond',
+          binder = Nothing,
+          bnd = abstract1 x Case {cond = V x, alts = alts', ..}
+        }
+    )
+  where
+    kindCaseAlt (_, paraTypes, binders, _)
+      -- TODO
+      | length paraTypes /= length binders = err "arguments fo not match"
+    kindCaseAlt (ctor, paraTypes, binders, bnd) = do
+      let n = length paraTypes
+      (xs, body) <- unbindMany n bnd
+      body' <-
+        extendCtx (zip4 xs paraTypes (replicate n SafeL) binders) $
+          checkKind body OblivK
+      return CaseAlt {bnd = abstractMany xs body', ..}
 kinding Loc {..} mt = kinding expr mt
 -- Check kind
 kinding t (Just k) = do
@@ -389,18 +374,20 @@ findAndDel p (x : xs)
   | p x = Just (x, xs)
   | otherwise = second (x :) <$> findAndDel p xs
 
--- | Type check all definitions in the global context.
-checkGCtx :: Env -> ExceptT Err IO (GCtx a)
-checkGCtx = checkGCtxWith checkDef
-
--- | Pre-type check all definitions in the global context.
-preCheckGCtx :: Env -> ExceptT Err IO (GCtx a)
-preCheckGCtx = checkGCtxWith preCheckDef
-
-checkGCtxWith :: (Def Name -> TcM (Def Name)) -> Env -> ExceptT Err IO (GCtx a)
-checkGCtxWith chk env@Env {..} = runTcM env $ mapM go gctx
+-- | Type check all definitions.
+checkDefs :: Options -> [(Text, Def Name)] -> ExceptT Err IO (GCtx a)
+checkDefs options defs = do
+  gctx <- preCheckDefs options defs
+  defs' <- mapM (traverseToSnd (go gctx) . fst) defs
+  return $ mustClosed "Global context" $ fromList defs' `M.union` gctx
   where
-    go def = mustClosed "Definition" <$> chk def
+    go gctx name =
+      -- Label does not matter here.
+      runTcM Env {ctx = [], bctx = [], label = LeakyL, ..} $
+        checkDef $
+          fromMaybe
+            (oops $ "Definition " <> name <> " does not exist")
+            (gctx !? name)
 
 -- | Type check top-level definitions.
 --
@@ -416,10 +403,23 @@ checkDef FunDef {..} = do
   return FunDef {ty = ty', expr = expr', ..}
 checkDef _ = undefined
 
--- | Pre-type check top-level definitions.
---
--- If the returned definition is a function definition, its type must be
--- sufficiently labeled, i.e. the top-level pi-types are labeled.
+-- | Pre-type check all definitions to ensure they are well-formed, and their
+-- types are well-kinded and in core Taype ANF.
+preCheckDefs :: Options -> [(Text, Def Name)] -> ExceptT Err IO (GCtx Name)
+preCheckDefs options = go preludeGCtx
+  where
+    go gctx [] = return gctx
+    go gctx ((name, _) : _)
+      | M.member name gctx =
+        err $ "Definition " <> name <> " already exists"
+    go gctx ((name, def) : defs) = do
+      -- Label does not matter here.
+      def' <-
+        runTcM Env {ctx = [], bctx = [], label = SafeL, ..} $
+          preCheckDef def
+      go (M.insert name def' gctx) defs
+
+-- | pre-Check a top-level definition.
 preCheckDef :: Def Name -> TcM (Def Name)
 preCheckDef FunDef {..} = do
   ty' <- go
@@ -427,58 +427,41 @@ preCheckDef FunDef {..} = do
   return FunDef {ty = ty', label = Just label', ..}
   where
     go = case attr of
-      SectionAttr -> preCheckSectionType ty
-      RetractionAttr -> preCheckRetractionType ty
-      _ -> withLabel label' $ preCheckType ty
+      SectionAttr -> preCheckSecRetType True ty
+      RetractionAttr -> preCheckSecRetType False ty
+      _ -> withLabel label' $ snd <$> inferKind ty
     label' = case attr of
       SectionAttr -> SafeL
       RetractionAttr -> LeakyL
       SafeAttr -> SafeL
       LeakyAttr -> LeakyL
-preCheckDef def = return def
-
-preCheckType :: Ty Name -> TcM (Ty Name)
-preCheckType Pi {..} = do
-  t <- preCheckType ty
-  (x, body) <- unbind1 bnd
-  e <- preCheckType body
-  l <- labeling label
-  return
-    Pi
-      { label = Just l,
-        ty = t,
-        bnd = abstract1 x e,
-        ..
-      }
-preCheckType Prod {..} = do
-  left' <- preCheckType left
-  right' <- preCheckType right
-  return Prod {left = left', right = right'}
-preCheckType Loc {..} = preCheckType expr
--- We do not go inside terms
-preCheckType e = return e
+preCheckDef def = undefined
 
 -- NOTE: be careful! The location information for the two outermost pi-types is
 -- erased
-preCheckSecRetType :: Label -> Ty Name -> TcM (Ty Name)
-preCheckSecRetType l t = do
-  -- A section/retraction must be a function type with two arguments
+
+-- | Pre-type check the type of a section or retraction function.
+--
+-- The first argument is 'True' if checking section, otherwise checking
+-- retraction.
+preCheckSecRetType :: Bool -> Ty Name -> TcM (Ty Name)
+preCheckSecRetType b t = do
+  -- A section/retraction must be a function type with two arguments.
   (typ1, label1, binder1, bnd1) <- isPi t
-  -- All the calls to 'preCheckType' are bogus. If the argument types or the
-  -- result type contain more pi-types, this is not a valid section/retraction
-  -- function, which will be detected in the next phase. However, we pre-check
-  -- them anyway to maintain the invariant
-  typ1' <- preCheckType typ1
-  -- The first argument is the public view which must have safe label
+  -- The first argument is the public view which must be public with safe label.
+  typ1' <- checkKind typ1 PublicK
   checkLabel label1 SafeL
   (x1, body1) <- unbind1 bnd1
   (typ2, label2, binder2, bnd2) <- isPi body1
-  typ2' <- preCheckType typ2
-  -- The label of the second argument depends on whether it is section or
-  -- retraction
+  -- The second argument of a section must be public with leaky label, while
+  -- that of a retraction must be oblivious with safe label.
+  let l = if b then LeakyL else SafeL
+  typ2' <- checkKind typ2 (if b then PublicK else OblivK)
   checkLabel label2 l
   (x2, body2) <- unbind1 bnd2
-  bnd2' <- preCheckType body2
+  -- The result of a section function must be oblivious, while that of a
+  -- retraction must be public.
+  bnd2' <- checkKind body2 (if b then OblivK else PublicK)
   return
     Pi
       { ty = typ1',
@@ -493,14 +476,6 @@ preCheckSecRetType l t = do
                 bnd = abstract1 x2 bnd2'
               }
       }
-
-preCheckSectionType :: Ty Name -> TcM (Ty Name)
--- The second argument of a section should be leaky
-preCheckSectionType = preCheckSecRetType LeakyL
-
-preCheckRetractionType :: Ty Name -> TcM (Ty Name)
--- The second argument of a retraction should be safe
-preCheckRetractionType = preCheckSecRetType SafeL
 
 -- TODO
 err :: MonadError Err m => Text -> m a
