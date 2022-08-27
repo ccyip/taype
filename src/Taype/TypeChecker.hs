@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -17,10 +19,11 @@ module Taype.TypeChecker
   )
 where
 
-import Bound
 import Algebra.Lattice
 import Algebra.PartialOrd
+import Bound
 import Control.Monad.Error.Class
+import Data.List (zip4)
 import Taype.Environment
 import Taype.Error
 import Taype.Name
@@ -31,9 +34,18 @@ import Taype.Syntax
 -- Both types (the second argument) and labels (the third argument) may be
 -- inferred or checked. They are in inference mode if they are 'Nothing', or in
 -- checking mode otherwise. This function returns the expression's type, label
--- and its full elaboration. The returned type and expression must be in core
--- Taype ANF. Both the given type in checking mode and the returned type must be
--- well-kinded
+-- and its full elaboration.
+--
+-- The given type must be well-kinded.
+--
+-- The returned type must be well-kinded and in core Taype ANF. It is also
+-- equivalent to the given type if in type checking mode.
+--
+-- The returned label must be the same as the given label if in label checking
+-- mode.
+--
+-- The returned expression must be in core Taype ANF. Of course, it must also be
+-- typed by the returned type and label, and equivalent to the given expression.
 typing ::
   Expr Name ->
   Maybe (Ty Name) ->
@@ -77,16 +89,197 @@ typing _ Nothing Nothing =
 --
 -- It is in inference mode if the second argument is 'Nothing', otherwise in
 -- checking mode. This function returns the type's kind and its full
--- elaboration. The returned type must be in core Taype ANF.
+-- elaboration.
+--
+-- The given type must be sufficiently labeled.
+--
+-- The returned kind must be the same as the given kind if in checking mode.
+--
+-- The returned type must be in core Taype ANF. Of course, it must also be
+-- kinded by the returned kind.
 kinding :: Ty Name -> Maybe Kind -> TcM (Kind, Ty Name)
+kinding TUnit Nothing = return (AnyK, TUnit)
+kinding TBool Nothing = return (PublicK, TBool)
+kinding OBool Nothing = return (OblivK, OBool)
 kinding TInt Nothing = return (PublicK, TInt)
-
+kinding OInt Nothing = return (OblivK, OInt)
+kinding GV {..} Nothing =
+  lookupDef ref >>= \case
+    Just ADTDef {} -> return (PublicK, GV {..})
+    -- TODO
+    Just _ -> err "definition is not ADT"
+    Nothing -> err "no such definition"
+kinding Prod {..} Nothing = do
+  (lk, left') <- inferKind left
+  (rk, right') <- inferKind right
+  return (lk \/ rk \/ PublicK, Prod {left = left', right = right'})
+kinding OProd {..} Nothing = do
+  left' <- checkKind left OblivK
+  right' <- checkKind right OblivK
+  return (OblivK, OProd {left = left', right = right'})
+kinding OSum {..} Nothing = do
+  left' <- checkKind left OblivK
+  right' <- checkKind right OblivK
+  return (OblivK, OSum {left = left', right = right'})
+kinding Pi {..} Nothing = do
+  (_, ty') <- inferKind ty
+  (x, body) <- unbind1 bnd
+  (_, body') <- extendCtx1 x ty' (mustLabel label) binder $ inferKind body
+  return (MixedK, Pi {ty = ty', bnd = abstract1 x body', ..})
+kinding App {..} Nothing = do
+  ref <- isGV fn
+  ty <-
+    lookupDef ref >>= \case
+      Just OADTDef {..} -> return ty
+      -- TODO
+      Just _ -> err "definition is not OADT"
+      Nothing -> err "no such definition"
+  arg <- case args of
+    [arg] -> return arg
+    -- TODO
+    _ -> err "arity mismatch"
+  (_, arg') <- check arg ty (Just SafeL)
+  x <- fresh
+  return
+    ( OblivK,
+      Let
+        { mTy = Just ty,
+          label = Just SafeL,
+          rhs = arg',
+          binder = Nothing,
+          bnd =
+            abstract1 x $
+              App
+                { appKind = Just TypeApp,
+                  fn = GV ref,
+                  args = [V x]
+                }
+        }
+    )
+kinding Let {..} Nothing = do
+  checkLabel label SafeL
+  (t', _, rhs') <- typing rhs mTy (Just SafeL)
+  (x, body) <- unbind1 bnd
+  body' <- extendCtx1 x t' SafeL binder $ checkKind body OblivK
+  return
+    ( OblivK,
+      Let
+        { mTy = Just t',
+          label = Just SafeL,
+          rhs = rhs',
+          bnd = abstract1 x body',
+          ..
+        }
+    )
+kinding Ite {..} Nothing = do
+  (_, cond') <- check cond TBool (Just SafeL)
+  ifTrue' <- checkKind ifTrue OblivK
+  ifFalse' <- checkKind ifFalse OblivK
+  x <- fresh
+  return
+    ( OblivK,
+      Let
+        { mTy = Just TBool,
+          label = Just SafeL,
+          rhs = cond',
+          binder = Nothing,
+          bnd =
+            abstract1 x $
+              Ite
+                { cond = V x,
+                  ifTrue = ifTrue',
+                  ifFalse = ifFalse',
+                  ..
+                }
+        }
+    )
+kinding PCase {..} Nothing = do
+  (t', _, cond') <- typing cond Nothing (Just SafeL)
+  -- NOTE: even though 'isProd' performs weak head normalization, the two
+  -- components are still in core Taype ANF. This is because @t'@ is never an
+  -- oblivious type if it is a product and well-kinded, so the head of @t'@ has
+  -- to be @Prod@ already, with possibly @Loc@ wrappers.
+  (left', right') <- isProd t'
+  (xl, xr, body) <- unbind2 bnd2
+  body' <-
+    extendCtx [(xl, left', SafeL, lBinder), (xr, right', SafeL, rBinder)] $
+      checkKind body OblivK
+  x <- fresh
+  return
+    ( OblivK,
+      Let
+        { mTy = Just (Prod {left = left', right = right'}),
+          label = Just SafeL,
+          rhs = cond',
+          binder = Nothing,
+          bnd =
+            abstract1 x $
+              PCase
+                { cond = V x,
+                  bnd2 = abstract2 xl xr body',
+                  ..
+                }
+        }
+    )
+kinding Case {..} Nothing = do
+  (t', _, cond') <- typing cond Nothing (Just SafeL)
+  ref <- isGV t'
+  ctors <-
+    lookupDef ref >>= \case
+      -- TODO
+      Just ADTDef {..} -> do
+        let go ctor =
+              lookupDef ctor >>= \case
+                Just CtorDef {paraTypes} -> return (ctor, paraTypes)
+                Just _ -> err "not a constructor"
+                _ -> err "no such definition"
+        mapM go ctors
+      -- TODO
+      Just _ -> err "not an ADT"
+      Nothing -> err "no such definition"
+  case joinAlts alts ctors of
+    -- TODO
+    Left (_, _) -> err "constructors do not match"
+    Right alts' -> do
+      alts'' <- forM alts' $
+        \(ctor, paraTypes, binders, bnd) -> do
+          let n = length paraTypes
+          unless (length binders == n) $ err "arguments do not match"
+          (xs, body) <- unbindMany n bnd
+          body' <-
+            extendCtx (zip4 xs paraTypes (replicate n SafeL) binders) $
+              checkKind body OblivK
+          return $
+            CaseAlt
+              { bnd = abstractMany xs body',
+                ..
+              }
+      x <- fresh
+      return
+        ( OblivK,
+          Let
+            { mTy = Just (GV ref),
+              label = Just SafeL,
+              rhs = cond',
+              binder = Nothing,
+              bnd =
+                abstract1 x $
+                  Case
+                    { cond = V x,
+                      alts = alts'',
+                      ..
+                    }
+            }
+        )
+kinding Loc {..} mt = kinding expr mt
 -- Check kind
 kinding t (Just k) = do
   (k', t') <- inferKind t
   -- TODO
   unless (k' `leq` k) $ err "Kind mismatch"
   return (k, t')
+
+-- Failed
 kinding _ Nothing =
   -- TODO
   err "Cannot infer the kind"
@@ -144,11 +337,63 @@ isPi t = do
     -- TODO
     _ -> err "not a pi"
 
--- | Type check all definitions in the global context
+isGV :: Expr Name -> TcM Text
+isGV e = do
+  enf <- whnf e
+  case enf of
+    GV {..} -> return ref
+    -- TODO
+    _ -> err "not a global variable"
+
+isProd :: Ty Name -> TcM (Ty Name, Ty Name)
+isProd t = do
+  tnf <- whnf t
+  case tnf of
+    Prod {..} -> return (left, right)
+    -- TODO
+    _ -> err "not a product"
+
+-- | Join the pattern matching alternatives list and the constructors list with
+-- their parameter types.
+--
+-- Each entry of the returned list, when succeeds, consists of the constructor's
+-- name, its parameter types, binders and pattern matching body. The order of
+-- this list follows that of the constructors list.
+--
+-- If the two lists do not match, this function fails with a list of
+-- constructors that do not appear in the alternatives (i.e. non-exhausted), and
+-- a list of constructors that do not appear in the constructors list or that
+-- are duplicate.
+joinAlts ::
+  NonEmpty (CaseAlt Expr a) ->
+  NonEmpty (Text, [Ty a]) ->
+  Either
+    ([Text], [Text])
+    (NonEmpty (Text, [Ty a], [Maybe Binder], Scope Int Expr a))
+joinAlts alts ctors =
+  let (result, missing, alts') = foldr go ([], [], toList alts) ctors
+   in case nonEmpty result of
+        Just r | null missing && null alts' -> Right r
+        _ -> Left (missing, alts' <&> \CaseAlt {..} -> ctor)
+  where
+    go (ctor, paraTypes) (result, missing, alts') =
+      case findAndDel (match ctor) alts' of
+        Just (CaseAlt {ctor = _, ..}, alts'') ->
+          ((ctor, paraTypes, binders, bnd) : result, missing, alts'')
+        _ -> (result, ctor : missing, alts')
+    match key CaseAlt {..} = ctor == key
+
+findAndDel :: (a -> Bool) -> [a] -> Maybe (a, [a])
+findAndDel _ [] = Nothing
+findAndDel p (x : xs)
+  | p x = Just (x, xs)
+  | otherwise = second (x :) <$> findAndDel p xs
+
+-- | Type check all definitions in the global context.
 checkGCtx :: Env -> ExceptT Err IO (GCtx a)
 checkGCtx = checkGCtxWith checkDef
 
--- | Fully elaborate top-level pi-types with labels and ensure they are well-formed
+-- | Pre-type check all definitions in the global context.
 preCheckGCtx :: Env -> ExceptT Err IO (GCtx a)
 preCheckGCtx = checkGCtxWith preCheckDef
 
@@ -157,7 +402,11 @@ checkGCtxWith chk env@Env {..} = runTcM env $ mapM go gctx
   where
     go def = mustClosed "Definition" <$> chk def
 
--- | Type check top-level definitions
+-- | Type check top-level definitions.
+--
+-- The given definition must be sufficiently labeled.
+--
+-- The returned definition must be in core Taype ANF.
 checkDef :: Def Name -> TcM (Def Name)
 checkDef FunDef {..} = do
   -- TODO
@@ -167,7 +416,10 @@ checkDef FunDef {..} = do
   return FunDef {ty = ty', expr = expr', ..}
 checkDef _ = undefined
 
--- | Pre-type check top-level definitions
+-- | Pre-type check top-level definitions.
+--
+-- If the returned definition is a function definition, its type must be
+-- sufficiently labeled, i.e. the top-level pi-types are labeled.
 preCheckDef :: Def Name -> TcM (Def Name)
 preCheckDef FunDef {..} = do
   ty' <- go

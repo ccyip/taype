@@ -39,7 +39,7 @@ process file code options@Options {..} = do
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
   (defs, initGCtx) <- parse tokens
   -- The label does not matter here
-  let env = Env {gctx = initGCtx, ctx = [], label = LeakyL, ..}
+  let env = Env {gctx = initGCtx, ctx = [], bctx = [], label = LeakyL, ..}
   preGCtx <- preCheckGCtx env
   when optPrintSource $ cuteGCtx preGCtx defs
   gctx <- checkGCtx $ env {gctx = preGCtx}
