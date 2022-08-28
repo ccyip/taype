@@ -411,12 +411,18 @@ checkDefs options defs = do
 -- The returned definition must be in core Taype ANF.
 checkDef :: Def Name -> TcM (Def Name)
 checkDef FunDef {..} = do
-  -- TODO
-  (_, ty') <- kinding ty Nothing
-  -- TODO: ty or ty'?
-  (_, expr') <- check expr ty label
-  return FunDef {ty = ty', expr = expr', ..}
-checkDef _ = undefined
+  let l = mustLabel label
+  (_, expr') <- withLabel l $ check expr ty (Just l)
+  return FunDef {expr = expr', ..}
+checkDef OADTDef {..} = do
+  (x, body) <- unbind1 bnd
+  body' <-
+    withLabel SafeL $
+      extendCtx1 x ty SafeL binder $ checkKind body OblivK
+  return OADTDef {bnd = abstract1 x body', ..}
+-- 'ADTDef' and 'CtorDef' have been checked in pre-checker, and 'BuiltinDef'
+-- does not need to be checked.
+checkDef def = return def
 
 -- | Pre-type check all definitions to ensure they are well-formed, and their
 -- types are well-kinded and in core Taype ANF.
