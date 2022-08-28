@@ -20,7 +20,7 @@ import Bound
 import Control.Monad.Error.Class
 import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
-import Data.List (zip4)
+import Data.List (partition, zip4)
 import Relude.Extra.Tuple
 import Taype.Environment
 import Taype.Error
@@ -374,16 +374,29 @@ findAndDel p (x : xs)
   | p x = Just (x, xs)
   | otherwise = second (x :) <$> findAndDel p xs
 
+insertMany ::
+  (Foldable t, Hashable k) => HashMap k v -> t (k, v) -> HashMap k v
+insertMany = flipfoldl' $ uncurry M.insert
+
+extendGCtx1 :: MonadError Err m => GCtx Name -> Text -> Def Name -> m (GCtx Name)
+extendGCtx1 gctx name _
+  | M.member name gctx =
+    -- TODO
+    err $ "Definition " <> name <> " already exists"
+extendGCtx1 gctx name def = return $ M.insert name def gctx
+
+extendGCtx :: MonadError Err m => GCtx Name -> [(Text, Def Name)] -> m (GCtx Name)
+extendGCtx = foldlM $ uncurry . extendGCtx1
+
 -- | Type check all definitions.
 checkDefs :: Options -> [(Text, Def Name)] -> ExceptT Err IO (GCtx a)
 checkDefs options defs = do
   gctx <- preCheckDefs options defs
   defs' <- mapM (traverseToSnd (go gctx) . fst) defs
-  return $ mustClosed "Global context" $ fromList defs' `M.union` gctx
+  return $ mustClosed "Global context" <$> insertMany gctx defs'
   where
     go gctx name =
-      -- Label does not matter here.
-      runTcM Env {ctx = [], bctx = [], label = LeakyL, ..} $
+      runTcM (initEnv options gctx) $
         checkDef $
           fromMaybe
             (oops $ "Definition " <> name <> " does not exist")
@@ -391,7 +404,9 @@ checkDefs options defs = do
 
 -- | Type check top-level definitions.
 --
--- The given definition must be sufficiently labeled.
+-- The associated type/type arguments of the given definition must be
+-- well-kinded and in core Taype ANF if the definition is a function,
+-- constructor or OADT.
 --
 -- The returned definition must be in core Taype ANF.
 checkDef :: Def Name -> TcM (Def Name)
@@ -406,18 +421,38 @@ checkDef _ = undefined
 -- | Pre-type check all definitions to ensure they are well-formed, and their
 -- types are well-kinded and in core Taype ANF.
 preCheckDefs :: Options -> [(Text, Def Name)] -> ExceptT Err IO (GCtx Name)
-preCheckDefs options = go preludeGCtx
+preCheckDefs options allDefs = do
+  -- We need to pre-check all ADTs first, because they can mutually refer to
+  -- each other but do not contain dependent types.
+  let (adtDefs, otherDefs) = partition isADTDef allDefs
+  -- Note that @gctx@ trivially satisfies the invariant for global context (i.e.
+  -- function types, constructor and OADT type arguments are well-kinded and in
+  -- core Taype ANF), because it only contains ADTs (and prelude) at the moment.
+  gctx <- extendGCtx preludeGCtx adtDefs
+  adtDefs' <- forM adtDefs $
+    \(name, def) -> (name,) <$> runTcM (initEnv options gctx) (preCheckDef def)
+  -- Extend global context with the ADTs and their constructors. Note that the
+  -- types of all constructors are already in the right form after pre-check.
+  gctx' <- extendGCtx preludeGCtx $ foldMap adtWithCtors adtDefs'
+  -- Now we pre-check the rest of definitions in order.
+  go gctx' otherDefs
   where
+    isADTDef (_, ADTDef {}) = True
+    isADTDef _ = False
+    adtWithCtors (name, def@ADTDef {..}) =
+      let ctorDefs =
+            ctors <&> second (\paraTypes -> CtorDef {dataType = name, ..})
+       in (name, def) : toList ctorDefs
+    adtWithCtors (_, _) = oops "Not an ADT definition"
+    -- Pre-checking definitions except for ADTs is done in the order of the
+    -- given definitions. While mutual recursion is allowed, the type of a
+    -- definition should not refer to this definition itself, directly or
+    -- transitively.
     go gctx [] = return gctx
-    go gctx ((name, _) : _)
-      | M.member name gctx =
-        err $ "Definition " <> name <> " already exists"
     go gctx ((name, def) : defs) = do
-      -- Label does not matter here.
-      def' <-
-        runTcM Env {ctx = [], bctx = [], label = SafeL, ..} $
-          preCheckDef def
-      go (M.insert name def' gctx) defs
+      def' <- runTcM (initEnv options gctx) $ preCheckDef def
+      gctx' <- extendGCtx1 gctx name def'
+      go gctx' defs
 
 -- | pre-Check a top-level definition.
 preCheckDef :: Def Name -> TcM (Def Name)
@@ -435,15 +470,23 @@ preCheckDef FunDef {..} = do
       RetractionAttr -> LeakyL
       SafeAttr -> SafeL
       LeakyAttr -> LeakyL
-preCheckDef def = undefined
-
--- NOTE: be careful! The location information for the two outermost pi-types is
--- erased
+preCheckDef ADTDef {..} = do
+  ctors' <- mapM go ctors
+  return ADTDef {ctors = ctors', ..}
+  where
+    go (ctor, paraTypes) = (ctor,) <$> mapM (`checkKind` PublicK) paraTypes
+preCheckDef OADTDef {..} = do
+  ty' <- checkKind ty PublicK
+  return OADTDef {ty = ty', ..}
+preCheckDef _ = oops "Pre-checking constructor or builtin definitions"
 
 -- | Pre-type check the type of a section or retraction function.
 --
 -- The first argument is 'True' if checking section, otherwise checking
 -- retraction.
+
+-- NOTE: be careful! The location information for the two outermost pi-types is
+-- erased
 preCheckSecRetType :: Bool -> Ty Name -> TcM (Ty Name)
 preCheckSecRetType b t = do
   -- A section/retraction must be a function type with two arguments.

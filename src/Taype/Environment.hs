@@ -14,6 +14,7 @@
 module Taype.Environment
   ( -- * Environment
     Env (..),
+    initEnv,
 
     -- * Commandline options
     Options (..),
@@ -50,8 +51,8 @@ data Env = Env
     options :: Options,
     -- | Global definition context
     --
-    -- Function types must be well-kinded and in core Taype ANF before type
-    -- checking.
+    -- Function types, constructor and OADT type arguments must be well-kinded
+    -- and in core Taype ANF before type checking.
     gctx :: GCtx Name,
     -- | Local typing context
     --
@@ -62,6 +63,13 @@ data Env = Env
     -- | Default label for inference
     label :: Label
   }
+
+-- | Make an initial environment.
+--
+-- Initially label does not matter because it should be replaced according to
+-- the context.
+initEnv :: Options -> GCtx Name -> Env
+initEnv options gctx = Env {ctx = [], bctx = [], label = LeakyL, ..}
 
 data Options = Options
   { optFile :: FilePath,
