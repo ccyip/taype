@@ -34,7 +34,7 @@ import Taype.Syntax
 -- checking mode otherwise. This function returns the expression's type, label
 -- and its full elaboration.
 --
--- The given type must be well-kinded.
+-- The given type must be well-kinded and in core Taype ANF.
 --
 -- The returned type must be well-kinded and in core Taype ANF. It is also
 -- equivalent to the given type if in type checking mode.
@@ -49,11 +49,91 @@ typing ::
   Maybe (Ty Name) ->
   Maybe Label ->
   TcM (Ty Name, Label, Expr Name)
-typing ILit {..} Nothing Nothing = return (TInt, SafeL, ILit {..})
+typing e@VUnit Nothing Nothing = return (TUnit, SafeL, e)
+typing e@BLit {} Nothing Nothing = return (TBool, SafeL, e)
+typing e@ILit {} Nothing Nothing = return (TInt, SafeL, e)
+typing e@V {..} Nothing Nothing =
+  lookupTy name >>= \case
+    Just (t, l) -> return (t, l, e)
+    -- TODO
+    _ -> err "Variable not in scope"
+typing e@GV {..} Nothing Nothing =
+  lookupDef ref >>= \case
+    Just FunDef {..} -> return (ty, mustLabel label, e)
+    Just CtorDef {..}
+      | null paraTypes ->
+        return (GV dataType, SafeL, e)
+    Just BuiltinDef {..}
+      | null paraTypes ->
+        return (resType, SafeL, e)
+    -- TODO
+    Just CtorDef {} -> err "Constructors need to be fully applied"
+    Just BuiltinDef {} -> err "Builtin functions need to be fully applied"
+    -- TODO
+    Just _ -> err "Definition not a term"
+    _ -> err "Definition not available"
+typing Lam {mTy = Just binderTy, ..} Nothing ml = do
+  -- This is the label of the binder, not the label of the whole lambda.
+  binderLabel <- labeling label
+  (_, binderTy') <- inferKind binderTy
+  (x, body) <- unbind1 bnd
+  (tBody', l', body') <-
+    extendCtx1 x binderTy' binderLabel binder $
+      typing body Nothing ml
+  return
+    ( Pi
+        { ty = binderTy',
+          label = Just binderLabel,
+          bnd = abstract1 x tBody',
+          ..
+        },
+      l',
+      Lam
+        { mTy = Just binderTy',
+          label = Just binderLabel,
+          bnd = abstract1 x body',
+          ..
+        }
+    )
+typing Lam {..} (Just t) ml = do
+  (binderTy', binderLabel, _, tBnd') <- isPi t
+  let binderLabel' = mustLabel binderLabel
+  -- If the binder label is given, it has to agree with the one in the pi-type.
+  checkLabel label binderLabel'
+  mTy' <- snd <<$>> mapM inferKind mTy
+  -- If the binder type is given, it has to agree with the one in the pi-type.
+  whenJust mTy' $ equate binderTy'
+  (x, body) <- unbind1 bnd
+  let tBody' = instantiate1Name x tBnd'
+  (l, body') <-
+    extendCtx1 x binderTy' binderLabel' binder $
+      check body tBody' ml
+  return
+    ( Pi
+        { ty = binderTy',
+          label = Just binderLabel',
+          bnd = abstract1 x tBody',
+          ..
+        },
+      l,
+      Lam
+        { mTy = Just binderTy',
+          label = Just binderLabel',
+          bnd = abstract1 x body',
+          ..
+        }
+    )
 -- TODO: record location
 typing Loc {..} mt ml = typing expr mt ml
+typing Asc {..} Nothing ml = do
+  (_, ty') <- inferKind ty
+  -- TODO: ty (kinded, not in ANF, not fully annotated) or ty' (ANF)
+  (l, expr') <- check expr ty' ml
+  return (ty', l, expr')
 -- Check label
 typing e mt (Just l) = do
+  -- Note that we never try to infer type but check label if both type and label
+  -- are given. We assume no rule only does that.
   (t', l', e') <- typing e mt Nothing
   if l' < l
     then do
@@ -124,13 +204,11 @@ kinding Pi {..} Nothing = do
   (_, body') <- extendCtx1 x ty' l binder $ inferKind body
   return (MixedK, Pi {ty = ty', label = Just l, bnd = abstract1 x body', ..})
 kinding App {..} Nothing = do
-  ref <- isGV fn
-  ty <-
-    lookupDef ref >>= \case
-      Just OADTDef {..} -> return ty
+  (ref, ty) <-
+    maybeGV fn >>= \case
+      Just (ref, OADTDef {..}) -> return (ref, ty)
       -- TODO
-      Just _ -> err "definition is not OADT"
-      Nothing -> err "no such definition"
+      _ -> err "definition is not OADT"
   arg <- case args of
     [arg] -> return arg
     -- TODO
@@ -155,7 +233,8 @@ kinding App {..} Nothing = do
     )
 kinding Let {..} Nothing = do
   checkLabel label SafeL
-  (t', _, rhs') <- typing rhs mTy (Just SafeL)
+  mTy' <- snd <<$>> mapM inferKind mTy
+  (t', _, rhs') <- typing rhs mTy' (Just SafeL)
   (x, body) <- unbind1 bnd
   body' <- extendCtx1 x t' SafeL binder $ checkKind body OblivK
   return
@@ -220,14 +299,12 @@ kinding PCase {..} Nothing = do
     )
 kinding Case {..} Nothing = do
   (t', _, cond') <- typing cond Nothing (Just SafeL)
-  ref <- isGV t'
-  ctors <-
-    lookupDef ref >>= \case
+  (ref, ctors) <-
+    maybeGV t' >>= \case
       -- TODO
-      Just ADTDef {..} -> return ctors
+      Just (ref, ADTDef {..}) -> return (ref, ctors)
       -- TODO
-      Just _ -> err "not an ADT"
-      Nothing -> err "no such definition"
+      _ -> err "not an ADT"
   augAlts <-
     case joinAlts alts ctors of
       -- TODO
@@ -293,15 +370,13 @@ labeling l = do
 
 -- | Check label
 checkLabel :: Maybe Label -> Label -> TcM ()
-checkLabel Nothing _ = pass
--- TODO
-checkLabel (Just l') l = when (l' /= l) $ err "label mismatch"
+checkLabel ml l = whenJust ml $ \l' -> when (l' /= l) $ err "label mismatch"
 
 mustLabel :: Maybe Label -> Label
 mustLabel = fromMaybe $ oops "Label not available"
 
 -- | Check the equivalence of two expressions. They must be already well-kinded
--- or well-typed
+-- or well-typed.
 equate :: Expr Name -> Expr Name -> TcM ()
 equate e e' | e == e' = pass
 -- TODO
@@ -314,29 +389,29 @@ whnf Asc {..} = whnf expr
 -- TODO
 whnf e = return e
 
+-- Unlike other dependent type theory, we do not perform weak head normalization
+-- here because it is unnecessary in our case: dependent types can only be
+-- kinded as oblivious while pi-type is kinded as mixed. On the other hand, if
+-- the given type is in core Taype ANF, the returned types are all in core Taype
+-- ANF.
 isPi :: Ty Name -> TcM (Ty Name, Maybe Label, Maybe Binder, Scope () Ty Name)
-isPi t = do
-  tnf <- whnf t
-  case tnf of
-    Pi {..} -> return (ty, label, binder, bnd)
-    -- TODO
-    _ -> err "not a pi"
+isPi Pi {..} = return (ty, label, binder, bnd)
+isPi Loc {..} = isPi expr
+isPi _ = err "not a pi"
 
-isGV :: Expr Name -> TcM Text
-isGV e = do
-  enf <- whnf e
-  case enf of
-    GV {..} -> return ref
-    -- TODO
-    _ -> err "not a global variable"
+maybeGV :: MonadReader Env m => Expr Name -> m (Maybe (Text, Def Name))
+maybeGV GV {..} = (ref,) <<$>> lookupDef ref
+maybeGV Loc {..} = maybeGV expr
+maybeGV _ = return Nothing
 
+-- Similar to 'isPi', product types are never oblivious types, so weak head
+-- normalization is unnecessary. The returned types are in core Taype ANF if the
+-- given type is so.
 isProd :: Ty Name -> TcM (Ty Name, Ty Name)
-isProd t = do
-  tnf <- whnf t
-  case tnf of
-    Prod {..} -> return (left, right)
-    -- TODO
-    _ -> err "not a product"
+isProd Prod {..} = return (left, right)
+isProd Loc {..} = isProd expr
+-- TODO
+isProd _ = err "not a product"
 
 -- | Join the pattern matching alternatives list and the constructors list with
 -- their parameter types.

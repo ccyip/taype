@@ -52,7 +52,8 @@ data Env = Env
     -- | Global definition context
     --
     -- Function types, constructor and OADT type arguments must be well-kinded
-    -- and in core Taype ANF before type checking.
+    -- and in core Taype ANF before type checking. The labels of function
+    -- definitions are also elaborated.
     gctx :: GCtx Name,
     -- | Local typing context
     --
