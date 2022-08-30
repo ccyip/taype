@@ -68,14 +68,14 @@ module Taype.Syntax
   )
 where
 
+import Algebra.Lattice
+import Algebra.Lattice.M2
+import Algebra.PartialOrd
 import Bound
 import Control.Monad
 import Data.Deriving
 import Data.Functor.Classes
 import Data.List (groupBy)
-import Algebra.Lattice
-import Algebra.PartialOrd
-import Algebra.Lattice.M2
 import Prettyprinter
 import Taype.Error
 import Taype.Name
