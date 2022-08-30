@@ -143,17 +143,23 @@ typing App {..} Nothing ml =
     typePolyApp _ paraTypes _ _ _
       | length args /= length paraTypes = err "arity mismatch"
     typePolyApp f paraTypes resType strat appKind' = do
-      res <- zipWithM (\arg ty -> typing arg (Just ty) ml) args paraTypes
+      -- TODO: quite messy here
+      let ml' = case strat of
+            JoinStrategy -> ml
+            _ -> Just SafeL
+      res <- zipWithM (\arg ty -> typing arg (Just ty) ml') args paraTypes
       xs <- freshes $ length res
       let (ts, ls, _) = unzip3 res
-          l' = foldl' (\/) (fromMaybe SafeL ml) ls
+          l' = foldl' (\/) (fromMaybe SafeL ml') ls
       es' <- forM res $ \(t, l, e) -> mayPromote l' t l e
       let bindings = zipWith3 (\x t e -> (x, t, l', e)) xs ts es'
-      return
-        ( resType,
-          case strat of
-            JoinStrategy -> l'
-            TopStrategy -> LeakyL,
+          l = case strat of
+            LeakyStrategy -> LeakyL
+            SafeStrategy -> SafeL
+            _ -> l'
+          l'' = fromMaybe l ml
+      e' <-
+        mayPromote l'' resType l $
           mayLets
             bindings
             App
@@ -161,19 +167,24 @@ typing App {..} Nothing ml =
                 args = V <$> xs,
                 appKind = Just $ fromMaybe appKind' appKind
               }
+      return
+        ( resType,
+          l'',
+          e'
         )
     typeFnApp = do
       (tFn', l', fn') <- typing fn Nothing ml
       (res, t') <- go args tFn'
       xs <- freshes (length args)
       let bindings = zipWith (\x (t, l, e) -> (x, t, l, e)) xs res
+      x <- fresh
       return
         ( t',
           l',
           mayLets
-            bindings
+            ((x, tFn', l', fn') : bindings)
             App
-              { fn = fn',
+              { fn = V x,
                 args = V <$> xs,
                 appKind = Just FunApp
               }

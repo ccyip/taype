@@ -326,7 +326,7 @@ instance Show Attribute where
 instance Pretty Attribute where
   pretty = show
 
-data LabelPolyStrategy = JoinStrategy | TopStrategy
+data LabelPolyStrategy = JoinStrategy | LeakyStrategy | SafeStrategy
   deriving stock (Eq, Show)
 
 instance Applicative Expr where
