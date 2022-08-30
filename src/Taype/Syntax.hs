@@ -214,6 +214,13 @@ type Ty = Expr
 data Label = SafeL | LeakyL
   deriving stock (Eq, Ord, Show)
 
+-- Isomorphic to Boolean
+instance Lattice Label where
+  SafeL \/ l = l
+  LeakyL \/ _ = LeakyL
+  SafeL /\ _ = SafeL
+  LeakyL /\ l = l
+
 -- | Application kinds
 data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
   deriving stock (Eq, Show)

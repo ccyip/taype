@@ -21,6 +21,7 @@ module Taype.Name
     FreshM,
     runFreshM,
     fresh,
+    freshes,
     freshWith,
 
     -- * Specialized locally nameless abstraction and instantiation

@@ -20,7 +20,7 @@ import Bound
 import Control.Monad.Error.Class
 import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
-import Data.List (partition, zip4)
+import Data.List (partition, zip4, zipWith3)
 import Relude.Extra.Tuple
 import Taype.Environment
 import Taype.Error
@@ -62,10 +62,18 @@ typing e@GV {..} Nothing Nothing =
     Just FunDef {..} -> return (ty, mustLabel label, e)
     Just CtorDef {..}
       | null paraTypes ->
-        return (GV dataType, SafeL, e)
+        return
+          ( GV dataType,
+            SafeL,
+            App {fn = e, args = [], appKind = Just CtorApp}
+          )
     Just BuiltinDef {..}
       | null paraTypes ->
-        return (resType, SafeL, e)
+        return
+          ( resType,
+            SafeL,
+            App {fn = e, args = [], appKind = Just BuiltinApp}
+          )
     -- TODO
     Just CtorDef {} -> err "Constructors need to be fully applied"
     Just BuiltinDef {} -> err "Builtin functions need to be fully applied"
@@ -123,34 +131,355 @@ typing Lam {..} (Just t) ml = do
           ..
         }
     )
+typing App {..} Nothing ml =
+  maybeGV fn >>= \case
+    Just (ctor, CtorDef {..}) ->
+      typePolyApp ctor paraTypes (GV dataType) JoinStrategy CtorApp
+    Just (f, BuiltinDef {..}) ->
+      typePolyApp f paraTypes resType strategy BuiltinApp
+    _ -> typeFnApp
+  where
+    typePolyApp _ paraTypes _ _ _
+      | length args /= length paraTypes = err "arity mismatch"
+    typePolyApp f paraTypes resType strat appKind' = do
+      res <- zipWithM (\arg ty -> typing arg (Just ty) ml) args paraTypes
+      xs <- freshes $ length res
+      let (ts, ls, _) = unzip3 res
+          l' = foldl' (\/) (fromMaybe SafeL ml) ls
+      es' <- forM res $ \(t, l, e) -> mayPromote l' t l e
+      let bindings = zipWith3 (\x t e -> (x, t, l', e)) xs ts es'
+      return
+        ( resType,
+          case strat of
+            JoinStrategy -> l'
+            TopStrategy -> LeakyL,
+          mayLets
+            bindings
+            App
+              { fn = GV f,
+                args = V <$> xs,
+                appKind = Just $ fromMaybe appKind' appKind
+              }
+        )
+    typeFnApp = do
+      (tFn', l', fn') <- typing fn Nothing ml
+      (res, t') <- go args tFn'
+      xs <- freshes (length args)
+      let bindings = zipWith (\x (t, l, e) -> (x, t, l, e)) xs res
+      return
+        ( t',
+          l',
+          mayLets
+            bindings
+            App
+              { fn = fn',
+                args = V <$> xs,
+                appKind = Just FunApp
+              }
+        )
+    go [] t = return ([], t)
+    go (arg : args') t = do
+      (argTy, argLabel, _, bnd) <- isPi t
+      (argTy', argLabel', arg') <-
+        typing arg (Just argTy) (Just (mustLabel argLabel))
+      -- Unfortunately we have to kind the pi-type body here even though it is
+      -- well-kinded, because it may not be in core Taype ANF after
+      -- instantiation.
+      (_, body') <- inferKind (instantiate1 arg' bnd)
+      (res, t') <- go args' body'
+      return ((argTy', argLabel', arg') : res, t')
+typing Let {..} Nothing ml = do
+  (rhsTy', rhsLabel', rhs') <- typing rhs mTy label
+  (x, body) <- unbind1 bnd
+  (t, l', body') <- extendCtx1 x rhsTy' rhsLabel' binder $ typing body Nothing ml
+  -- Unfortunately, we have to kind @t@ again even though it is kinded, because
+  -- it may not be in core Taype ANF after instantiation.
+  (_, t') <- inferKind $ substitute x rhs' t
+  return
+    ( t',
+      l',
+      Let
+        { mTy = Just rhsTy',
+          label = Just rhsLabel',
+          rhs = rhs',
+          bnd = abstract1 x body',
+          ..
+        }
+    )
+-- TODO: do not support dependent types
+typing Ite {..} Nothing ml = do
+  (_, condLabel, cond') <- typing cond (Just TBool) ml
+  (ifTrueTy', ifTrueLabel, ifTrue') <- typing ifTrue Nothing ml
+  (ifFalseTy', ifFalseLabel, ifFalse') <- typing ifFalse Nothing ml
+  equate ifTrueTy' ifFalseTy'
+  let l' = condLabel \/ ifTrueLabel \/ ifFalseLabel
+  ifTrue'' <- mayPromote l' ifTrueTy' ifTrueLabel ifTrue'
+  ifFalse'' <- mayPromote l' ifFalseTy' ifFalseLabel ifFalse'
+  x <- fresh
+  return
+    ( ifTrueTy',
+      l',
+      mayLets
+        [(x, TBool, condLabel, cond')]
+        Ite
+          { mTy = Just ifTrueTy',
+            cond = V x,
+            ifTrue = ifTrue'',
+            ifFalse = ifFalse''
+          }
+    )
+typing Pair {..} mt ml = do
+  (mLeftTy, mRightTy) <- mapM isProd mt <&> (\x -> (fst <$> x, snd <$> x))
+  (leftTy', leftLabel, left') <- typing left mLeftTy ml
+  (rightTy', rightLabel, right') <- typing right mRightTy ml
+  let l' = leftLabel \/ rightLabel
+  left'' <- mayPromote l' leftTy' leftLabel left'
+  right'' <- mayPromote l' rightTy' rightLabel right'
+  xl <- fresh
+  xr <- fresh
+  return
+    ( Prod {left = leftTy', right = rightTy'},
+      l',
+      mayLets
+        [ (xl, leftTy', l', left''),
+          (xr, rightTy', l', right'')
+        ]
+        Pair {left = V xl, right = V xr}
+    )
+-- TODO: do not support dependent type yet
+typing PCase {..} Nothing ml = do
+  (condTy', condLabel, cond') <- typing cond Nothing ml
+  (leftTy', rightTy') <- isProd condTy'
+  (xl, xr, body) <- unbind2 bnd2
+  (t', l, body') <-
+    extendCtx
+      [ (xl, leftTy', condLabel, lBinder),
+        (xr, rightTy', condLabel, rBinder)
+      ]
+      $ typing body Nothing ml
+  -- @t'@ cannot refer to @xl@ or @xr@, otherwise it would be dependent type.
+  notAppearIn [xl, xr] t'
+  let l' = condLabel \/ l
+  body'' <- mayPromote l' t' l body'
+  x <- fresh
+  return
+    ( t',
+      l',
+      mayLets
+        [(x, Prod {left = leftTy', right = rightTy'}, condLabel, cond')]
+        PCase
+          { mTy = Just t',
+            cond = V x,
+            bnd2 = abstract2 xl xr body'',
+            ..
+          }
+    )
+typing Case {..} Nothing ml = do
+  (condTy', condLabel, cond') <- typing cond Nothing ml
+  (ref, ctors) <-
+    maybeGV condTy' >>= \case
+      -- TODO
+      Just (ref, ADTDef {..}) -> return (ref, ctors)
+      -- TODO
+      _ -> err "not an ADT"
+  augAlts <-
+    case joinAlts alts ctors of
+      -- TODO
+      Left (_, _) -> err "constructors do not match"
+      Right alts' -> return alts'
+  res <- mapM (typeCaseAlt condLabel) augAlts
+  let ts' = res <&> \(_, _, _, t, _, _) -> t
+      t' = head ts'
+  equateMany ts'
+  forM_ res $ \(_, _, xs, t, _, _) -> notAppearIn xs t
+  let l' = flipfoldl' (\(_, _, _, _, l, _) -> (l \/)) condLabel res
+  alts' <- mapM (promote l') res
+  x <- fresh
+  return
+    ( t',
+      l',
+      mayLets
+        [(x, GV {..}, condLabel, cond')]
+        Case
+          { mTy = Just t',
+            cond = V x,
+            alts = alts'
+          }
+    )
+  where
+    -- TODO: abstract this and joinAlts together
+    typeCaseAlt _ (_, paraTypes, binders, _)
+      | length paraTypes /= length binders = err "arguments do not match"
+    typeCaseAlt condLabel (ctor, paraTypes, binders, bnd) = do
+      let n = length paraTypes
+      (xs, body) <- unbindMany n bnd
+      (t', l, body') <-
+        extendCtx (zip4 xs paraTypes (replicate n condLabel) binders) $
+          typing body Nothing ml
+      return (ctor, binders, xs, t', l, body')
+    promote l' (ctor, binders, xs, t', l, body') = do
+      body'' <- mayPromote l' t' l body'
+      return CaseAlt {bnd = abstractMany xs body'', ..}
+-- TODO: checking mode is possible
+typing Mux {..} Nothing Nothing = do
+  (_, _, cond') <- typing cond (Just OBool) (Just SafeL)
+  (ifTrueTy', _, ifTrue') <- typing ifTrue Nothing (Just SafeL)
+  (ifFalseTy', _, ifFalse') <- typing ifFalse Nothing (Just SafeL)
+  equate ifTrueTy' ifFalseTy'
+  void $ checkKind ifTrueTy' OblivK
+  x <- fresh
+  xl <- fresh
+  xr <- fresh
+  return
+    ( ifTrueTy',
+      SafeL,
+      mayLets
+        [ (x, OBool, SafeL, cond'),
+          (xl, ifTrueTy', SafeL, ifTrue'),
+          (xr, ifFalseTy', SafeL, ifFalse')
+        ]
+        Mux {cond = V x, ifTrue = V xl, ifFalse = V xr}
+    )
+-- TODO: checking mode is possible
+typing OIte {..} Nothing Nothing = do
+  (_, _, cond') <- typing cond (Just OBool) (Just SafeL)
+  (ifTrueTy', _, ifTrue') <- typing ifTrue Nothing (Just LeakyL)
+  (ifFalseTy', _, ifFalse') <- typing ifFalse Nothing (Just LeakyL)
+  equate ifTrueTy' ifFalseTy'
+  x <- fresh
+  xl <- fresh
+  xr <- fresh
+  return
+    ( ifTrueTy',
+      LeakyL,
+      mayLets
+        [ (x, OBool, SafeL, cond'),
+          (xl, ifTrueTy', LeakyL, ifTrue'),
+          (xr, ifFalseTy', LeakyL, ifFalse')
+        ]
+        OIte {cond = V x, ifTrue = V xl, ifFalse = V xr}
+    )
+typing OPair {..} mt Nothing = do
+  (mLeftTy, mRightTy) <- mapM isOProd mt <&> (\x -> (fst <$> x, snd <$> x))
+  (leftTy', _, left') <- typing left mLeftTy (Just SafeL)
+  (rightTy', _, right') <- typing right mRightTy (Just SafeL)
+  void $ checkKind leftTy' OblivK
+  void $ checkKind rightTy' OblivK
+  xl <- fresh
+  xr <- fresh
+  return
+    ( OProd {left = leftTy', right = rightTy'},
+      SafeL,
+      mayLets
+        [ (xl, leftTy', SafeL, left'),
+          (xr, rightTy', SafeL, right')
+        ]
+        OPair {left = V xl, right = V xr}
+    )
+typing OPCase {..} Nothing ml = do
+  (condTy', _, cond') <- typing cond Nothing (Just SafeL)
+  (leftTy', rightTy') <- isOProd condTy'
+  (xl, xr, body) <- unbind2 bnd2
+  (t', l, body') <-
+    extendCtx
+      [ (xl, leftTy', SafeL, lBinder),
+        (xr, rightTy', SafeL, rBinder)
+      ]
+      $ typing body Nothing ml
+  x <- fresh
+  return
+    ( t',
+      l,
+      mayLets
+        [(x, OProd {left = leftTy', right = rightTy'}, SafeL, cond')]
+        OPCase
+          { cond = V x,
+            bnd2 = abstract2 xl xr body',
+            ..
+          }
+    )
+typing OInj {mTy = Just t, ..} Nothing Nothing = do
+  (left, right) <- isOSum t
+  left' <- checkKind left OblivK
+  right' <- checkKind right OblivK
+  let injTy' = if tag then left' else right'
+  (_, _, inj') <- typing inj (Just injTy') (Just SafeL)
+  let t' = OSum {left = left', right = right'}
+  x <- fresh
+  return
+    ( t',
+      SafeL,
+      mayLets
+        [(x, injTy', SafeL, inj')]
+        OInj {mTy = Just t', inj = V x, ..}
+    )
+typing OInj {..} (Just t') Nothing = do
+  whenJust mTy $ equate t'
+  (left, right) <- isOSum t'
+  left' <- checkKind left OblivK
+  right' <- checkKind right OblivK
+  let injTy' = if tag then left' else right'
+  (_, _, inj') <- typing inj (Just injTy') (Just SafeL)
+  x <- fresh
+  return
+    ( t',
+      SafeL,
+      mayLets
+        [(x, injTy', SafeL, inj')]
+        OInj {mTy = Just t', inj = V x, ..}
+    )
+-- TODO: checking mode is possible
+typing OCase {..} Nothing Nothing = do
+  (condTy', _, cond') <- typing cond Nothing (Just SafeL)
+  (left, right) <- isOSum condTy'
+  left' <- checkKind left OblivK
+  right' <- checkKind right OblivK
+  (xl, lBody) <- unbind1 lBnd
+  (xr, rBody) <- unbind1 rBnd
+  (lBodyTy', _, lBody') <-
+    extendCtx1 xl left' SafeL lBinder $
+      typing lBody Nothing (Just LeakyL)
+  (rBodyTy', _, rBody') <-
+    extendCtx1 xr right' SafeL rBinder $
+      typing rBody Nothing (Just LeakyL)
+  equate lBodyTy' rBodyTy'
+  x <- fresh
+  return
+    ( lBodyTy',
+      LeakyL,
+      mayLets
+        [(x, OSum {left = left', right = right'}, SafeL, cond')]
+        OCase
+          { mTy = Just lBodyTy',
+            cond = V x,
+            lBnd = abstract1 xl lBody',
+            rBnd = abstract1 xr rBody',
+            ..
+          }
+    )
+typing Tape {..} mt Nothing = do
+  (t', _, e') <- typing expr mt (Just LeakyL)
+  void $ checkKind t' OblivK
+  x <- fresh
+  return
+    ( t',
+      SafeL,
+      mayLets
+        [(x, t', LeakyL, e')]
+        Tape {expr = V x}
+    )
 -- TODO: record location
 typing Loc {..} mt ml = typing expr mt ml
 typing Asc {..} Nothing ml = do
   (_, ty') <- inferKind ty
-  -- TODO: ty (kinded, not in ANF, not fully annotated) or ty' (ANF)
   (l, expr') <- check expr ty' ml
   return (ty', l, expr')
 -- Check label
-typing e mt (Just l) = do
+typing e mt (Just l') = do
   -- Note that we never try to infer type but check label if both type and label
   -- are given. We assume no rule only does that.
-  (t', l', e') <- typing e mt Nothing
-  if l' < l
-    then do
-      -- Promote label to a more permissive one
-      x <- fresh
-      return
-        ( t',
-          l,
-          Let
-            { mTy = Just t',
-              label = Just l',
-              rhs = e',
-              binder = Nothing,
-              bnd = abstract1 x $ Promote (V x)
-            }
-        )
-    else checkLabel (Just l') l >> return (t', l, e')
+  (t', l, e') <- typing e mt Nothing
+  (t',l',) <$> mayPromote l' t' l e'
 
 -- Check type but infer label
 typing e (Just t) Nothing = do
@@ -325,7 +654,7 @@ kinding Case {..} Nothing = do
   where
     kindCaseAlt (_, paraTypes, binders, _)
       -- TODO
-      | length paraTypes /= length binders = err "arguments fo not match"
+      | length paraTypes /= length binders = err "arguments do not match"
     kindCaseAlt (ctor, paraTypes, binders, bnd) = do
       let n = length paraTypes
       (xs, body) <- unbindMany n bnd
@@ -370,6 +699,7 @@ labeling l = do
 
 -- | Check label
 checkLabel :: Maybe Label -> Label -> TcM ()
+-- TODO
 checkLabel ml l = whenJust ml $ \l' -> when (l' /= l) $ err "label mismatch"
 
 mustLabel :: Maybe Label -> Label
@@ -381,6 +711,9 @@ equate :: Expr Name -> Expr Name -> TcM ()
 equate e e' | e == e' = pass
 -- TODO
 equate _ _ = err "not equal"
+
+equateMany :: NonEmpty (Expr Name) -> TcM ()
+equateMany (e :| es) = forM_ es $ equate e
 
 -- | Weak head normal form
 whnf :: Expr Name -> TcM (Expr Name)
@@ -412,6 +745,45 @@ isProd Prod {..} = return (left, right)
 isProd Loc {..} = isProd expr
 -- TODO
 isProd _ = err "not a product"
+
+isOProd :: Ty Name -> TcM (Ty Name, Ty Name)
+isOProd t = do
+  nf <- whnf t
+  case nf of
+    OProd {..} -> return (left, right)
+    _ -> err "not an oblivious product"
+
+isOSum :: Ty Name -> TcM (Ty Name, Ty Name)
+isOSum t = do
+  nf <- whnf t
+  case nf of
+    OSum {..} -> return (left, right)
+    _ -> err "not an oblivious sum"
+
+mayPromote :: Label -> Ty Name -> Label -> Expr Name -> TcM (Expr Name)
+mayPromote l' t l e | l < l' = do
+  x <- fresh
+  return
+    Let
+      { mTy = Just t,
+        label = Just l,
+        rhs = e,
+        binder = Nothing,
+        bnd = abstract1 x $ Promote (V x)
+      }
+mayPromote l' _ l e = checkLabel (Just l) l' >> return e
+
+mayLets :: [(Name, Ty Name, Label, Expr Name)] -> Expr Name -> Expr Name
+mayLets = flip $ foldr go
+  where
+    go (x, t, l, rhs) body =
+      Let
+        { mTy = Just t,
+          label = Just l,
+          binder = Nothing,
+          bnd = abstract1 x body,
+          ..
+        }
 
 -- | Join the pattern matching alternatives list and the constructors list with
 -- their parameter types.
@@ -452,6 +824,10 @@ findAndDel p (x : xs)
 insertMany ::
   (Foldable t, Hashable k) => HashMap k v -> t (k, v) -> HashMap k v
 insertMany = flipfoldl' $ uncurry M.insert
+
+notAppearIn :: [Name] -> Expr Name -> TcM ()
+notAppearIn xs e =
+  when (any (`elem` xs) e) $ err "do not support dependent types yet"
 
 extendGCtx1 :: MonadError Err m => GCtx Name -> Text -> Def Name -> m (GCtx Name)
 extendGCtx1 gctx name _
