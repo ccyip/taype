@@ -715,8 +715,52 @@ equate _ _ = err "not equal"
 equateMany :: NonEmpty (Expr Name) -> TcM ()
 equateMany (e :| es) = forM_ es $ equate e
 
--- | Weak head normal form
+-- | Weak head normal form.
+--
+-- We do not assume the expression is kinded or typed.
+--
+-- At the moment, oblivious constructs are not normalized. While possible, it is
+-- mostly unnecessary in practice.
 whnf :: Expr Name -> TcM (Expr Name)
+whnf e@GV {..} =
+  lookupDef ref >>= \case
+    Just FunDef {..} -> whnf expr
+    _ -> return e
+whnf App {args = [], ..} = whnf fn
+whnf e@App {args = arg : args, ..} = do
+  nf <- whnf fn
+  case nf of
+    Lam {..} ->
+      whnf App {fn = instantiate1 arg bnd, ..}
+    GV {..} ->
+      lookupDef ref >>= \case
+        Just OADTDef {..} -> whnf $ instantiate1 arg bnd
+        _ -> return e {fn = nf}
+    _ -> return e {fn = nf}
+whnf Let {..} = whnf $ instantiate1 rhs bnd
+whnf Ite {..} = do
+  nf <- whnf cond
+  case nf of
+    BLit {..} -> if bLit then whnf ifTrue else whnf ifFalse
+    _ -> return Ite {cond = nf, ..}
+whnf Case {..} = do
+  nf <- whnf cond
+  let fb = Case {cond = nf, ..}
+  case nf of
+    App {fn = GV {..}, ..} -> go ref args fb
+    GV {..} -> go ref [] fb
+    _ -> return fb
+  where
+    go ref args fb =
+      case find (\CaseAlt {..} -> ctor == ref) alts of
+        Just CaseAlt {ctor = _, ..} | length binders == length args ->
+          whnf $ instantiateMany args bnd
+        _ -> return fb
+whnf PCase {..} = do
+  nf <- whnf cond
+  case nf of
+    Pair {..} -> whnf $ instantiate2 left right bnd2
+    _ -> return PCase {cond = nf, ..}
 whnf Loc {..} = whnf expr
 whnf Asc {..} = whnf expr
 -- TODO
