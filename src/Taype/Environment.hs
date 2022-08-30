@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -89,10 +90,6 @@ type Ctx a = [(a, (Ty a, Label))]
 
 type BCtx a = [(a, Binder)]
 
--- | The initial context with builtin functions
-preludeGCtx :: GCtx a
-preludeGCtx = mempty
-
 -- | The type checking monad
 type TcM = FreshT (ReaderT Env (ExceptT Err IO))
 
@@ -140,3 +137,24 @@ getLabel = do
 
 withLabel :: MonadReader Env m => Label -> m a -> m a
 withLabel l = local (\Env {..} -> Env {label = l, ..})
+
+-- | The initial context with builtin functions
+preludeGCtx :: GCtx a
+preludeGCtx =
+  fromList $
+    builtin
+      <$> [ ("+", [TInt, TInt], TInt, JoinStrategy),
+            ("~+", [OInt, OInt], OInt, SafeStrategy),
+            ("-", [TInt, TInt], TInt, JoinStrategy),
+            ("~-", [OInt, OInt], OInt, SafeStrategy),
+            ("==", [TInt, TInt], TBool, JoinStrategy),
+            ("~=", [OInt, OInt], OBool, SafeStrategy),
+            ("<=", [TInt, TInt], TBool, JoinStrategy),
+            ("~<=", [OInt, OInt], OBool, SafeStrategy),
+            ("s_bool", [TBool], OBool, JoinStrategy),
+            ("s_int", [TInt], OInt, JoinStrategy),
+            ("r_int", [OInt], TInt, LeakyStrategy)
+          ]
+
+builtin :: (Text, [Ty a], Ty a, LabelPolyStrategy) -> (Text, Def a)
+builtin (name, paraTypes, resType, strategy) = (name, BuiltinDef {..})
