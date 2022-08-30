@@ -193,7 +193,7 @@ cuteBinder x l (Just ty) = do
                then (space <>)
                else sep1
            )
-          (colon <> labelDoc <+> align typeDoc)
+          (colon <> labelDoc <+> align (group typeDoc))
 
 cuteEnclosedBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM (Doc ann)
 cuteEnclosedBinder x l mTy = do
