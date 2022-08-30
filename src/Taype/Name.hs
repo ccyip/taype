@@ -135,7 +135,7 @@ abstractMany = abstractManyBy (==)
 instantiate2 :: Monad f => f a -> f a -> Scope Bool f a -> f a
 instantiate2 = instantiate2By id
 
-instantiateMany :: Monad f => [ f a ] -> Scope Int f a -> f a
+instantiateMany :: Monad f => [f a] -> Scope Int f a -> f a
 instantiateMany = instantiateManyBy id
 
 unbind1By :: (Monad m, Monad f) => m a -> Scope n f a -> m (a, f a)
