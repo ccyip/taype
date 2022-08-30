@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -709,8 +710,106 @@ mustLabel = fromMaybe $ oops "Label not available"
 -- or well-typed.
 equate :: Expr Name -> Expr Name -> TcM ()
 equate e e' | e == e' = pass
--- TODO
-equate _ _ = err "not equal"
+equate e e' = do
+  nf <- whnf e
+  nf' <- whnf e'
+  go nf nf'
+  where
+    go Pi {ty, bnd} Pi {ty = ty', bnd = bnd'} = do
+      equate ty ty'
+      -- TODO: abstract this
+      (x, body) <- unbind1 bnd
+      let body' = instantiate1Name x bnd'
+      equate body body'
+    go Lam {bnd} Lam {bnd = bnd'} = do
+      (x, body) <- unbind1 bnd
+      let body' = instantiate1Name x bnd'
+      equate body body'
+    go App {fn, args} App {fn = fn', args = args'}
+      | length args == length args' = do
+        equate fn fn'
+        zipWithM_ equate args args'
+    go Let {rhs, bnd} Let {rhs = rhs', bnd = bnd'} = do
+      equate rhs rhs'
+      (x, body) <- unbind1 bnd
+      let body' = instantiate1Name x bnd'
+      equate body body'
+    go
+      Ite {cond, ifTrue, ifFalse}
+      Ite {cond = cond', ifTrue = ifTrue', ifFalse = ifFalse'} = do
+        equate cond cond'
+        equate ifTrue ifTrue'
+        equate ifFalse ifFalse'
+    go Case {cond, alts} Case {cond = cond', alts = alts'}
+      | length alts == length alts' = do
+        equate cond cond'
+        let sortedAlts = sortOn (\CaseAlt {..} -> ctor) $ toList alts
+            sortedAlts' = sortOn (\CaseAlt {..} -> ctor) $ toList alts'
+        zipWithM_ goAlt sortedAlts sortedAlts'
+      where
+        goAlt
+          CaseAlt {ctor, binders, bnd}
+          CaseAlt {ctor = ctor', binders = binders', bnd = bnd'}
+            | ctor == ctor' && length binders == length binders' = do
+              let n = length binders
+              (xs, body) <- unbindMany n bnd
+              let body' = instantiateNames xs bnd'
+              equate body body'
+        goAlt _ _ = errEquate
+    go
+      OIte {cond, ifTrue, ifFalse}
+      OIte {cond = cond', ifTrue = ifTrue', ifFalse = ifFalse'} = do
+        equate cond cond'
+        equate ifTrue ifTrue'
+        equate ifFalse ifFalse'
+    go Prod {left, right} Prod {left = left', right = right'} = do
+      equate left left'
+      equate right right'
+    go Pair {left, right} Pair {left = left', right = right'} = do
+      equate left left'
+      equate right right'
+    go PCase {cond, bnd2} PCase {cond = cond', bnd2 = bnd2'} = do
+      equate cond cond'
+      (xl, xr, body) <- unbind2 bnd2
+      let body' = instantiate2Names xl xr bnd2'
+      equate body body'
+    go OProd {left, right} OProd {left = left', right = right'} = do
+      equate left left'
+      equate right right'
+    go OPair {left, right} OPair {left = left', right = right'} = do
+      equate left left'
+      equate right right'
+    go OPCase {cond, bnd2} OPCase {cond = cond', bnd2 = bnd2'} = do
+      equate cond cond'
+      (xl, xr, body) <- unbind2 bnd2
+      let body' = instantiate2Names xl xr bnd2'
+      equate body body'
+    go OSum {left, right} OSum {left = left', right = right'} = do
+      equate left left'
+      equate right right'
+    go OInj {tag, inj} OInj {tag = tag', inj = inj'}
+      | tag == tag' = equate inj inj'
+    go
+      OCase {cond, lBnd, rBnd}
+      OCase {cond = cond', lBnd = lBnd', rBnd = rBnd'} = do
+        equate cond cond'
+        (xl, lBody) <- unbind1 lBnd
+        let lBody' = instantiate1Name xl lBnd'
+        (xr, rBody) <- unbind1 rBnd
+        let rBody' = instantiate1Name xr rBnd'
+        equate lBody lBody'
+        equate rBody rBody'
+    go nf nf' | nf == nf' = pass
+    go
+      Mux {cond, ifTrue, ifFalse}
+      Mux {cond = cond', ifTrue = ifTrue', ifFalse = ifFalse'} = do
+        equate cond cond'
+        equate ifTrue ifTrue'
+        equate ifFalse ifFalse'
+    go Promote {expr} Promote {expr = expr'} = equate expr expr'
+    go Tape {expr} Tape {expr = expr'} = equate expr expr'
+    go _ _ = errEquate
+    errEquate = err "not equal"
 
 equateMany :: NonEmpty (Expr Name) -> TcM ()
 equateMany (e :| es) = forM_ es $ equate e
@@ -736,6 +835,8 @@ whnf e@App {args = arg : args, ..} = do
       lookupDef ref >>= \case
         Just OADTDef {..} -> whnf $ instantiate1 arg bnd
         _ -> return e {fn = nf}
+    App {fn = nf', args = args'} ->
+      return App {fn = nf', args = args' <> args, ..}
     _ -> return e {fn = nf}
 whnf Let {..} = whnf $ instantiate1 rhs bnd
 whnf Ite {..} = do
@@ -753,8 +854,9 @@ whnf Case {..} = do
   where
     go ref args fb =
       case find (\CaseAlt {..} -> ctor == ref) alts of
-        Just CaseAlt {ctor = _, ..} | length binders == length args ->
-          whnf $ instantiateMany args bnd
+        Just CaseAlt {ctor = _, ..}
+          | length binders == length args ->
+            whnf $ instantiateMany args bnd
         _ -> return fb
 whnf PCase {..} = do
   nf <- whnf cond
