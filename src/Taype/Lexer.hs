@@ -23,6 +23,7 @@ where
 import Control.Monad.Error.Class
 import Data.Char
 import qualified Data.Text as T
+import Prettyprinter hiding (Doc, space)
 import Taype.Error
 import Text.Megaparsec hiding (Token, token, tokens)
 import qualified Text.Megaparsec.Char as C
@@ -224,9 +225,9 @@ renderLexerError ParseErrorBundle {bundleErrors = err :| _} =
   where
     showError (TrivialError _ u _) = maybe "Unknown error" showUnexpected u
     showError (FancyError _ _) = "Unknown error"
-    showUnexpected = ("Unexpected " <>) . showErrorItem
-    showErrorItem (Tokens ts) = toText (showTokens proxy ts)
-    showErrorItem (Label lab) = toText $ toList lab
+    showUnexpected = ("Unexpected" <+>) . showErrorItem
+    showErrorItem (Tokens ts) = pretty (showTokens proxy ts)
+    showErrorItem (Label lab) = pretty $ toList lab
     showErrorItem EndOfInput = "end of input"
     proxy = Proxy :: Proxy Text
 

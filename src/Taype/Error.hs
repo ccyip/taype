@@ -4,6 +4,7 @@
 
 module Taype.Error
   ( oops,
+    Doc,
     Err (..),
     initPosState,
     getLocation,
@@ -16,17 +17,21 @@ module Taype.Error
 where
 
 import qualified Data.Text as T
+import Prettyprinter hiding (Doc)
+import qualified Prettyprinter as PP
 import Text.Megaparsec
 
 oops :: Text -> a
 oops msg = error $ "Oops! This should not happen:\n" <> msg
 
+type Doc = PP.Doc ()
+
 data Err = Err
   { errLoc :: Int,
-    errMsg :: Text,
+    errMsg :: Doc,
     errCategory :: Text
   }
-  deriving stock (Eq, Show)
+  deriving stock (Show)
 
 initPosState :: FilePath -> Text -> PosState Text
 initPosState file code =
@@ -39,56 +44,56 @@ initPosState file code =
     }
 
 getLocation :: FilePath -> Text -> Int -> (Int, Int, Maybe String)
-getLocation file code offset = (line, col, maybeOffender)
+getLocation file code offset = (li, col, maybeOffender)
   where
     (maybeOffender, st) = reachOffset offset $ initPosState file code
     pos = pstateSourcePos st
-    line = unPos (sourceLine pos)
+    li = unPos (sourceLine pos)
     col = unPos (sourceColumn pos)
 
 renderLocation :: FilePath -> Text -> Int -> Text
 renderLocation file code offset
   | offset < 0 = showUnknownLocation file
-  | otherwise = showLocation file line col
+  | otherwise = showLocation file li col
   where
-    (line, col, _) = getLocation file code offset
+    (li, col, _) = getLocation file code offset
 
 showLocation :: FilePath -> Int -> Int -> Text
-showLocation file line col = toText file <> ":" <> show line <> ":" <> show col
+showLocation file li col = toText file <> ":" <> show li <> ":" <> show col
 
 showUnknownLocation :: FilePath -> Text
 showUnknownLocation file = toText file <> ":" <> "(unknown location)"
 
 renderFancyLocation :: FilePath -> Text -> Int -> Text
 renderFancyLocation file code offset
-  | offset < 0 = showUnknownLocation file <> ":\n"
+  | offset < 0 = showUnknownLocation file <> ":"
   | otherwise =
-    showLocation file line col <> ":\n"
+    showLocation file li col <> ":\n"
       <> maybe "" showOffender maybeOffender
-      <> "\n"
   where
-    (line, col, maybeOffender) = getLocation file code offset
+    (li, col, maybeOffender) = getLocation file code offset
     showOffender offender =
       lpadding
-        <> sep
+        <> bar
         <> "\n"
         <> lineTxt
-        <> sep
+        <> bar
         <> toText offender
         <> "\n"
         <> lpadding
-        <> sep
+        <> bar
         <> pointerPadding
         <> "^"
       where
-        lineTxt = show line
+        lineTxt = show li
         lpadding = T.replicate (T.length lineTxt) " "
         pointerPadding = T.replicate (col - 1) " "
-        sep = " | "
+        bar = " | "
 
-renderError :: FilePath -> Text -> Err -> Text
+renderError :: FilePath -> Text -> Err -> Doc
 renderError file code Err {..} =
-  "!!" <> errCategory <> "!!\n"
-    <> renderFancyLocation file code errLoc
+  "!!" <> pretty errCategory <> "!!" <> hardline
+    <> pretty (renderFancyLocation file code errLoc)
+    <> hardline
     <> errMsg
-    <> "\n"
+    <> hardline

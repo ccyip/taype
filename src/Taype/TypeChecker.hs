@@ -21,6 +21,7 @@ import Bound
 import Control.Monad.Error.Class
 import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
+import Prettyprinter hiding (Doc)
 import Data.List (partition, zip4, zipWith3)
 import Relude.Extra.Tuple
 import Taype.Environment
@@ -1136,4 +1137,10 @@ preCheckSecRetType b t = do
 
 -- TODO
 err :: MonadError Err m => Text -> m a
-err errMsg = throwError Err {errLoc = -1, errCategory = "Typing Error", ..}
+err errMsg =
+  throwError
+    Err
+      { errLoc = -1,
+        errCategory = "Typing Error",
+        errMsg = pretty errMsg
+      }

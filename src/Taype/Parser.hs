@@ -21,6 +21,7 @@ import Control.Applicative.Combinators (choice)
 import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import Control.Monad.Error.Class
 import Data.List.NonEmpty (some1)
+import Prettyprinter hiding (Doc)
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
 import qualified Taype.Lexer as L
@@ -483,9 +484,9 @@ renderParserError Report {..} =
   where
     unexpectedToken = listToMaybe unconsumed
     errMsg = maybe "Unexpected end of input" showUnexpected unexpectedToken
-    showUnexpected LocatedToken {..} = "Unexpected " <> renderToken token
+    showUnexpected LocatedToken {..} = "Unexpected" <+> renderToken token
 
-renderToken :: Token -> Text
+renderToken :: Token -> Doc
 renderToken = \case
   L.Lambda -> "lambda abstraction"
   L.Underscore -> "'_'"
@@ -524,5 +525,5 @@ renderToken = \case
   L.End -> "end"
   L.Tape -> "tape"
   L.OInj tag -> if tag then "~inl" else "~inr"
-  L.Ident ident -> "identifier \"" <> ident <> "\""
-  L.Infix ident -> "infix \"" <> ident <> "\""
+  L.Ident ident -> "identifier \"" <> pretty ident <> "\""
+  L.Infix ident -> "infix \"" <> pretty ident <> "\""

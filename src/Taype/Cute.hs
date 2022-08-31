@@ -29,7 +29,7 @@ where
 import Bound
 import Data.HashMap.Strict ((!?))
 import qualified Data.Text as T
-import Prettyprinter hiding (hang, indent)
+import Prettyprinter hiding (Doc, hang, indent)
 import qualified Prettyprinter as PP
 import Taype.Environment
 import Taype.Error
@@ -40,16 +40,16 @@ import Prelude hiding (group)
 indentLevel :: Int
 indentLevel = 2
 
-hang :: Doc ann -> Doc ann
+hang :: Doc -> Doc
 hang = PP.hang indentLevel
 
-indent :: Doc ann -> Doc ann
+indent :: Doc -> Doc
 indent = PP.indent indentLevel
 
-sepWith :: Foldable t => Doc ann -> t (Doc ann) -> Doc ann
+sepWith :: Foldable t => Doc -> t Doc -> Doc
 sepWith s = concatWith (\x y -> x <> s <> y)
 
-sep1 :: Doc ann -> Doc ann
+sep1 :: Doc -> Doc
 sep1 = group . (line <>)
 
 -- | A context for fresh name generation and environment
@@ -64,8 +64,8 @@ instance IsString a => IsString (CuteM a) where
 
 -- | Pretty print class with fresh name generator and environment
 class Cute a where
-  cute :: a -> CuteM (Doc ann)
-  default cute :: Pretty a => a -> CuteM (Doc ann)
+  cute :: a -> CuteM Doc
+  default cute :: Pretty a => a -> CuteM Doc
   cute = return <$> pretty
 
 instance Cute Int
@@ -76,7 +76,7 @@ instance Cute (Expr Text) where
   cute = cuteExpr
 
 -- | Pretty printer for Taype expressions
-cuteExpr :: Expr Text -> CuteM (Doc ann)
+cuteExpr :: Expr Text -> CuteM Doc
 cuteExpr V {..} = cute name
 cuteExpr GV {..} = cute ref
 cuteExpr e@Pi {..} = do
@@ -140,11 +140,11 @@ cuteExpr Tape {..} = cuteApp "tape" [expr]
 cuteExpr Loc {..} = cuteExpr expr
 
 -- | Cute printer for Taype definitions
-cuteDefs :: Options -> GCtx Text -> [Text] -> Doc ann
+cuteDefs :: Options -> GCtx Text -> [Text] -> Doc
 cuteDefs options gctx =
   foldMap $ \name -> cuteDef options gctx name <> hardline <> hardline
 
-cuteDef :: Options -> GCtx Text -> Text -> Doc ann
+cuteDef :: Options -> GCtx Text -> Text -> Doc
 cuteDef options gctx name =
   case fromMaybe (oops "definition not in context") (gctx !? name) of
     FunDef {..} ->
@@ -177,7 +177,7 @@ cuteDef options gctx name =
   where
     go = runCuteM options
 
-cuteBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM (Doc ann)
+cuteBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM Doc
 cuteBinder x l Nothing =
   ifM
     (asks optPrintLabels &&^ return (isJust l))
@@ -195,7 +195,7 @@ cuteBinder x l (Just ty) = do
            )
           (colon <> labelDoc <+> align (group typeDoc))
 
-cuteEnclosedBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM (Doc ann)
+cuteEnclosedBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM Doc
 cuteEnclosedBinder x l mTy = do
   doc <- cuteBinder x l mTy
   return $ if isJust mTy then parens doc else doc
@@ -206,7 +206,7 @@ cuteTypeBinder ::
   Maybe Label ->
   Ty Text ->
   Maybe Binder ->
-  CuteM (Doc ann)
+  CuteM Doc
 cuteTypeBinder super x l ty = \case
   Just Anon ->
     ifM
@@ -221,12 +221,12 @@ cuteTypeBinder super x l ty = \case
   where
     go = parens <$> cuteBinder x l (Just ty)
 
-cuteLabel :: Maybe Label -> CuteM (Doc ann)
+cuteLabel :: Maybe Label -> CuteM Doc
 cuteLabel Nothing = ""
 cuteLabel (Just SafeL) = "⊥"
 cuteLabel (Just LeakyL) = "⊤"
 
-cuteLam :: Bool -> Expr Text -> CuteM (Doc ann)
+cuteLam :: Bool -> Expr Text -> CuteM Doc
 cuteLam isRoot e = do
   (binderDocs, bodyDoc) <- go e
   return $
@@ -248,7 +248,7 @@ cuteLam isRoot e = do
           else hang $ group (mkBindersDoc binderDocs) <> sep1 bodyDoc
   where
     mkBindersDoc binderDocs = backslash <> align (vsep binderDocs) <+> "->"
-    go :: Expr Text -> CuteM ([Doc ann], Doc ann)
+    go :: Expr Text -> CuteM ([Doc], Doc)
     go Lam {..} = do
       (x, body) <- unbind1NameOrBinder binder bnd
       binderDoc <- cuteEnclosedBinder x label mTy
@@ -257,7 +257,7 @@ cuteLam isRoot e = do
     go Loc {..} = go expr
     go expr = ([],) <$> cuteExpr expr
 
-cuteLet :: Expr Text -> CuteM (Doc ann)
+cuteLet :: Expr Text -> CuteM Doc
 cuteLet e = do
   (bindingDocs, bodyDoc) <- go e
   return $
@@ -273,7 +273,7 @@ cuteLet e = do
           <+> "in"
           <+> align bodyDoc
     mkBindingDoc (binderDoc, rhsDoc) = hang $ binderDoc <+> equals <> sep1 rhsDoc
-    go :: Expr Text -> CuteM ([(Doc ann, Doc ann)], Doc ann)
+    go :: Expr Text -> CuteM ([(Doc, Doc)], Doc)
     go Let {..} = do
       (x, body) <- unbind1NameOrBinder binder bnd
       binderDoc <- cuteBinder x label mTy
@@ -283,7 +283,7 @@ cuteLet e = do
     go Loc {..} = go expr
     go expr = ([],) <$> cuteExpr expr
 
-cuteIte :: Doc ann -> Expr Text -> Expr Text -> Expr Text -> CuteM (Doc ann)
+cuteIte :: Doc -> Expr Text -> Expr Text -> Expr Text -> CuteM Doc
 cuteIte accent cond ifTrue ifFalse = do
   condDoc <- cuteExpr cond
   ifTrueDoc <- cuteExpr ifTrue
@@ -296,25 +296,25 @@ cuteIte accent cond ifTrue ifFalse = do
         <> line
         <> hang ("else" <> sep1 ifFalseDoc)
 
-cuteInfix :: Expr Text -> Doc ann -> Expr Text -> Expr Text -> CuteM (Doc ann)
+cuteInfix :: Expr Text -> Doc -> Expr Text -> Expr Text -> CuteM Doc
 cuteInfix super infixDoc left right = do
   leftDoc <- cuteSubExpr super left
   rightDoc <- cuteSubExpr super right
   return $ hang $ leftDoc <> sep1 (infixDoc <+> rightDoc)
 
-cutePair :: Doc ann -> Expr Text -> Expr Text -> CuteM (Doc ann)
+cutePair :: Doc -> Expr Text -> Expr Text -> CuteM Doc
 cutePair accent left right = do
   leftDoc <- cuteExpr left
   rightDoc <- cuteExpr right
   return $ cutePairDoc accent leftDoc rightDoc
 
 cutePCase ::
-  Doc ann ->
+  Doc ->
   Expr Text ->
   Maybe Binder ->
   Maybe Binder ->
   Scope Bool Expr Text ->
-  CuteM (Doc ann)
+  CuteM Doc
 cutePCase accent cond lBinder rBinder bnd2 = do
   condDoc <- cuteExpr cond
   (xl, xr, body) <- unbind2NamesOrBinders lBinder rBinder bnd2
@@ -328,22 +328,22 @@ cutePCase accent cond lBinder rBinder bnd2 = do
           cutePairDoc accent (pretty xl) (pretty xr) <+> "->" <> sep1 bodyDoc
       ]
 
-cutePairDoc :: Doc ann -> Doc ann -> Doc ann -> Doc ann
+cutePairDoc :: Doc -> Doc -> Doc -> Doc
 cutePairDoc accent leftDoc rightDoc =
   accent <> parens (align (leftDoc <> comma <> sep1 rightDoc))
 
-cuteApp :: Doc ann -> [Expr Text] -> CuteM (Doc ann)
+cuteApp :: Doc -> [Expr Text] -> CuteM Doc
 cuteApp fnDoc exprs = do
   docs <- mapM cuteSubExprAgg exprs
   return $ hang $ fnDoc <> group (foldMap (line <>) docs)
 
-cuteCaseAlt :: CaseAlt Expr Text -> CuteM (Doc ann)
+cuteCaseAlt :: CaseAlt Expr Text -> CuteM Doc
 cuteCaseAlt CaseAlt {..} = do
   (xs, body) <- unbindManyNamesOrBinders binders bnd
   bodyDoc <- cuteExpr body
   return $ cuteAltDoc ctor xs bodyDoc
 
-cuteCaseDoc :: Foldable t => Doc ann -> Bool -> Doc ann -> t (Doc ann) -> Doc ann
+cuteCaseDoc :: Foldable t => Doc -> Bool -> Doc -> t Doc -> Doc
 cuteCaseDoc accent usePipe condDoc altDocs =
   align $
     accent <> "case" <+> condDoc <+> "of"
@@ -354,12 +354,12 @@ cuteCaseDoc accent usePipe condDoc altDocs =
       <> hardline
       <> "end"
 
-cuteAltDocs :: (Functor t) => t (Text, [Text], Doc ann) -> t (Doc ann)
+cuteAltDocs :: (Functor t) => t (Text, [Text], Doc) -> t Doc
 cuteAltDocs = (go <$>)
   where
     go (ctor, xs, bodyDoc) = cuteAltDoc ctor xs bodyDoc
 
-cuteAltDoc :: Text -> [Text] -> Doc ann -> Doc ann
+cuteAltDoc :: Text -> [Text] -> Doc -> Doc
 cuteAltDoc ctor xs bodyDoc =
   hang
     ( pretty ctor <> group (foldMap ((line <>) . pretty) xs)
@@ -367,14 +367,14 @@ cuteAltDoc ctor xs bodyDoc =
     )
 
 -- | Add parentheses to the expressions according to their precedence level
-cuteSubExpr :: Expr Text -> Expr Text -> CuteM (Doc ann)
+cuteSubExpr :: Expr Text -> Expr Text -> CuteM Doc
 cuteSubExpr super sub = cuteSubExprIf sub $ exprLevel super > exprLevel sub
 
 -- | Add parentheses to the expressions more aggressively
-cuteSubExprAgg :: Expr Text -> CuteM (Doc ann)
+cuteSubExprAgg :: Expr Text -> CuteM Doc
 cuteSubExprAgg sub = cuteSubExprIf sub $ exprLevel sub == 0
 
-cuteSubExprIf :: Expr Text -> Bool -> CuteM (Doc ann)
+cuteSubExprIf :: Expr Text -> Bool -> CuteM Doc
 cuteSubExprIf sub b = do
   doc <- cuteExpr sub
   return $ if b then doc else parens $ align doc

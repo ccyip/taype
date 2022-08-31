@@ -15,10 +15,10 @@ module Taype
   )
 where
 
+import Bound
 import Options.Applicative
 import Prettyprinter.Render.Text (putDoc)
 import Prettyprinter.Util (putDocW)
-import Bound
 import Taype.Cute
 import Taype.Environment
 import Taype.Error
@@ -32,7 +32,7 @@ run options@Options {optFile = file} = do
   content <- readFileBS file
   let code = decodeUtf8 content
   result <- runExceptT $ process file code options
-  whenLeft_ result $ putTextLn . renderError file code
+  whenLeft_ result $ printDoc options . renderError file code
 
 process :: FilePath -> Text -> Options -> ExceptT Err IO ()
 process file code options@Options {..} = do
@@ -46,7 +46,10 @@ process file code options@Options {..} = do
   printDefs gctx names
   where
     printDefs gctx defs =
-      lift $ maybe putDoc putDocW optWidth $ cuteDefs options gctx defs
+      lift $ printDoc options $ cuteDefs options gctx defs
+
+printDoc :: Options -> Doc -> IO ()
+printDoc Options {..} = maybe putDoc putDocW optWidth
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)
