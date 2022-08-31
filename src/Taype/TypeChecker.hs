@@ -21,8 +21,8 @@ import Bound
 import Control.Monad.Error.Class
 import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
-import Prettyprinter hiding (Doc)
 import Data.List (partition, zip4, zipWith3)
+import Prettyprinter hiding (Doc)
 import Relude.Extra.Tuple
 import Taype.Environment
 import Taype.Error
@@ -481,8 +481,7 @@ typing Tape {..} mt Nothing = do
         [(x, t', LeakyL, e')]
         Tape {expr = V x}
     )
--- TODO: record location
-typing Loc {..} mt ml = typing expr mt ml
+typing Loc {..} mt ml = withLoc loc $ typing expr mt ml
 typing Asc {..} Nothing ml = do
   (_, ty') <- inferKind ty
   (l, expr') <- check expr ty' ml
@@ -987,21 +986,33 @@ notAppearIn :: [Name] -> Expr Name -> TcM ()
 notAppearIn xs e =
   when (any (`elem` xs) e) $ err "do not support dependent types yet"
 
-extendGCtx1 :: MonadError Err m => GCtx Name -> Text -> Def Name -> m (GCtx Name)
-extendGCtx1 gctx name _
-  | M.member name gctx =
-    -- TODO
-    err $ "Definition " <> name <> " already exists"
-extendGCtx1 gctx name def = return $ M.insert name def gctx
+extendGCtx1 ::
+  (MonadError Err m, MonadReader Options m) =>
+  GCtx Name ->
+  Text ->
+  Def Name ->
+  m (GCtx Name)
+extendGCtx1 gctx name def =
+  case gctx !? name of
+    Just def' -> do
+      Options {optFile = file, optCode = code} <- ask
+      err_ (getDefLoc def) $
+        "Definition" <+> dquotes (pretty name) <+> "already exists in"
+          <> hardline <> pretty (renderFancyLocation file code (getDefLoc def'))
+    _ -> return $ M.insert name def gctx
 
-extendGCtx :: MonadError Err m => GCtx Name -> [(Text, Def Name)] -> m (GCtx Name)
+extendGCtx ::
+  (MonadError Err m, MonadReader Options m) =>
+  GCtx Name ->
+  [(Text, Def Name)] ->
+  m (GCtx Name)
 extendGCtx = foldlM $ uncurry . extendGCtx1
 
 -- | Type check all definitions.
 checkDefs :: Options -> [(Text, Def Name)] -> ExceptT Err IO (GCtx a)
-checkDefs options defs = do
-  gctx <- preCheckDefs options defs
-  defs' <- mapM (traverseToSnd (go gctx) . fst) defs
+checkDefs options defs = runDcM options $ do
+  gctx <- preCheckDefs defs
+  defs' <- lift $ mapM (traverseToSnd (go gctx) . fst) defs
   return $ mustClosed "Global context" <$> insertMany gctx defs'
   where
     go gctx name =
@@ -1035,8 +1046,8 @@ checkDef def = return def
 
 -- | Pre-type check all definitions to ensure they are well-formed, and their
 -- types are well-kinded and in core Taype ANF.
-preCheckDefs :: Options -> [(Text, Def Name)] -> ExceptT Err IO (GCtx Name)
-preCheckDefs options allDefs = do
+preCheckDefs :: [(Text, Def Name)] -> DcM (GCtx Name)
+preCheckDefs allDefs = do
   -- We need to pre-check all ADTs first, because they can mutually refer to
   -- each other but do not contain dependent types.
   let (adtDefs, otherDefs) = partition isADTDef allDefs
@@ -1044,8 +1055,11 @@ preCheckDefs options allDefs = do
   -- function types, constructor and OADT type arguments are well-kinded and in
   -- core Taype ANF), because it only contains ADTs (and prelude) at the moment.
   gctx <- extendGCtx preludeGCtx adtDefs
-  adtDefs' <- forM adtDefs $
-    \(name, def) -> (name,) <$> runTcM (initEnv options gctx) (preCheckDef def)
+  options <- ask
+  adtDefs' <- lift $
+    forM adtDefs $
+      \(name, def) ->
+        (name,) <$> runTcM (initEnv options gctx) (preCheckDef def)
   -- Extend global context with the ADTs and their constructors. Note that the
   -- types of all constructors are already in the right form after pre-check.
   gctx' <- extendGCtx preludeGCtx $ foldMap adtWithCtors adtDefs'
@@ -1065,7 +1079,8 @@ preCheckDefs options allDefs = do
     -- transitively.
     go gctx [] = return gctx
     go gctx ((name, def) : defs) = do
-      def' <- runTcM (initEnv options gctx) $ preCheckDef def
+      options <- ask
+      def' <- lift $ runTcM (initEnv options gctx) $ preCheckDef def
       gctx' <- extendGCtx1 gctx name def'
       go gctx' defs
 
@@ -1136,11 +1151,15 @@ preCheckSecRetType b t = do
       }
 
 -- TODO
-err :: MonadError Err m => Text -> m a
-err errMsg =
+err_ :: (MonadError Err m) => Int -> Doc -> m a
+err_ errLoc errMsg =
   throwError
     Err
-      { errLoc = -1,
-        errCategory = "Typing Error",
-        errMsg = pretty errMsg
+      { errCategory = "Typing Error",
+        ..
       }
+
+err :: (MonadError Err m, MonadReader Env m) => Doc -> m a
+err msg = do
+  loc <- getLoc
+  err_ loc msg

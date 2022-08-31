@@ -27,6 +27,10 @@ module Taype.Environment
     -- * Local context
     Ctx,
 
+    -- * Definition checking monad
+    DcM,
+    runDcM,
+
     -- * Type checking monad
     TcM,
     runTcM,
@@ -38,6 +42,8 @@ module Taype.Environment
     extendCtx1,
     getLabel,
     withLabel,
+    getLoc,
+    withLoc,
   )
 where
 
@@ -62,6 +68,8 @@ data Env = Env
     ctx :: Ctx Name,
     -- | Binder context, used for pretty printing
     bctx :: BCtx Name,
+    -- | Location of the current expression
+    loc :: Int,
     -- | Default label for inference
     label :: Label
   }
@@ -71,10 +79,18 @@ data Env = Env
 -- Initially label does not matter because it should be replaced according to
 -- the context.
 initEnv :: Options -> GCtx Name -> Env
-initEnv options gctx = Env {ctx = [], bctx = [], label = LeakyL, ..}
+initEnv options gctx =
+  Env
+    { ctx = [],
+      bctx = [],
+      loc = -1,
+      label = LeakyL,
+      ..
+    }
 
 data Options = Options
   { optFile :: FilePath,
+    optCode :: Text,
     optInternalNames :: Bool,
     optNamePrefix :: Text,
     optPrintLabels :: Bool,
@@ -89,6 +105,12 @@ type GCtx a = HashMap Text (Def a)
 type Ctx a = [(a, (Ty a, Label))]
 
 type BCtx a = [(a, Binder)]
+
+-- | The definition checking monad
+type DcM = ReaderT Options (ExceptT Err IO)
+
+runDcM :: Options -> DcM a -> ExceptT Err IO a
+runDcM = usingReaderT
 
 -- | The type checking monad
 type TcM = FreshT (ReaderT Env (ExceptT Err IO))
@@ -137,6 +159,14 @@ getLabel = do
 
 withLabel :: MonadReader Env m => Label -> m a -> m a
 withLabel l = local (\Env {..} -> Env {label = l, ..})
+
+getLoc :: MonadReader Env m => m Int
+getLoc = do
+  Env {..} <- ask
+  return loc
+
+withLoc :: MonadReader Env m => Int -> m a -> m a
+withLoc l = local (\Env {..} -> Env {loc = l, ..})
 
 -- | The initial context with builtin functions
 preludeGCtx :: GCtx a

@@ -31,11 +31,12 @@ run :: Options -> IO ()
 run options@Options {optFile = file} = do
   content <- readFileBS file
   let code = decodeUtf8 content
-  result <- runExceptT $ process file code options
-  whenLeft_ result $ printDoc options . renderError file code
+      opt = options {optCode = code}
+  result <- runExceptT $ process opt
+  whenLeft_ result $ printDoc opt . renderError file code
 
-process :: FilePath -> Text -> Options -> ExceptT Err IO ()
-process file code options@Options {..} = do
+process :: Options -> ExceptT Err IO ()
+process options@Options {optFile = file, optCode = code, ..} = do
   tokens <- lex file code
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
   namedDefs <- parse tokens
@@ -89,4 +90,4 @@ opts = do
       option auto $
         long "width" <> short 'w'
           <> help "Window width (for debugging pretty printer)"
-  return Options {..}
+  return Options {optCode = "", ..}

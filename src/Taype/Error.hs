@@ -94,6 +94,6 @@ renderError :: FilePath -> Text -> Err -> Doc
 renderError file code Err {..} =
   "!!" <> pretty errCategory <> "!!" <> hardline
     <> pretty (renderFancyLocation file code errLoc)
-    <> hardline
+    <> hardline <> hardline
     <> errMsg
     <> hardline
