@@ -489,19 +489,19 @@ renderParserError Report {..} =
 renderToken :: Token -> Doc
 renderToken = \case
   L.Lambda -> "lambda abstraction"
-  L.Underscore -> "'_'"
-  L.Arrow -> "\"->\""
-  L.Equals -> "'='"
-  L.Colon -> "':'"
-  L.Bar -> "'|'"
-  L.Comma -> "','"
-  L.LAngle -> "'<'"
-  L.RAngle -> "'>'"
-  L.LAttr -> "\"#[\""
-  L.RBrace -> "']'"
-  L.LParen -> "'('"
-  L.LOParen -> "\"~(\""
-  L.RParen -> "')'"
+  L.Underscore -> squotes "_"
+  L.Arrow -> dquotes "->"
+  L.Equals -> squotes equals
+  L.Colon -> squotes colon
+  L.Bar -> squotes pipe
+  L.Comma -> squotes comma
+  L.LAngle -> squotes "<"
+  L.RAngle -> squotes ">"
+  L.LAttr -> dquotes $ "#" <> lbracket
+  L.RBrace -> squotes rbracket
+  L.LParen -> squotes lparen
+  L.LOParen -> dquotes $ "~" <> lparen
+  L.RParen -> squotes rparen
   L.TUnit -> "Unit"
   L.TBool -> "Bool"
   L.OBool -> "~Bool"
@@ -525,5 +525,5 @@ renderToken = \case
   L.End -> "end"
   L.Tape -> "tape"
   L.OInj tag -> if tag then "~inl" else "~inr"
-  L.Ident ident -> "identifier \"" <> pretty ident <> "\""
-  L.Infix ident -> "infix \"" <> pretty ident <> "\""
+  L.Ident ident -> "identifier" <+> dquotes (pretty ident)
+  L.Infix ident -> "infix" <+> dquotes (pretty ident)
