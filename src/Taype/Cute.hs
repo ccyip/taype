@@ -20,9 +20,14 @@ module Taype.Cute
     cute,
     CuteM (..),
     runCuteM,
+    contCuteM,
     cuteExpr,
     cuteDefs,
     cuteDef,
+    cuteTCtx,
+    hang,
+    indent,
+    nameOrBinder,
   )
 where
 
@@ -58,6 +63,9 @@ newtype CuteM a = CuteM {unCuteM :: FreshT (Reader Options) a}
 
 runCuteM :: Options -> CuteM a -> a
 runCuteM opts (CuteM m) = runReader (runFreshT m) opts
+
+contCuteM :: Options -> Int -> CuteM a -> a
+contCuteM opts n (CuteM m) = runReader (contFreshT n m) opts
 
 instance IsString a => IsString (CuteM a) where
   fromString = return . fromString
@@ -407,12 +415,17 @@ exprLevel = \case
   Loc {..} -> exprLevel expr
   _ -> 90
 
+nameOrBinder :: Options -> Name -> Maybe Binder -> Text
+nameOrBinder Options {..} x mb =
+  let name = optNamePrefix <> show x
+   in if optInternalNames then name else maybe name toText mb
+
 freshNameOrBinder :: Maybe Binder -> CuteM Text
 freshNameOrBinder binder = do
-  Options {..} <- ask
+  opt <- ask
   -- Always generate new name even if we use binder
-  x <- freshWith $ (optNamePrefix <>) . show
-  return $ if optInternalNames then x else maybe x toText binder
+  x <- fresh
+  return $ nameOrBinder opt x binder
 
 unbind1NameOrBinder ::
   Monad f => Maybe Binder -> Scope n f Text -> CuteM (Text, f Text)
@@ -430,3 +443,13 @@ unbind2NamesOrBinders binder1 binder2 =
 unbindManyNamesOrBinders ::
   Monad f => [Maybe Binder] -> Scope Int f Text -> CuteM ([Text], f Text)
 unbindManyNamesOrBinders = unbindManyBy . mapM freshNameOrBinder
+
+cuteTCtx :: TCtx Text -> CuteM Doc
+cuteTCtx tctx = do
+  docs <- mapM go tctx
+  return $
+    hang $
+      "Typing context" <> colon <> hardline
+        <> if null tctx then "<empty>" else sepWith hardline docs
+  where
+    go (x, (t, l)) = cuteBinder x (Just l) (Just t)

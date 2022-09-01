@@ -18,8 +18,11 @@ module Taype.Name
     FreshT,
     MonadFresh,
     runFreshT,
+    contFreshT,
     FreshM,
     runFreshM,
+    contFreshM,
+    getFresh,
     fresh,
     freshes,
     freshWith,
@@ -62,13 +65,22 @@ type FreshT = StateT Name
 type MonadFresh = MonadState Name
 
 runFreshT :: Monad m => FreshT m a -> m a
-runFreshT m = evalStateT m 0
+runFreshT = contFreshT 0
+
+contFreshT :: Monad m => Int -> FreshT m a -> m a
+contFreshT = flip evalStateT
 
 -- | Fresh name monad
 type FreshM = FreshT Identity
 
 runFreshM :: FreshM a -> a
 runFreshM = runIdentity . runFreshT
+
+contFreshM :: Int -> FreshM a -> a
+contFreshM = runIdentity <<$>> contFreshT
+
+getFresh :: MonadFresh m => m Name
+getFresh = get
 
 -- | Generate a fresh name
 fresh :: MonadFresh m => m Name

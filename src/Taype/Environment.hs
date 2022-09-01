@@ -25,7 +25,10 @@ module Taype.Environment
     preludeGCtx,
 
     -- * Local context
-    Ctx,
+    TCtx,
+
+    -- * Binder context
+    BCtx,
 
     -- * Definition checking monad
     DcM,
@@ -40,9 +43,7 @@ module Taype.Environment
     lookupTy,
     extendCtx,
     extendCtx1,
-    getLabel,
     withLabel,
-    getLoc,
     withLoc,
   )
 where
@@ -65,7 +66,7 @@ data Env = Env
     -- | Local typing context
     --
     -- Every type must be well-kinded and in core Taype ANF.
-    ctx :: Ctx Name,
+    tctx :: TCtx Name,
     -- | Binder context, used for pretty printing
     bctx :: BCtx Name,
     -- | Location of the current expression
@@ -81,7 +82,7 @@ data Env = Env
 initEnv :: Options -> GCtx Name -> Env
 initEnv options gctx =
   Env
-    { ctx = [],
+    { tctx = [],
       bctx = [],
       loc = -1,
       label = LeakyL,
@@ -102,7 +103,7 @@ data Options = Options
 
 type GCtx a = HashMap Text (Def a)
 
-type Ctx a = [(a, (Ty a, Label))]
+type TCtx a = [(a, (Ty a, Label))]
 
 type BCtx a = [(a, Binder)]
 
@@ -128,7 +129,7 @@ lookupDef x = do
 lookupTy :: MonadReader Env m => Name -> m (Maybe (Ty Name, Label))
 lookupTy x = do
   Env {..} <- ask
-  return $ lookup x ctx
+  return $ lookup x tctx
 
 -- | Extend the typing context.
 --
@@ -140,7 +141,7 @@ extendCtx xs = local go
   where
     go Env {..} =
       Env
-        { ctx = (ctx1 <$> xs) <> ctx,
+        { tctx = (ctx1 <$> xs) <> tctx,
           bctx = mapMaybe bctx1 xs <> bctx,
           ..
         }
@@ -152,18 +153,8 @@ extendCtx1 ::
   MonadReader Env m => Name -> Ty Name -> Label -> Maybe Binder -> m a -> m a
 extendCtx1 x t l mb = extendCtx [(x, t, l, mb)]
 
-getLabel :: MonadReader Env m => m Label
-getLabel = do
-  Env {..} <- ask
-  return label
-
 withLabel :: MonadReader Env m => Label -> m a -> m a
 withLabel l = local (\Env {..} -> Env {label = l, ..})
-
-getLoc :: MonadReader Env m => m Int
-getLoc = do
-  Env {..} <- ask
-  return loc
 
 withLoc :: MonadReader Env m => Int -> m a -> m a
 withLoc l = local (\Env {..} -> Env {loc = l, ..})

@@ -21,9 +21,14 @@ import Bound
 import Control.Monad.Error.Class
 import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
-import Data.List (partition, zip4, zipWith3)
-import Prettyprinter hiding (Doc)
+import Data.List (lookup, partition, zip4, zipWith3)
+import Prettyprinter hiding (Doc, hang, indent)
+-- TODO: REMOVE later
+import Prettyprinter.Render.Text (putDoc)
+import Prettyprinter.Util (putDocW)
+import Relude.Extra.Bifunctor
 import Relude.Extra.Tuple
+import Taype.Cute
 import Taype.Environment
 import Taype.Error
 import Taype.Name
@@ -57,8 +62,11 @@ typing e@ILit {} Nothing Nothing = return (TInt, SafeL, e)
 typing e@V {..} Nothing Nothing =
   lookupTy name >>= \case
     Just (t, l) -> return (t, l, e)
-    -- TODO
-    _ -> err "Variable not in scope"
+    _ ->
+      err
+        [ DD $ "Variable not in scope" <> colon <> softline,
+          DC e
+        ]
 typing e@GV {..} Nothing Nothing =
   lookupDef ref >>= \case
     Just FunDef {..} -> return (ty, mustLabel label, e)
@@ -77,11 +85,11 @@ typing e@GV {..} Nothing Nothing =
             App {fn = e, args = [], appKind = Just BuiltinApp}
           )
     -- TODO
-    Just CtorDef {} -> err "Constructors need to be fully applied"
-    Just BuiltinDef {} -> err "Builtin functions need to be fully applied"
+    Just CtorDef {} -> err' "Constructors need to be fully applied"
+    Just BuiltinDef {} -> err' "Builtin functions need to be fully applied"
     -- TODO
-    Just _ -> err "Definition not a term"
-    _ -> err "Definition not available"
+    Just _ -> err' "Definition not a term"
+    _ -> err' "Definition not available"
 typing Lam {mTy = Just binderTy, ..} Nothing ml = do
   -- This is the label of the binder, not the label of the whole lambda.
   binderLabel <- labeling label
@@ -142,7 +150,7 @@ typing App {..} Nothing ml =
     _ -> typeFnApp
   where
     typePolyApp _ paraTypes _ _ _
-      | length args /= length paraTypes = err "arity mismatch"
+      | length args /= length paraTypes = err' "arity mismatch"
     typePolyApp f paraTypes resType strat appKind' = do
       -- TODO: quite messy here
       let ml' = case strat of
@@ -294,11 +302,11 @@ typing Case {..} Nothing ml = do
       -- TODO
       Just (ref, ADTDef {..}) -> return (ref, ctors)
       -- TODO
-      _ -> err "not an ADT"
+      _ -> err' "not an ADT"
   augAlts <-
     case joinAlts alts ctors of
       -- TODO
-      Left (_, _) -> err "constructors do not match"
+      Left (_, _) -> err' "constructors do not match"
       Right alts' -> return alts'
   res <- mapM (typeCaseAlt condLabel) augAlts
   let ts' = res <&> \(_, _, _, t, _, _) -> t
@@ -322,7 +330,7 @@ typing Case {..} Nothing ml = do
   where
     -- TODO: abstract this and joinAlts together
     typeCaseAlt _ (_, paraTypes, binders, _)
-      | length paraTypes /= length binders = err "arguments do not match"
+      | length paraTypes /= length binders = err' "arguments do not match"
     typeCaseAlt condLabel (ctor, paraTypes, binders, bnd) = do
       let n = length paraTypes
       (xs, body) <- unbindMany n bnd
@@ -502,7 +510,7 @@ typing e (Just t) Nothing = do
 -- Failed to infer the type
 typing _ Nothing Nothing =
   -- TODO
-  err "Cannot infer the type. Perhaps you should add type ascription"
+  err' "Cannot infer the type. Perhaps you should add type ascription"
 
 -- | Kind check a type bidirectionally.
 --
@@ -524,8 +532,8 @@ kinding GV {..} Nothing =
   lookupDef ref >>= \case
     Just ADTDef {} -> return (PublicK, GV {..})
     -- TODO
-    Just _ -> err "definition is not ADT"
-    Nothing -> err "no such definition"
+    Just _ -> err' "definition is not ADT"
+    Nothing -> err' "no such definition"
 kinding Prod {..} Nothing = do
   (lk, left') <- inferKind left
   (rk, right') <- inferKind right
@@ -549,11 +557,11 @@ kinding App {..} Nothing = do
     maybeGV fn >>= \case
       Just (ref, OADTDef {..}) -> return (ref, ty)
       -- TODO
-      _ -> err "definition is not OADT"
+      _ -> err' "definition is not OADT"
   arg <- case args of
     [arg] -> return arg
     -- TODO
-    _ -> err "arity mismatch"
+    _ -> err' "arity mismatch"
   (_, arg') <- check arg ty (Just SafeL)
   x <- fresh
   return
@@ -645,11 +653,11 @@ kinding Case {..} Nothing = do
       -- TODO
       Just (ref, ADTDef {..}) -> return (ref, ctors)
       -- TODO
-      _ -> err "not an ADT"
+      _ -> err' "not an ADT"
   augAlts <-
     case joinAlts alts ctors of
       -- TODO
-      Left (_, _) -> err "constructors do not match"
+      Left (_, _) -> err' "constructors do not match"
       Right alts' -> return alts'
   alts' <- mapM kindCaseAlt augAlts
   x <- fresh
@@ -666,7 +674,7 @@ kinding Case {..} Nothing = do
   where
     kindCaseAlt (_, paraTypes, binders, _)
       -- TODO
-      | length paraTypes /= length binders = err "arguments do not match"
+      | length paraTypes /= length binders = err' "arguments do not match"
     kindCaseAlt (ctor, paraTypes, binders, bnd) = do
       let n = length paraTypes
       (xs, body) <- unbindMany n bnd
@@ -679,13 +687,13 @@ kinding Loc {..} mt = kinding expr mt
 kinding t (Just k) = do
   (k', t') <- inferKind t
   -- TODO
-  unless (k' `leq` k) $ err "Kind mismatch"
+  unless (k' `leq` k) $ err' "Kind mismatch"
   return (k, t')
 
 -- Failed
 kinding _ Nothing =
   -- TODO
-  err "Cannot infer the kind"
+  err' "Cannot infer the kind"
 
 -- | Infer the type of the expression
 infer :: Expr Name -> TcM (Ty Name, Label, Expr Name)
@@ -706,13 +714,13 @@ checkKind t k = kinding t (Just k) <&> snd
 -- | Infer label if not privided
 labeling :: Maybe Label -> TcM Label
 labeling l = do
-  l' <- getLabel
-  return $ fromMaybe l' l
+  Env {..} <- ask
+  return $ fromMaybe label l
 
 -- | Check label
 checkLabel :: Maybe Label -> Label -> TcM ()
 -- TODO
-checkLabel ml l = whenJust ml $ \l' -> when (l' /= l) $ err "label mismatch"
+checkLabel ml l = whenJust ml $ \l' -> when (l' /= l) $ err' "label mismatch"
 
 mustLabel :: Maybe Label -> Label
 mustLabel = fromMaybe $ oops "Label not available"
@@ -820,7 +828,7 @@ equate e e' = do
     go Promote {expr} Promote {expr = expr'} = equate expr expr'
     go Tape {expr} Tape {expr = expr'} = equate expr expr'
     go _ _ = errEquate
-    errEquate = err "not equal"
+    errEquate = err' "not equal"
 
 equateMany :: NonEmpty (Expr Name) -> TcM ()
 equateMany (e :| es) = forM_ es $ equate e
@@ -887,7 +895,7 @@ whnf e = return e
 isPi :: Ty Name -> TcM (Ty Name, Maybe Label, Maybe Binder, Scope () Ty Name)
 isPi Pi {..} = return (ty, label, binder, bnd)
 isPi Loc {..} = isPi expr
-isPi _ = err "not a pi"
+isPi _ = err' "not a pi"
 
 maybeGV :: MonadReader Env m => Expr Name -> m (Maybe (Text, Def Name))
 maybeGV GV {..} = (ref,) <<$>> lookupDef ref
@@ -901,21 +909,21 @@ isProd :: Ty Name -> TcM (Ty Name, Ty Name)
 isProd Prod {..} = return (left, right)
 isProd Loc {..} = isProd expr
 -- TODO
-isProd _ = err "not a product"
+isProd _ = err' "not a product"
 
 isOProd :: Ty Name -> TcM (Ty Name, Ty Name)
 isOProd t = do
   nf <- whnf t
   case nf of
     OProd {..} -> return (left, right)
-    _ -> err "not an oblivious product"
+    _ -> err' "not an oblivious product"
 
 isOSum :: Ty Name -> TcM (Ty Name, Ty Name)
 isOSum t = do
   nf <- whnf t
   case nf of
     OSum {..} -> return (left, right)
-    _ -> err "not an oblivious sum"
+    _ -> err' "not an oblivious sum"
 
 mayPromote :: Label -> Ty Name -> Label -> Expr Name -> TcM (Expr Name)
 mayPromote l' t l e | l < l' = do
@@ -984,7 +992,7 @@ insertMany = flipfoldl' $ uncurry M.insert
 
 notAppearIn :: [Name] -> Expr Name -> TcM ()
 notAppearIn xs e =
-  when (any (`elem` xs) e) $ err "do not support dependent types yet"
+  when (any (`elem` xs) e) $ err' "do not support dependent types yet"
 
 extendGCtx1 ::
   (MonadError Err m, MonadReader Options m) =>
@@ -998,7 +1006,8 @@ extendGCtx1 gctx name def =
       Options {optFile = file, optCode = code} <- ask
       err_ (getDefLoc def) $
         "Definition" <+> dquotes (pretty name) <+> "already exists in"
-          <> hardline <> pretty (renderFancyLocation file code (getDefLoc def'))
+          <> hardline
+          <> pretty (renderFancyLocation file code (getDefLoc def'))
     _ -> return $ M.insert name def gctx
 
 extendGCtx ::
@@ -1129,12 +1138,16 @@ preCheckSecRetType b t = do
   -- The second argument of a section must be public with leaky label, while
   -- that of a retraction must be oblivious with safe label.
   let l = if b then LeakyL else SafeL
-  typ2' <- checkKind typ2 (if b then PublicK else OblivK)
+  typ2' <-
+    extendCtx1 x1 typ1' SafeL binder1 $
+      checkKind typ2 (if b then PublicK else OblivK)
   checkLabel label2 l
   (x2, body2) <- unbind1 bnd2
   -- The result of a section function must be oblivious, while that of a
   -- retraction must be public.
-  bnd2' <- checkKind body2 (if b then OblivK else PublicK)
+  bnd2' <-
+    extendCtx [(x1, typ1', SafeL, binder1), (x2, typ2', l, binder2)] $
+      checkKind body2 (if b then OblivK else PublicK)
   return
     Pi
       { ty = typ1',
@@ -1150,7 +1163,6 @@ preCheckSecRetType b t = do
               }
       }
 
--- TODO
 err_ :: (MonadError Err m) => Int -> Doc -> m a
 err_ errLoc errMsg =
   throwError
@@ -1159,7 +1171,54 @@ err_ errLoc errMsg =
         ..
       }
 
-err :: (MonadError Err m, MonadReader Env m) => Doc -> m a
-err msg = do
-  loc <- getLoc
+-- TODO: remove later
+err' :: (MonadError Err m, MonadReader Env m) => Doc -> m a
+err' msg = do
+  Env {..} <- ask
   err_ loc msg
+
+-- Can be generalized to take more than just 'Expr'.
+data D = DD Doc | DC (Expr Name)
+
+err :: [D] -> TcM a
+err ds = do
+  Env {..} <- ask
+  doc <- displayMsg ds
+  err_ loc doc
+
+warn :: [D] -> TcM ()
+warn ds = do
+  Env {options = Options {..}} <- ask
+  doc <- displayMsg ds
+  -- TODO: abstract and move!
+  liftIO $
+    maybe putDoc putDocW optWidth $
+      "Warning" <> colon <> hardline <> doc <> hardline
+
+displayMsg :: [D] -> TcM Doc
+displayMsg ds = do
+  doc <- foldMapM displayD ds
+  tctxDoc <- displayTCtx
+  return $ doc <> hardline <> hardline <> tctxDoc
+
+displayD :: D -> TcM Doc
+displayD (DD doc) = return doc
+displayD (DC e) = do
+  Env {..} <- ask
+  let e' = e <&> showName options bctx
+  n <- getFresh
+  return $ contCuteM options n $ cute e'
+
+displayTCtx :: TcM Doc
+displayTCtx = do
+  Env {..} <- ask
+  let tctx' =
+        bimapF
+          (showName options bctx)
+          (first (showName options bctx <$>))
+          tctx
+  n <- getFresh
+  return $ contCuteM options n $ cuteTCtx tctx'
+
+showName :: Options -> BCtx Name -> Name -> Text
+showName options bctx x = nameOrBinder options x $ lookup x bctx
