@@ -17,9 +17,6 @@ module Taype.Environment
     Env (..),
     initEnv,
 
-    -- * Commandline options
-    Options (..),
-
     -- * Global context
     GCtx,
     preludeGCtx,
@@ -29,14 +26,6 @@ module Taype.Environment
 
     -- * Binder context
     BCtx,
-
-    -- * Definition checking monad
-    DcM,
-    runDcM,
-
-    -- * Type checking monad
-    TcM,
-    runTcM,
 
     -- * Manipulating environment
     lookupDef,
@@ -50,7 +39,7 @@ where
 
 import Data.HashMap.Strict ((!?))
 import Data.List (lookup)
-import Taype.Error
+import Taype.Prelude
 import Taype.Name
 import Taype.Syntax
 
@@ -89,35 +78,11 @@ initEnv options gctx =
       ..
     }
 
-data Options = Options
-  { optFile :: FilePath,
-    optCode :: Text,
-    optInternalNames :: Bool,
-    optNamePrefix :: Text,
-    optPrintLabels :: Bool,
-    optPrintTokens :: Bool,
-    optPrintSource :: Bool,
-    optWidth :: Maybe Int
-  }
-  deriving stock (Eq, Show)
-
 type GCtx a = HashMap Text (Def a)
 
 type TCtx a = [(a, (Ty a, Label))]
 
 type BCtx a = [(a, Binder)]
-
--- | The definition checking monad
-type DcM = ReaderT Options (ExceptT Err IO)
-
-runDcM :: Options -> DcM a -> ExceptT Err IO a
-runDcM = usingReaderT
-
--- | The type checking monad
-type TcM = FreshT (ReaderT Env (ExceptT Err IO))
-
-runTcM :: Env -> TcM a -> ExceptT Err IO a
-runTcM env m = runReaderT (runFreshT m) env
 
 -- | Look up a definition in the global context.
 lookupDef :: MonadReader Env m => Text -> m (Maybe (Def Name))

@@ -54,7 +54,7 @@ where
 
 import Bound
 import Data.List (findIndex)
-import Taype.Error
+import Taype.Prelude
 
 -- | Names are integers
 type Name = Int

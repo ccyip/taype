@@ -46,6 +46,7 @@ library
   import:              common-options
   hs-source-dirs:      src
   exposed-modules:     Taype
+                       Taype.Prelude
                        Taype.Error
                        Taype.Name
                        Taype.Cute

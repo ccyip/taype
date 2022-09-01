@@ -25,6 +25,7 @@ import Data.List (lookup, partition, zip4, zipWith3)
 import Prettyprinter hiding (Doc, hang, indent)
 import Relude.Extra.Bifunctor
 import Relude.Extra.Tuple
+import Taype.Prelude
 import Taype.Cute
 import Taype.Environment
 import Taype.Error
@@ -1187,7 +1188,7 @@ _debug :: [D] -> TcM ()
 _debug ds = do
   Env {options} <- ask
   doc <- displayMsg ds
-  printDoc options $ "Debug" <> colon <> hardline <> doc <> hardline
+  printDoc options $ "Debug" <> colon <> hardline <> doc <> hardline <> hardline
 
 displayMsg :: [D] -> TcM Doc
 displayMsg ds = do
@@ -1199,7 +1200,7 @@ displayD :: D -> TcM Doc
 displayD (DD doc) = return doc
 displayD (DC e) = do
   Env {..} <- ask
-  let e' = e <&> showName options bctx
+  let e' = e <&> renderName options bctx
   n <- getFresh
   return $ contCuteM options n $ cute e'
 
@@ -1208,11 +1209,23 @@ displayTCtx = do
   Env {..} <- ask
   let tctx' =
         bimapF
-          (showName options bctx)
-          (first (showName options bctx <$>))
+          (renderName options bctx)
+          (first (renderName options bctx <$>))
           tctx
   n <- getFresh
-  return $ contCuteM options n $ cuteTCtx tctx'
+  return $ contCuteM options n $ cute tctx'
 
-showName :: Options -> BCtx Name -> Name -> Text
-showName options bctx x = nameOrBinder options x $ lookup x bctx
+renderName :: Options -> BCtx Name -> Name -> Text
+renderName options bctx x = nameOrBinder options x $ lookup x bctx
+
+-- | The definition checking monad
+type DcM = ReaderT Options (ExceptT Err IO)
+
+runDcM :: Options -> DcM a -> ExceptT Err IO a
+runDcM = usingReaderT
+
+-- | The type checking monad
+type TcM = FreshT (ReaderT Env (ExceptT Err IO))
+
+runTcM :: Env -> TcM a -> ExceptT Err IO a
+runTcM env m = runReaderT (runFreshT m) env

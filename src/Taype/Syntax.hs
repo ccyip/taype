@@ -77,7 +77,7 @@ import Data.Deriving
 import Data.Functor.Classes
 import Data.List (groupBy)
 import Prettyprinter
-import Taype.Error
+import Taype.Prelude
 import Taype.Name
 import qualified Text.Show
 

@@ -17,13 +17,11 @@ where
 
 import Bound
 import Options.Applicative
-import Prettyprinter.Render.Text (putDoc)
-import Prettyprinter.Util (putDocW)
+import Taype.Prelude
 import Taype.Cute
-import Taype.Environment
 import Taype.Error
-import Taype.Lexer (lex, printTokens)
-import Taype.Parser (parse)
+import Taype.Lexer
+import Taype.Parser
 import Taype.Syntax
 import Taype.TypeChecker
 
@@ -33,7 +31,7 @@ run options@Options {optFile = file} = do
   let code = decodeUtf8 content
       opt = options {optCode = code}
   result <- runExceptT $ process opt
-  whenLeft_ result $ printDoc opt . renderError file code
+  whenLeft_ result $ printDoc opt . runCuteM opt . cute
 
 process :: Options -> ExceptT Err IO ()
 process options@Options {optFile = file, optCode = code, ..} = do

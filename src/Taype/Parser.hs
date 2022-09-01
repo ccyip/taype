@@ -22,6 +22,7 @@ import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import Control.Monad.Error.Class
 import Data.List.NonEmpty (some1)
 import Prettyprinter hiding (Doc)
+import Taype.Prelude
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
 import qualified Taype.Lexer as L

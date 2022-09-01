@@ -1,10 +1,8 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module Taype.Error
   ( oops,
-    Doc,
     Err (..),
     initPosState,
     getLocation,
@@ -12,19 +10,12 @@ module Taype.Error
     showLocation,
     showUnknownLocation,
     renderFancyLocation,
-    renderError,
   )
 where
 
 import qualified Data.Text as T
-import Prettyprinter hiding (Doc)
-import qualified Prettyprinter as PP
 import Text.Megaparsec
-
-oops :: Text -> a
-oops msg = error $ "Oops! This should not happen:\n" <> msg
-
-type Doc = PP.Doc ()
+import Taype.Prelude
 
 data Err = Err
   { errLoc :: Int,
@@ -89,11 +80,3 @@ renderFancyLocation file code offset
         lpadding = T.replicate (T.length lineTxt) " "
         pointerPadding = T.replicate (col - 1) " "
         bar = " | "
-
-renderError :: FilePath -> Text -> Err -> Doc
-renderError file code Err {..} =
-  "!!" <> pretty errCategory <> "!!" <> hardline
-    <> pretty (renderFancyLocation file code errLoc)
-    <> hardline <> hardline
-    <> errMsg
-    <> hardline

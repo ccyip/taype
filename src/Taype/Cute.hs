@@ -21,10 +21,8 @@ module Taype.Cute
     CuteM (..),
     runCuteM,
     contCuteM,
-    cuteExpr,
     cuteDefs,
     cuteDef,
-    cuteTCtx,
     hang,
     indent,
     nameOrBinder,
@@ -42,6 +40,7 @@ import Prettyprinter.Util (putDocW)
 import Taype.Environment
 import Taype.Error
 import Taype.Name
+import Taype.Prelude
 import Taype.Syntax
 import Prelude hiding (group)
 
@@ -85,6 +84,27 @@ class Cute a where
 instance Cute Int
 
 instance Cute Text
+
+instance Cute Err where
+  cute Err {..} = do
+    Options {optFile = file, optCode = code} <- ask
+    return $
+      "!!" <> pretty errCategory <> "!!" <> hardline
+        <> pretty (renderFancyLocation file code errLoc)
+        <> hardline
+        <> hardline
+        <> errMsg
+        <> hardline
+
+instance Cute (TCtx Text) where
+  cute tctx = do
+    docs <- mapM go tctx
+    return $
+      hang $
+        "Typing context" <> colon <> hardline
+          <> if null tctx then "<empty>" else sepWith hardline docs
+    where
+      go (x, (t, l)) = cuteBinder x (Just l) (Just t)
 
 instance Cute (Expr Text) where
   cute = cuteExpr
@@ -449,13 +469,3 @@ unbind2NamesOrBinders binder1 binder2 =
 unbindManyNamesOrBinders ::
   Monad f => [Maybe Binder] -> Scope Int f Text -> CuteM ([Text], f Text)
 unbindManyNamesOrBinders = unbindManyBy . mapM freshNameOrBinder
-
-cuteTCtx :: TCtx Text -> CuteM Doc
-cuteTCtx tctx = do
-  docs <- mapM go tctx
-  return $
-    hang $
-      "Typing context" <> colon <> hardline
-        <> if null tctx then "<empty>" else sepWith hardline docs
-  where
-    go (x, (t, l)) = cuteBinder x (Just l) (Just t)
