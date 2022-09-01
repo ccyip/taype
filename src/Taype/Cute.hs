@@ -28,6 +28,7 @@ module Taype.Cute
     hang,
     indent,
     nameOrBinder,
+    printDoc,
   )
 where
 
@@ -36,6 +37,8 @@ import Data.HashMap.Strict ((!?))
 import qualified Data.Text as T
 import Prettyprinter hiding (Doc, hang, indent)
 import qualified Prettyprinter as PP
+import Prettyprinter.Render.Text (putDoc)
+import Prettyprinter.Util (putDocW)
 import Taype.Environment
 import Taype.Error
 import Taype.Name
@@ -56,6 +59,9 @@ sepWith s = concatWith (\x y -> x <> s <> y)
 
 sep1 :: Doc -> Doc
 sep1 = group . (line <>)
+
+printDoc :: MonadIO m => Options -> Doc -> m ()
+printDoc Options {..} = liftIO . maybe putDoc putDocW optWidth
 
 -- | A context for fresh name generation and environment
 newtype CuteM a = CuteM {unCuteM :: FreshT (Reader Options) a}

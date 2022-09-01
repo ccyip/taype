@@ -23,9 +23,6 @@ import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
 import Data.List (lookup, partition, zip4, zipWith3)
 import Prettyprinter hiding (Doc, hang, indent)
--- TODO: REMOVE later
-import Prettyprinter.Render.Text (putDoc)
-import Prettyprinter.Util (putDocW)
 import Relude.Extra.Bifunctor
 import Relude.Extra.Tuple
 import Taype.Cute
@@ -1186,14 +1183,11 @@ err ds = do
   doc <- displayMsg ds
   err_ loc doc
 
-warn :: [D] -> TcM ()
-warn ds = do
-  Env {options = Options {..}} <- ask
+_debug :: [D] -> TcM ()
+_debug ds = do
+  Env {options} <- ask
   doc <- displayMsg ds
-  -- TODO: abstract and move!
-  liftIO $
-    maybe putDoc putDocW optWidth $
-      "Warning" <> colon <> hardline <> doc <> hardline
+  printDoc options $ "Debug" <> colon <> hardline <> doc <> hardline
 
 displayMsg :: [D] -> TcM Doc
 displayMsg ds = do

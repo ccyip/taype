@@ -47,10 +47,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   printDefs gctx names
   where
     printDefs gctx defs =
-      lift $ printDoc options $ cuteDefs options gctx defs
-
-printDoc :: Options -> Doc -> IO ()
-printDoc Options {..} = maybe putDoc putDocW optWidth
+      printDoc options $ cuteDefs options gctx defs
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)
