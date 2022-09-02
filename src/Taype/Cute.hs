@@ -25,6 +25,8 @@ module Taype.Cute
     cuteDef,
     hang,
     indent,
+    sep1,
+    sepWith,
     nameOrBinder,
     printDoc,
   )
@@ -84,6 +86,10 @@ class Cute a where
 instance Cute Int
 
 instance Cute Text
+
+instance Cute Kind
+
+instance Cute Label
 
 instance Cute Err where
   cute Err {..} = do
@@ -256,9 +262,7 @@ cuteTypeBinder super x l ty = \case
     go = parens <$> cuteBinder x l (Just ty)
 
 cuteLabel :: Maybe Label -> CuteM Doc
-cuteLabel Nothing = ""
-cuteLabel (Just SafeL) = "⊥"
-cuteLabel (Just LeakyL) = "⊤"
+cuteLabel = maybe "" cute
 
 cuteLam :: Bool -> Expr Text -> CuteM Doc
 cuteLam isRoot e = do

@@ -49,13 +49,11 @@ module Taype.Syntax
 
     -- * Smart constructors
     lam_,
-    lams_,
     pi_,
     app_,
     iapp_,
     tapp_,
     let_,
-    lets_,
     ite_,
     oite_,
     case_,
@@ -212,7 +210,15 @@ type Ty = Expr
 
 -- | A leakage label is just a Boolean
 data Label = SafeL | LeakyL
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Ord)
+
+instance Show Label where
+  show SafeL = "safe"
+  show LeakyL = "leaky"
+
+instance Pretty Label where
+  pretty SafeL = "⊥"
+  pretty LeakyL = "⊤"
 
 -- Isomorphic to Boolean
 instance Lattice Label where
@@ -238,13 +244,16 @@ data Kind = AnyK | PublicK | OblivK | MixedK
   deriving stock (Eq)
 
 instance Show Kind where
-  show AnyK = "*@A"
-  show PublicK = "*@P"
-  show OblivK = "*@O"
-  show MixedK = "*@M"
+  show AnyK = "any"
+  show PublicK = "public"
+  show OblivK = "oblivious"
+  show MixedK = "mixed"
 
 instance Pretty Kind where
-  pretty = show
+  pretty AnyK = "*@A"
+  pretty PublicK = "*@P"
+  pretty OblivK = "*@O"
+  pretty MixedK = "*@M"
 
 -- Kinds form a lattice and it is isomorphic to M2.
 toM2 :: Kind -> M2
@@ -572,10 +581,6 @@ lam_ binder mTy body =
       ..
     }
 
--- | A smart constructor for lambda abstraction that takes a list of arguments
-lams_ :: a ~ Text => NonEmpty (BinderM a, Maybe (Ty a)) -> Expr a -> Expr a
-lams_ args body = foldr (uncurry lam_) body args
-
 pi_ :: a ~ Text => BinderM a -> Ty a -> Expr a -> Expr a
 pi_ binder ty body =
   Pi
@@ -602,12 +607,6 @@ let_ binder mTy rhs body =
       binder = Just binder,
       ..
     }
-
--- | A smart constructor for let that takes a list of bindings
-lets_ :: a ~ Text => NonEmpty (BinderM a, Maybe (Ty a), Expr a) -> Expr a -> Expr a
-lets_ bindings body = foldr go body bindings
-  where
-    go (binder, mTy, rhs) = let_ binder mTy rhs
 
 ite_ :: Expr a -> Expr a -> Expr a -> Expr a
 ite_ cond ifTrue ifFalse = Ite {mTy = Nothing, ..}

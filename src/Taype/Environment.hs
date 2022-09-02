@@ -34,6 +34,8 @@ module Taype.Environment
     extendCtx1,
     withLabel,
     withLoc,
+    mayWithLoc,
+    withCur,
   )
 where
 
@@ -58,7 +60,9 @@ data Env = Env
     tctx :: TCtx Name,
     -- | Binder context, used for pretty printing
     bctx :: BCtx Name,
-    -- | Location of the current expression
+    -- | Current expression for error reporting
+    cur :: Expr Name,
+    -- | Location of the current expression for error reporting
     loc :: Int,
     -- | Default label for inference
     label :: Label
@@ -74,6 +78,7 @@ initEnv options gctx =
     { tctx = [],
       bctx = [],
       loc = -1,
+      cur = V 0,
       label = LeakyL,
       ..
     }
@@ -123,6 +128,13 @@ withLabel l = local (\Env {..} -> Env {label = l, ..})
 
 withLoc :: MonadReader Env m => Int -> m a -> m a
 withLoc l = local (\Env {..} -> Env {loc = l, ..})
+
+mayWithLoc :: MonadReader Env m => Maybe Int -> m a -> m a
+mayWithLoc (Just l) = withLoc l
+mayWithLoc _ = id
+
+withCur :: MonadReader Env m => Expr Name -> m a -> m a
+withCur e = local (\Env {..} -> Env {cur = e, ..})
 
 -- | The initial context with builtin functions
 preludeGCtx :: GCtx a
