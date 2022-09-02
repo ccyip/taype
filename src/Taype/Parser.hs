@@ -297,18 +297,20 @@ grammar = mdo
       choice
         [ -- Dependent function type
           do
-            ~(binder, ty) <-
+            ~(loc, binder, ty) <-
               choice
-                [ (Anon,) <$> pProdType,
+                [ do
+                    ty <- pProdType
+                    return (getLoc ty, Anon, ty),
                   do
-                    pToken L.LParen
+                    loc <- pLocatedToken L.LParen
                     binder <- pBinder
                     pToken L.Colon
                     ty <- pType
                     pToken L.RParen
-                    return (binder, ty)
+                    return (loc, binder, ty)
                 ]
-            loc <- pLocatedToken L.Arrow
+            pToken L.Arrow
             body <- pType
             return Loc {expr = pi_ binder ty body, ..},
           -- Let
@@ -425,11 +427,11 @@ grammar = mdo
       -- Pair-like
       pPair former openParenToken = do
         pToken openParenToken
-        prefix <- some1 $ flip (,) <$> pExpr <*> pLocatedToken L.Comma
+        prefix <- some1 $ pExpr <* pToken L.Comma
         end <- pExpr
         pToken L.RParen
         return $
-          let go (loc, left) right = Loc {expr = former left right, ..}
+          let go left right = Loc {expr = former left right, loc = getLoc left}
            in foldr go end prefix
       -- Application-like
       pApp former pFn = do
