@@ -22,24 +22,14 @@ import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import Control.Monad.Error.Class
 import Data.List.NonEmpty (some1)
 import Prettyprinter hiding (Doc)
-import Taype.Prelude
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
 import qualified Taype.Lexer as L
+import Taype.Prelude
 import Taype.Syntax
 import Text.Earley hiding (Parser, token)
 
 type Parser r = Prod r Text LocatedToken
-
-pTerminal :: (Token -> Maybe a) -> Parser r a
-pTerminal match = terminal match'
-  where
-    match' LocatedToken {..} = match token
-
-pToken :: Token -> Parser r ()
-pToken expected = void $ satisfy match
-  where
-    match LocatedToken {..} = expected == token
 
 pLocatedTerminal :: (Token -> Maybe a) -> Parser r (Int, a)
 pLocatedTerminal match = terminal match'
@@ -53,44 +43,45 @@ pLocatedToken expected = terminal match
       | expected == token = Just offset
       | otherwise = Nothing
 
-matchIdent :: Token -> Maybe Text
-matchIdent (L.Ident name) = Just name
-matchIdent _ = Nothing
-
-pIdent :: Parser r Text
-pIdent = pTerminal matchIdent
+pToken :: Token -> Parser r ()
+pToken = void <$> pLocatedToken
 
 pLocatedIdent :: Parser r (Int, Text)
-pLocatedIdent = pLocatedTerminal matchIdent
+pLocatedIdent = pLocatedTerminal match
+  where
+    match (L.Ident name) = Just name
+    match _ = Nothing
 
--- Binders are always located
-pBinder :: Parser r Binder
-pBinder =
+pIdent :: Parser r Text
+pIdent = snd <$> pLocatedIdent
+
+pLocatedBinder :: Parser r (Int, Binder)
+pLocatedBinder =
   choice
-    [ Anon <$ pToken L.Underscore,
-      uncurry Named <$> pLocatedIdent
+    [ (,Anon) <$> pLocatedToken L.Underscore,
+      (\(loc, name) -> (loc, Named loc name)) <$> pLocatedIdent
     ]
 
-matchOInj :: Token -> Maybe Bool
-matchOInj (L.OInj b) = Just b
-matchOInj _ = Nothing
+pBinder :: Parser r Binder
+pBinder = snd <$> pLocatedBinder
 
 pLocatedOInj :: Parser r (Int, Bool)
-pLocatedOInj = pLocatedTerminal matchOInj
-
-matchBLit :: Token -> Maybe Bool
-matchBLit (L.BLit b) = Just b
-matchBLit _ = Nothing
+pLocatedOInj = pLocatedTerminal match
+  where
+    match (L.OInj b) = Just b
+    match _ = Nothing
 
 pLocatedBLit :: Parser r (Int, Bool)
-pLocatedBLit = pLocatedTerminal matchBLit
-
-matchILit :: Token -> Maybe Int
-matchILit (L.ILit i) = Just i
-matchILit _ = Nothing
+pLocatedBLit = pLocatedTerminal match
+  where
+    match (L.BLit b) = Just b
+    match _ = Nothing
 
 pLocatedILit :: Parser r (Int, Int)
-pLocatedILit = pLocatedTerminal matchILit
+pLocatedILit = pLocatedTerminal match
+  where
+    match (L.ILit i) = Just i
+    match _ = Nothing
 
 pLocatedInfix :: [Text] -> Parser r (Int, Text)
 pLocatedInfix ops =
@@ -183,11 +174,14 @@ grammar = mdo
       choice
         [ -- Lambda abstraction
           do
-            loc <- pLocatedToken L.Lambda
-            args <- some1 pFunArg
+            pToken L.Lambda
+            args <- some1 pLocatedFunArg
             pToken L.Arrow
             body <- pExpr
-            return Loc {expr = lams_ args body, ..},
+            return $
+              let go ((loc, binder), mTy) body' =
+                    Loc {expr = lam_ binder mTy body', ..}
+               in foldr go body args,
           -- Let
           pLet pExpr,
           -- If conditional
@@ -376,16 +370,19 @@ grammar = mdo
   let -- Let-like binding
       pLet pBody = do
         let pBinding = do
-              binder <- pBinder
+              binder <- pLocatedBinder
               mTy <- optional $ pToken L.Colon *> pType
               pToken L.Equals
               rhs <- pExpr
               return (binder, mTy, rhs)
-        loc <- pLocatedToken L.Let
+        pToken L.Let
         bindings <- some1 pBinding
         pToken L.In
         body <- pBody
-        return Loc {expr = lets_ bindings body, ..}
+        return $
+          let go ((loc, binder), mTy, rhs) body' =
+                Loc {expr = let_ binder mTy rhs body', ..}
+           in foldr go body bindings
       -- If-like conditional
       pIf former ifToken pBranch = do
         loc <- pLocatedToken ifToken
@@ -449,18 +446,18 @@ grammar = mdo
         return Loc {expr = former name left right, loc = getLoc left, ..}
 
   -- Function argument
-  pFunArg <-
+  pLocatedFunArg <-
     rule $
       choice
-        [ (,Nothing) <$> pBinder,
+        [ (,Nothing) <$> pLocatedBinder,
           do
             pToken L.LParen
-            binder <- pBinder
+            binder <- pLocatedBinder
             pToken L.Colon
             ty <- pType
             pToken L.RParen
             return (binder, Just ty),
-          pToken L.LParen *> pFunArg <* pToken L.RParen
+          pToken L.LParen *> pLocatedFunArg <* pToken L.RParen
         ]
 
   return pProg
