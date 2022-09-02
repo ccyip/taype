@@ -367,7 +367,7 @@ grammar = mdo
           -- Oblivious integer type
           pLocatedToken L.OInt <&> \loc -> Loc {expr = OInt, ..},
           -- Variable
-          pLocatedIdent <&> \(loc, ref) -> Loc {expr = GV {..}, ..},
+          pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
           -- Parenthesized type
           pParen pType
         ]
@@ -444,9 +444,9 @@ grammar = mdo
       -- Infix
       pInfix former ops pLeft pRight = do
         left <- pLeft
-        ~(loc, name) <- pLocatedInfix ops
+        ~(_, name) <- pLocatedInfix ops
         right <- pRight
-        return Loc {expr = former name left right, ..}
+        return Loc {expr = former name left right, loc = getLoc left, ..}
 
   -- Function argument
   pFunArg <-
