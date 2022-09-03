@@ -118,8 +118,7 @@ typing Lam {..} (Just t) ml = do
     -- If the binder type is given, it has to agree with the one in the pi-type.
     mayWithLoc (peekLoc binderTy) $
       equate binderTy' t'
-  (x, body) <- unbind1 bnd
-  let tBody' = instantiate1Name x tBnd'
+  (x, body, tBody') <- unbind1With bnd tBnd'
   (l, body') <-
     extendCtx1 x binderTy' binderLabel' binder $
       check body tBody' ml
@@ -267,7 +266,7 @@ typing Pair {..} mt ml = do
 typing PCase {..} Nothing ml = do
   (condTy', condLabel, cond') <- typing cond Nothing ml
   (leftTy', rightTy') <- mayWithLoc (peekLoc cond) $ isProd condTy'
-  (xl, xr, body) <- unbind2 bnd2
+  ((xl, xr), body) <- unbind2 bnd2
   (t', l, body') <-
     extendCtx
       [ (xl, leftTy', condLabel, lBinder),
@@ -287,7 +286,7 @@ typing PCase {..} Nothing ml = do
         PCase
           { mTy = Just t',
             cond = V x,
-            bnd2 = abstract2 xl xr body'',
+            bnd2 = abstract_ (xl, xr) body'',
             ..
           }
     )
@@ -335,7 +334,7 @@ typing Case {..} Nothing ml = do
       return (ctor, binders, xs, t', l, body')
     promote l' (ctor, binders, xs, t', l, body') = do
       body'' <- mayPromote l' t' l body'
-      return CaseAlt {bnd = abstractMany xs body'', ..}
+      return CaseAlt {bnd = abstract_ xs body'', ..}
 -- TODO: checking mode is possible
 typing Mux {..} Nothing Nothing = do
   (_, _, cond') <- typing cond (Just OBool) (Just SafeL)
@@ -395,7 +394,7 @@ typing OPair {..} mt Nothing = do
 typing OPCase {..} Nothing ml = do
   (condTy', _, cond') <- typing cond Nothing (Just SafeL)
   (leftTy', rightTy') <- mayWithLoc (peekLoc cond) $ isOProd condTy'
-  (xl, xr, body) <- unbind2 bnd2
+  ((xl, xr), body) <- unbind2 bnd2
   (t', l, body') <-
     extendCtx
       [ (xl, leftTy', SafeL, lBinder),
@@ -410,7 +409,7 @@ typing OPCase {..} Nothing ml = do
         [(x, OProd {left = leftTy', right = rightTy'}, SafeL, cond')]
         OPCase
           { cond = V x,
-            bnd2 = abstract2 xl xr body',
+            bnd2 = abstract_ (xl, xr) body',
             ..
           }
     )
@@ -628,7 +627,7 @@ kinding PCase {..} Nothing = do
   -- oblivious type if it is a product and well-kinded, so the head of @t'@ has
   -- to be @Prod@ already, with possibly @Loc@ wrappers.
   (left', right') <- mayWithLoc (peekLoc cond) $ isProd t'
-  (xl, xr, body) <- unbind2 bnd2
+  ((xl, xr), body) <- unbind2 bnd2
   body' <-
     extendCtx [(xl, left', SafeL, lBinder), (xr, right', SafeL, rBinder)] $
       checkKind body OblivK
@@ -644,7 +643,7 @@ kinding PCase {..} Nothing = do
             abstract1 x $
               PCase
                 { cond = V x,
-                  bnd2 = abstract2 xl xr body',
+                  bnd2 = abstract_ (xl, xr) body',
                   ..
                 }
         }
@@ -683,7 +682,7 @@ kinding Case {..} Nothing = do
       body' <-
         extendCtx (zip4 xs paraTypes (replicate n SafeL) binders) $
           checkKind body OblivK
-      return CaseAlt {bnd = abstractMany xs body', ..}
+      return CaseAlt {bnd = abstract_ xs body', ..}
 kinding Loc {..} mt = withLoc loc $ withCur expr $ kinding expr mt
 -- Check kind
 kinding t (Just k) = do
@@ -755,13 +754,10 @@ equate e e' = do
   where
     go Pi {ty, bnd} Pi {ty = ty', bnd = bnd'} = do
       equate ty ty'
-      -- TODO: abstract this
-      (x, body) <- unbind1 bnd
-      let body' = instantiate1Name x bnd'
+      (_, body, body') <- unbind1With bnd bnd'
       equate body body'
     go Lam {bnd} Lam {bnd = bnd'} = do
-      (x, body) <- unbind1 bnd
-      let body' = instantiate1Name x bnd'
+      (_, body, body') <- unbind1With bnd bnd'
       equate body body'
     go App {fn, args} App {fn = fn', args = args'}
       | length args == length args' = do
@@ -769,8 +765,7 @@ equate e e' = do
         zipWithM_ equate args args'
     go Let {rhs, bnd} Let {rhs = rhs', bnd = bnd'} = do
       equate rhs rhs'
-      (x, body) <- unbind1 bnd
-      let body' = instantiate1Name x bnd'
+      (_, body, body') <- unbind1With bnd bnd'
       equate body body'
     go
       Ite {cond, ifTrue, ifFalse}
@@ -790,8 +785,7 @@ equate e e' = do
           CaseAlt {ctor = ctor', binders = binders', bnd = bnd'}
             | ctor == ctor' && length binders == length binders' = do
               let n = length binders
-              (xs, body) <- unbindMany n bnd
-              let body' = instantiateNames xs bnd'
+              (_, body, body') <- unbindManyWith n bnd bnd'
               equate body body'
         goAlt _ _ = errEquate
     go
@@ -808,8 +802,7 @@ equate e e' = do
       equate right right'
     go PCase {cond, bnd2} PCase {cond = cond', bnd2 = bnd2'} = do
       equate cond cond'
-      (xl, xr, body) <- unbind2 bnd2
-      let body' = instantiate2Names xl xr bnd2'
+      (_, body, body') <- unbind2With bnd2 bnd2'
       equate body body'
     go OProd {left, right} OProd {left = left', right = right'} = do
       equate left left'
@@ -819,8 +812,7 @@ equate e e' = do
       equate right right'
     go OPCase {cond, bnd2} OPCase {cond = cond', bnd2 = bnd2'} = do
       equate cond cond'
-      (xl, xr, body) <- unbind2 bnd2
-      let body' = instantiate2Names xl xr bnd2'
+      (_, body, body') <- unbind2With bnd2 bnd2'
       equate body body'
     go OSum {left, right} OSum {left = left', right = right'} = do
       equate left left'
@@ -831,10 +823,8 @@ equate e e' = do
       OCase {cond, lBnd, rBnd}
       OCase {cond = cond', lBnd = lBnd', rBnd = rBnd'} = do
         equate cond cond'
-        (xl, lBody) <- unbind1 lBnd
-        let lBody' = instantiate1Name xl lBnd'
-        (xr, rBody) <- unbind1 rBnd
-        let rBody' = instantiate1Name xr rBnd'
+        (_, lBody, lBody') <- unbind1With lBnd lBnd'
+        (_, rBody, rBody') <- unbind1With rBnd rBnd'
         equate lBody lBody'
         equate rBody rBody'
     go nf nf' | nf == nf' = pass
@@ -900,12 +890,12 @@ whnf Case {..} = do
       case find (\CaseAlt {..} -> ctor == ref) alts of
         Just CaseAlt {ctor = _, ..}
           | length binders == length args ->
-            whnf $ instantiateMany args bnd
+            whnf $ instantiate_ args bnd
         _ -> return fb
 whnf PCase {..} = do
   nf <- whnf cond
   case nf of
-    Pair {..} -> whnf $ instantiate2 left right bnd2
+    Pair {..} -> whnf $ instantiate_ (left, right) bnd2
     _ -> return PCase {cond = nf, ..}
 whnf Loc {..} = whnf expr
 whnf Asc {..} = whnf expr

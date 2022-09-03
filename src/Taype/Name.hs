@@ -1,5 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -28,27 +30,21 @@ module Taype.Name
     freshWith,
 
     -- * Specialized locally nameless abstraction and instantiation
-    abstract1By,
-    abstract2By,
-    abstractManyBy,
-    instantiate1By,
-    instantiate2By,
-    instantiateManyBy,
-    instantiate1Name,
-    instantiate2Names,
-    instantiateNames,
-    abstract2,
-    abstractMany,
-    instantiate2,
-    instantiateMany,
+    ScopeOps,
+    abstractBy,
+    instantiateBy,
+    abstract_,
+    instantiate_,
+    instantiateName,
 
     -- * Unbound-style functions
-    unbind1By,
-    unbind2By,
-    unbindManyBy,
+    unbindBy,
     unbind1,
     unbind2,
     unbindMany,
+    unbind1With,
+    unbind2With,
+    unbindManyWith,
   )
 where
 
@@ -100,79 +96,90 @@ freshes k = do
 freshWith :: MonadFresh m => (Name -> Text) -> m Text
 freshWith to = to <$> fresh
 
-abstract1By :: Monad f => (a -> b -> Bool) -> b -> f a -> Scope () f a
-abstract1By eq b = abstract $ \a ->
-  if eq a b
-    then Just ()
-    else Nothing
+class ScopeOps s b b' | s b -> b' where
+  abstractBy :: Monad f => (a -> b -> Bool) -> b' -> f a -> Scope s f a
+  instantiateBy :: Monad f => (b -> f a) -> b' -> Scope s f a -> f a
 
-abstract2By :: Monad f => (a -> b -> Bool) -> b -> b -> f a -> Scope Bool f a
-abstract2By eq left right = abstract $ \a ->
-  if
-      | eq a left -> Just True
-      | eq a right -> Just False
-      | otherwise -> Nothing
+instance ScopeOps () b b where
+  abstractBy eq b = abstract $ \a ->
+    if eq a b
+      then Just ()
+      else Nothing
+  instantiateBy proj = instantiate . const . proj
 
-abstractManyBy :: Monad f => (a -> b -> Bool) -> [b] -> f a -> Scope Int f a
-abstractManyBy eq bs = abstract $ \a -> findIndex (eq a) bs
+instance ScopeOps Bool b (b, b) where
+  abstractBy eq (left, right) = abstract $ \a ->
+    if
+        | eq a left -> Just True
+        | eq a right -> Just False
+        | otherwise -> Nothing
+  instantiateBy proj (left, right) = instantiate $ \i ->
+    proj $ if i then left else right
 
-instantiate1By :: Monad f => (b -> f a) -> b -> Scope n f a -> f a
-instantiate1By proj = instantiate . const . proj
+instance ScopeOps Int b [b] where
+  abstractBy eq bs = abstract $ \a -> findIndex (eq a) bs
+  instantiateBy proj bs = instantiate $ \i ->
+    case bs !!? i of
+      Just b -> proj b
+      Nothing -> oops "Out-of-bound instantiation"
 
-instantiate2By :: Monad f => (b -> f a) -> b -> b -> Scope Bool f a -> f a
-instantiate2By proj left right = instantiate $ \i ->
-  proj $ if i then left else right
+abstract_ :: (ScopeOps s a b', Monad f, Eq a) => b' -> f a -> Scope s f a
+abstract_ = abstractBy (==)
 
-instantiateManyBy :: Monad f => (b -> f a) -> [b] -> Scope Int f a -> f a
-instantiateManyBy proj bs = instantiate $ \i ->
-  case bs !!? i of
-    Just b -> proj b
-    Nothing -> oops "Out-of-bound instantiation"
+instantiate_ :: (ScopeOps s (f a) b', Monad f) => b' -> Scope s f a -> f a
+instantiate_ = instantiateBy id
 
-instantiate1Name :: Monad f => a -> Scope n f a -> f a
-instantiate1Name = instantiate1By return
+instantiateName :: (ScopeOps s a b', Monad f) => b' -> Scope s f a -> f a
+instantiateName = instantiateBy return
 
-instantiate2Names :: Monad f => a -> a -> Scope Bool f a -> f a
-instantiate2Names = instantiate2By return
-
-instantiateNames :: Monad f => [a] -> Scope Int f a -> f a
-instantiateNames = instantiateManyBy return
-
-abstract2 :: (Monad f, Eq a) => a -> a -> f a -> Scope Bool f a
-abstract2 = abstract2By (==)
-
-abstractMany :: (Monad f, Eq a) => [a] -> f a -> Scope Int f a
-abstractMany = abstractManyBy (==)
-
-instantiate2 :: Monad f => f a -> f a -> Scope Bool f a -> f a
-instantiate2 = instantiate2By id
-
-instantiateMany :: Monad f => [f a] -> Scope Int f a -> f a
-instantiateMany = instantiateManyBy id
-
-unbind1By :: (Monad m, Monad f) => m a -> Scope n f a -> m (a, f a)
-unbind1By gen bnd = do
+unbindBy ::
+  (ScopeOps s a b', Monad m, Monad f) => m b' -> Scope s f a -> m (b', f a)
+unbindBy gen bnd = do
   x <- gen
-  return (x, instantiate1Name x bnd)
+  return (x, instantiateName x bnd)
 
-unbind2By ::
-  (Monad m, Monad f) => m a -> m a -> Scope Bool f a -> m (a, a, f a)
-unbind2By gen1 gen2 bnd = do
-  x1 <- gen1
-  x2 <- gen2
-  return (x1, x2, instantiate2Names x1 x2 bnd)
+unbind1 :: (MonadFresh m, Monad f) => Scope () f Name -> m (Name, f Name)
+unbind1 = unbindBy fresh
 
-unbindManyBy :: (Monad m, Monad f) => m [a] -> Scope Int f a -> m ([a], f a)
-unbindManyBy gen bnd = do
-  xs <- gen
-  return (xs, instantiateNames xs bnd)
-
-unbind1 :: (MonadFresh m, Monad f) => Scope n f Name -> m (Name, f Name)
-unbind1 = unbind1By fresh
-
-unbind2 :: (MonadFresh m, Monad f) => Scope Bool f Name -> m (Name, Name, f Name)
-unbind2 = unbind2By fresh fresh
+unbind2 ::
+  (MonadFresh m, Monad f) =>
+  Scope Bool f Name ->
+  m ((Name, Name), f Name)
+unbind2 = unbindBy $ (,) <$> fresh <*> fresh
 
 unbindMany ::
   (MonadFresh m, Monad f) => Int -> Scope Int f Name -> m ([Name], f Name)
-unbindMany = unbindManyBy . freshes
+unbindMany = unbindBy . freshes
+
+unbindWithBy ::
+  (ScopeOps s Name b', MonadFresh m, Monad f) =>
+  (Scope s f Name -> m (b', f Name)) ->
+  Scope s f Name ->
+  Scope s f Name ->
+  m (b', f Name, f Name)
+unbindWithBy ub bnd bnd' = do
+  (x, body) <- ub bnd
+  let body' = instantiateName x bnd'
+  return (x, body, body')
+
+unbind1With ::
+  (MonadFresh m, Monad f) =>
+  Scope () f Name ->
+  Scope () f Name ->
+  m (Name, f Name, f Name)
+unbind1With = unbindWithBy unbind1
+
+unbind2With ::
+  (MonadFresh m, Monad f) =>
+  Scope Bool f Name ->
+  Scope Bool f Name ->
+  m ((Name, Name), f Name, f Name)
+unbind2With = unbindWithBy unbind2
+
+unbindManyWith ::
+  (MonadFresh m, Monad f) =>
+  Int ->
+  Scope Int f Name ->
+  Scope Int f Name ->
+  m ([Name], f Name, f Name)
+unbindManyWith n = unbindWithBy $ unbindMany n

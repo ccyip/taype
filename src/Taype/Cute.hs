@@ -355,7 +355,7 @@ cutePCase ::
   CuteM Doc
 cutePCase accent cond lBinder rBinder bnd2 = do
   condDoc <- cuteExpr cond
-  (xl, xr, body) <- unbind2NamesOrBinders lBinder rBinder bnd2
+  ((xl, xr), body) <- unbind2NamesOrBinders (lBinder, rBinder) bnd2
   bodyDoc <- cuteExpr body
   return $
     cuteCaseDoc
@@ -458,18 +458,17 @@ freshNameOrBinder binder = do
   return $ nameOrBinder opt x binder
 
 unbind1NameOrBinder ::
-  Monad f => Maybe Binder -> Scope n f Text -> CuteM (Text, f Text)
-unbind1NameOrBinder = unbind1By . freshNameOrBinder
+  Monad f => Maybe Binder -> Scope () f Text -> CuteM (Text, f Text)
+unbind1NameOrBinder = unbindBy . freshNameOrBinder
 
 unbind2NamesOrBinders ::
   Monad f =>
-  Maybe Binder ->
-  Maybe Binder ->
+  (Maybe Binder, Maybe Binder) ->
   Scope Bool f Text ->
-  CuteM (Text, Text, f Text)
-unbind2NamesOrBinders binder1 binder2 =
-  unbind2By (freshNameOrBinder binder1) (freshNameOrBinder binder2)
+  CuteM ((Text, Text), f Text)
+unbind2NamesOrBinders (binder1, binder2) =
+  unbindBy $ (,) <$> freshNameOrBinder binder1 <*> freshNameOrBinder binder2
 
 unbindManyNamesOrBinders ::
   Monad f => [Maybe Binder] -> Scope Int f Text -> CuteM ([Text], f Text)
-unbindManyNamesOrBinders = unbindManyBy . mapM freshNameOrBinder
+unbindManyNamesOrBinders = unbindBy . mapM freshNameOrBinder

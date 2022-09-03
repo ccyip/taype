@@ -133,7 +133,7 @@ grammar = mdo
             return
               ( name,
                 OADTDef
-                  { bnd = abstract1Binder binder body,
+                  { bnd = abstractBinder binder body,
                     binder = Just binder,
                     ..
                   }

@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
@@ -40,12 +41,8 @@ module Taype.Syntax
     findDupBinderName,
 
     -- * Locally nameless abstraction and instantiation for binders
-    abstract1Binder,
-    abstract2Binders,
-    abstractBinders,
-    instantiate1Binder,
-    instantiate2Binders,
-    instantiateBinders,
+    abstractBinder,
+    instantiateBinder,
 
     -- * Smart constructors
     lam_,
@@ -75,8 +72,8 @@ import Data.Deriving
 import Data.Functor.Classes
 import Data.List (groupBy)
 import Prettyprinter
-import Taype.Prelude
 import Taype.Name
+import Taype.Prelude
 import qualified Text.Show
 
 -- | Taype expression, including the surface and the core syntax
@@ -554,29 +551,19 @@ findDupBinderName binders = find ((> 1) . length) groups >>= viaNonEmpty head
   where
     groups = groupBy binderNameEq binders
 
-abstract1Binder :: (Monad f, Eq a) => BinderM a -> f a -> Scope () f a
-abstract1Binder = abstract1By isBinderName
+abstractBinder ::
+  (ScopeOps s (BinderM a) b', Monad f, Eq a) => b' -> f a -> Scope s f a
+abstractBinder = abstractBy isBinderName
 
-abstract2Binders :: (Monad f, Eq a) => BinderM a -> BinderM a -> f a -> Scope Bool f a
-abstract2Binders = abstract2By isBinderName
-
-abstractBinders :: (Monad f, Eq a) => [BinderM a] -> f a -> Scope Int f a
-abstractBinders = abstractManyBy isBinderName
-
-instantiate1Binder :: Monad f => BinderM a -> Scope n f a -> f a
-instantiate1Binder = instantiate1By $ return . fromBinder
-
-instantiate2Binders :: Monad f => BinderM a -> BinderM a -> Scope Bool f a -> f a
-instantiate2Binders = instantiate2By $ return . fromBinder
-
-instantiateBinders :: Monad f => [BinderM a] -> Scope Int f a -> f a
-instantiateBinders = instantiateManyBy $ return . fromBinder
+instantiateBinder ::
+  (ScopeOps s (BinderM a) b', Monad f) => b' -> Scope s f a -> f a
+instantiateBinder = instantiateBy $ return . fromBinder
 
 lam_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a
 lam_ binder mTy body =
   Lam
     { label = Nothing,
-      bnd = abstract1Binder binder body,
+      bnd = abstractBinder binder body,
       binder = Just binder,
       ..
     }
@@ -585,7 +572,7 @@ pi_ :: a ~ Text => BinderM a -> Ty a -> Expr a -> Expr a
 pi_ binder ty body =
   Pi
     { label = Nothing,
-      bnd = abstract1Binder binder body,
+      bnd = abstractBinder binder body,
       binder = Just binder,
       ..
     }
@@ -603,7 +590,7 @@ let_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a -> Expr a
 let_ binder mTy rhs body =
   Let
     { label = Nothing,
-      bnd = abstract1Binder binder body,
+      bnd = abstractBinder binder body,
       binder = Just binder,
       ..
     }
@@ -619,7 +606,7 @@ case_ cond alts = Case {mTy = Nothing, alts = abstr <$> alts, ..}
   where
     abstr (ctor, binders, body) =
       CaseAlt
-        { bnd = abstractBinders binders body,
+        { bnd = abstractBinder binders body,
           binders = Just <$> binders,
           ..
         }
@@ -629,9 +616,9 @@ ocase_ cond lBinder lBody rBinder rBody =
   OCase
     { mTy = Nothing,
       lBinder = Just lBinder,
-      lBnd = abstract1Binder lBinder lBody,
+      lBnd = abstractBinder lBinder lBody,
       rBinder = Just rBinder,
-      rBnd = abstract1Binder rBinder rBody,
+      rBnd = abstractBinder rBinder rBody,
       ..
     }
 
@@ -641,16 +628,16 @@ pcase_ cond lBinder rBinder body =
     { mTy = Nothing,
       lBinder = Just lBinder,
       rBinder = Just rBinder,
-      bnd2 = abstract2Binders lBinder rBinder body,
+      bnd2 = abstractBinder (lBinder, rBinder) body,
       ..
     }
 
 opcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 opcase_ cond lBinder rBinder body =
   OPCase
-    { bnd2 = abstract2Binders lBinder rBinder body,
-      lBinder = Just lBinder,
+    { lBinder = Just lBinder,
       rBinder = Just rBinder,
+      bnd2 = abstractBinder (lBinder, rBinder) body,
       ..
     }
 
