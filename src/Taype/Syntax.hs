@@ -39,8 +39,6 @@ module Taype.Syntax
     isBinderName,
     binderNameEq,
     findDupBinderName,
-
-    -- * Locally nameless abstraction and instantiation for binders
     abstractBinder,
     instantiateBinder,
 
@@ -57,9 +55,6 @@ module Taype.Syntax
     ocase_,
     pcase_,
     opcase_,
-
-    -- * Other utilities
-    mustClosed,
   )
 where
 
@@ -76,7 +71,12 @@ import Taype.Name
 import Taype.Prelude
 import qualified Text.Show
 
--- | Taype expression, including the surface and the core syntax
+----------------------------------------------------------------
+-- Syntax
+
+-- | Taype expression
+--
+-- It accommodates both the surface and the core syntax.
 data Expr a
   = -- | Local variable
     V {name :: a}
@@ -133,8 +133,9 @@ data Expr a
         left :: Expr a,
         right :: Expr a
       }
-  | -- | (Dependent) case analysis.
-    --  Do not support empty type, i.e. 'alts' must be non empty
+  | -- | (Dependent) case analysis
+    --
+    --  Do not support empty type, i.e. 'alts' must be non empty.
     Case
       { mTy :: Maybe (Ty a),
         cond :: Expr a,
@@ -192,20 +193,27 @@ data Expr a
         left :: Expr a,
         right :: Expr a
       }
-  | -- | Ascription. Do not appear in core taype
+  | -- | Ascription
+    --
+    -- This does not appear in the core language.
     Asc {ty :: Ty a, expr :: Expr a}
-  | -- | Label promotion. Do not appear in surface taype
+  | -- | Label promotion
+    --
+    -- This does not appear in the surface language, and the type checker will
+    -- insert promotion automatically.
     Promote {expr :: Expr a}
-  | -- | Tape, the key operation in taype
+  | -- | Tape construct
+    --
+    -- This is the key operation in taype.
     Tape {expr :: Expr a}
-  | -- | Add location information
+  | -- | Location information for error reporting
     Loc {loc :: Int, expr :: Expr a}
   deriving stock (Functor, Foldable, Traversable)
 
--- | A type in taype is also an expression
+-- | A type in taype is also an expression.
 type Ty = Expr
 
--- | A leakage label is just a Boolean
+-- | A leakage label is isomorphic to a Boolean.
 data Label = SafeL | LeakyL
   deriving stock (Eq, Ord)
 
@@ -217,7 +225,7 @@ instance Pretty Label where
   pretty SafeL = "⊥"
   pretty LeakyL = "⊤"
 
--- Isomorphic to Boolean
+-- | Labels form a security lattice.
 instance Lattice Label where
   SafeL \/ l = l
   LeakyL \/ _ = LeakyL
@@ -252,7 +260,7 @@ instance Pretty Kind where
   pretty OblivK = "*@O"
   pretty MixedK = "*@M"
 
--- Kinds form a lattice and it is isomorphic to M2.
+-- Kind is isomorphic to M2.
 toM2 :: Kind -> M2
 toM2 AnyK = M2o
 toM2 PublicK = M2a
@@ -268,23 +276,10 @@ fromM2 M2i = MixedK
 instance PartialOrd Kind where
   k1 `leq` k2 = toM2 k1 `leq` toM2 k2
 
+-- | Kinds form a lattice.
 instance Lattice Kind where
   k1 \/ k2 = fromM2 $ toM2 k1 \/ toM2 k2
   k1 /\ k2 = fromM2 $ toM2 k1 /\ toM2 k2
-
--- | A binder is either a name, or anonymous, i.e. \"_\", with location
-type Binder = BinderM Text
-
--- | Generalized binders
-data BinderM a = Named Int a | Anon
-  deriving stock (Eq, Show)
-
-instance IsString a => IsString (BinderM a) where
-  fromString = Named (-1) . fromString
-
-instance ToText a => ToText (BinderM a) where
-  toText (Named _ a) = toText a
-  toText Anon = "_"
 
 -- | Global definition
 type Def = DefB Expr
@@ -299,9 +294,13 @@ data DefB f a
         label :: Maybe Label,
         expr :: f a
       }
-  | -- | Algebraic data type. Do not support empty type
+  | -- | Algebraic data type
+    --
+    -- Do not support empty type, so 'ctors' is an 'NonEmpty'.
     ADTDef {loc :: Int, ctors :: NonEmpty (Text, [f a])}
-  | -- | Oblivious algebraic data type. Only support one argument for now
+  | -- | Oblivious algebraic data type
+    --
+    -- It takes a single argument for now.
     OADTDef {loc :: Int, ty :: f a, binder :: Maybe Binder, bnd :: Scope () f a}
   | -- | Constructor
     CtorDef {paraTypes :: [f a], dataType :: Text}
@@ -320,6 +319,9 @@ getDefLoc = \case
   OADTDef {..} -> loc
   _ -> -1
 
+-- | Every function has an attribute that can be specified by the users. By
+-- default the attribute is 'LeakyAttr'. Attributes are used for label inference
+-- and oblivious program lifting.
 data Attribute = SectionAttr | RetractionAttr | SafeAttr | LeakyAttr
   deriving stock (Eq)
 
@@ -332,6 +334,8 @@ instance Show Attribute where
 instance Pretty Attribute where
   pretty = show
 
+-- | A simple label polymorphism mechanism for builtin functions and
+-- constructors. Taype does not support general label polymorphism yet.
 data LabelPolyStrategy = JoinStrategy | LeakyStrategy | SafeStrategy
   deriving stock (Eq, Show)
 
@@ -523,29 +527,40 @@ instance (Eq1 f, Monad f, Eq a) => Eq (CaseAlt f a) where (==) = eq1
 
 instance Eq a => Eq (Expr a) where (==) = eq1
 
-deriveShow1 ''CaseAlt
-deriveShow1 ''Expr
+----------------------------------------------------------------
+-- Binders
 
-instance (Show1 f, Show a) => Show (CaseAlt f a) where showsPrec = showsPrec1
+-- | A binder is either a name, or anonymous, i.e. \"_\", with location.
+type Binder = BinderM Text
 
-instance Show a => Show (Expr a) where showsPrec = showsPrec1
+-- | Generalized binders
+data BinderM a = Named Int a | Anon
+  deriving stock (Eq, Show)
+
+instance IsString a => IsString (BinderM a) where
+  fromString = Named (-1) . fromString
+
+instance ToText a => ToText (BinderM a) where
+  toText (Named _ a) = toText a
+  toText Anon = "_"
 
 fromBinder :: BinderM a -> a
 fromBinder (Named _ name) = name
 fromBinder Anon = oops "Instantiating an anonymous binder"
 
+-- | Check if the binder has a particular name.
 isBinderName :: Eq a => a -> BinderM a -> Bool
 isBinderName x (Named _ y) = x == y
 isBinderName _ Anon = False
 
--- | Check if two binders have the same name. Two anonymous binder DO NOT have
--- the same name
+-- | Check if two binders have the same name. Two anonymous binders NEVER have
+-- the same name.
 binderNameEq :: Eq a => BinderM a -> BinderM a -> Bool
 binderNameEq (Named _ x) (Named _ y) = x == y
 binderNameEq _ _ = False
 
 -- | Return 'Nothing' if the list of binders do not has duplicate names, or
--- 'Just' the duplicate binder
+-- 'Just' the duplicate binder.
 findDupBinderName :: Eq a => [BinderM a] -> Maybe (BinderM a)
 findDupBinderName binders = find ((> 1) . length) groups >>= viaNonEmpty head
   where
@@ -558,6 +573,9 @@ abstractBinder = abstractBy isBinderName
 instantiateBinder ::
   (ScopeOps s (BinderM a) b', Monad f) => b' -> Scope s f a -> f a
 instantiateBinder = instantiateBy $ return . fromBinder
+
+----------------------------------------------------------------
+-- Smart constructors
 
 lam_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a
 lam_ binder mTy body =
@@ -641,5 +659,12 @@ opcase_ cond lBinder rBinder body =
       ..
     }
 
-mustClosed :: Traversable f => Text -> f a -> f b
-mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a
+----------------------------------------------------------------
+-- Template Haskell related stuff
+
+deriveShow1 ''CaseAlt
+deriveShow1 ''Expr
+
+instance (Show1 f, Show a) => Show (CaseAlt f a) where showsPrec = showsPrec1
+
+instance Show a => Show (Expr a) where showsPrec = showsPrec1

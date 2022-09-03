@@ -11,20 +11,15 @@
 -- Stability: experimental
 -- Portability: portable
 --
--- Environment including options, typing context, locations, etc
+-- Environments and contexts.
 module Taype.Environment
   ( -- * Environment
     Env (..),
     initEnv,
 
-    -- * Global context
+    -- * Contexts
     GCtx,
-    preludeGCtx,
-
-    -- * Local context
     TCtx,
-
-    -- * Binder context
     BCtx,
 
     -- * Manipulating environment
@@ -36,6 +31,9 @@ module Taype.Environment
     withLoc,
     mayWithLoc,
     withCur,
+
+    -- * Prelude context
+    preludeGCtx,
   )
 where
 
@@ -45,18 +43,20 @@ import Taype.Prelude
 import Taype.Name
 import Taype.Syntax
 
+----------------------------------------------------------------
+-- Environment
+
 data Env = Env
   { -- | Commandline options
     options :: Options,
-    -- | Global definition context
+    -- | Global context
     --
-    -- Function types, constructor and OADT type arguments must be well-kinded
-    -- and in core Taype ANF before type checking. The labels of function
-    -- definitions are also elaborated.
+    -- Function types, constructor arguments and OADT type arguments must be
+    -- well-kinded and in (fully-annotated) core taype ANF before type checking.
     gctx :: GCtx Name,
     -- | Local typing context
     --
-    -- Every type must be well-kinded and in core Taype ANF.
+    -- Every type must be well-kinded and in (fully-annotated) core taype ANF.
     tctx :: TCtx Name,
     -- | Binder context, used for pretty printing
     bctx :: BCtx Name,
@@ -70,8 +70,8 @@ data Env = Env
 
 -- | Make an initial environment.
 --
--- Initially label does not matter because it should be replaced according to
--- the context.
+-- Some fields are intantiated arbitrarily, because they will be replaced later
+-- according to the context.
 initEnv :: Options -> GCtx Name -> Env
 initEnv options gctx =
   Env
@@ -83,11 +83,17 @@ initEnv options gctx =
       ..
     }
 
+----------------------------------------------------------------
+-- Contexts
+
 type GCtx a = HashMap Text (Def a)
 
 type TCtx a = [(a, (Ty a, Label))]
 
 type BCtx a = [(a, Binder)]
+
+----------------------------------------------------------------
+-- Manipulating environment
 
 -- | Look up a definition in the global context.
 lookupDef :: MonadReader Env m => Text -> m (Maybe (Def Name))
@@ -104,7 +110,7 @@ lookupTy x = do
 -- | Extend the typing context.
 --
 -- To maintain the invariant, the given types have to be well-kinded and in core
--- Taype ANF.
+-- taype ANF.
 extendCtx ::
   MonadReader Env m => [(Name, Ty Name, Label, Maybe Binder)] -> m a -> m a
 extendCtx xs = local go
@@ -136,7 +142,10 @@ mayWithLoc _ = id
 withCur :: MonadReader Env m => Expr Name -> m a -> m a
 withCur e = local (\Env {..} -> Env {cur = e, ..})
 
--- | The initial context with builtin functions
+----------------------------------------------------------------
+-- Prelude context
+
+-- | The prelude context includes builtin functions.
 preludeGCtx :: GCtx a
 preludeGCtx =
   fromList $

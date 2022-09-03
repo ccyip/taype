@@ -1,6 +1,14 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+-- |
+-- Copyright: (c) 2022 Qianchuan Ye
+-- SPDX-License-Identifier: MIT
+-- Maintainer: Qianchuan Ye <yeqianchuan@gmail.com>
+-- Stability: experimental
+-- Portability: portable
+--
+-- Error reporting.
 module Taype.Error
   ( oops,
     Err (..),

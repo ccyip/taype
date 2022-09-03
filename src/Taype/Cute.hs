@@ -14,21 +14,23 @@
 -- Stability: experimental
 -- Portability: portable
 --
--- Pretty printing.
+-- Pretty printer.
 module Taype.Cute
-  ( Cute,
+  ( -- * Utilities
+    hang,
+    indent,
+    sep1,
+    sepWith,
+    printDoc,
+    nameOrBinder,
+
+    -- * Pretty printing infrastructure
+    Cute,
     cute,
     CuteM (..),
     runCuteM,
     contCuteM,
     cuteDefs,
-    cuteDef,
-    hang,
-    indent,
-    sep1,
-    sepWith,
-    nameOrBinder,
-    printDoc,
   )
 where
 
@@ -45,6 +47,9 @@ import Taype.Name
 import Taype.Prelude
 import Taype.Syntax
 import Prelude hiding (group)
+
+----------------------------------------------------------------
+-- Utilities
 
 indentLevel :: Int
 indentLevel = 2
@@ -64,7 +69,15 @@ sep1 = group . (line <>)
 printDoc :: MonadIO m => Options -> Doc -> m ()
 printDoc Options {..} = liftIO . maybe putDoc putDocW optWidth
 
--- | A context for fresh name generation and environment
+nameOrBinder :: Options -> Name -> Maybe Binder -> Text
+nameOrBinder Options {..} x mb =
+  let name = optNamePrefix <> show x
+   in if optInternalNames then name else maybe name toText mb
+
+----------------------------------------------------------------
+-- Pretty printing infrastructure
+
+-- | A context for fresh name generation with options
 newtype CuteM a = CuteM {unCuteM :: FreshT (Reader Options) a}
   deriving newtype (Functor, Applicative, Monad, MonadFresh, MonadReader Options)
 
@@ -77,11 +90,14 @@ contCuteM opts n (CuteM m) = runReader (contFreshT n m) opts
 instance IsString a => IsString (CuteM a) where
   fromString = return . fromString
 
--- | Pretty print class with fresh name generator and environment
+-- | Pretty printer class with fresh name generator and options
 class Cute a where
   cute :: a -> CuteM Doc
   default cute :: Pretty a => a -> CuteM Doc
   cute = return <$> pretty
+
+----------------------------------------------------------------
+-- Pretty printing instances
 
 instance Cute Int
 
@@ -115,7 +131,7 @@ instance Cute (TCtx Text) where
 instance Cute (Expr Text) where
   cute = cuteExpr
 
--- | Pretty printer for Taype expressions
+-- | Pretty printer for taype expressions
 cuteExpr :: Expr Text -> CuteM Doc
 cuteExpr V {..} = cute name
 cuteExpr GV {..} = cute ref
@@ -179,7 +195,7 @@ cuteExpr Promote {..} = do
 cuteExpr Tape {..} = cuteApp "tape" [expr]
 cuteExpr Loc {..} = cuteExpr expr
 
--- | Cute printer for Taype definitions
+-- | Pretty printer for taype definitions
 cuteDefs :: Options -> GCtx Text -> [Text] -> Doc
 cuteDefs options gctx =
   foldMap $ \name -> cuteDef options gctx name <> hardline <> hardline
@@ -421,7 +437,7 @@ exprLevel :: Expr a -> Int
 exprLevel = \case
   V {} -> 0
   GV {} -> 0
-  -- Do not distinguish infix further
+  -- Do not distinguish infix further.
   App {appKind = Just InfixApp} -> 20
   App {} -> 10
   TUnit -> 0
@@ -445,15 +461,10 @@ exprLevel = \case
   Loc {..} -> exprLevel expr
   _ -> 90
 
-nameOrBinder :: Options -> Name -> Maybe Binder -> Text
-nameOrBinder Options {..} x mb =
-  let name = optNamePrefix <> show x
-   in if optInternalNames then name else maybe name toText mb
-
 freshNameOrBinder :: Maybe Binder -> CuteM Text
 freshNameOrBinder binder = do
   opt <- ask
-  -- Always generate new name even if we use binder
+  -- Always generate new name even if we use binder.
   x <- fresh
   return $ nameOrBinder opt x binder
 

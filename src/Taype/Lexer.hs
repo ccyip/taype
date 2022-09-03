@@ -11,7 +11,7 @@
 -- Stability: experimental
 -- Portability: portable
 --
--- Lexer for taype.
+-- Lexer for the taype language.
 module Taype.Lexer
   ( Token (..),
     LocatedToken (..),
@@ -200,7 +200,7 @@ reserved =
     "False"
   ]
 
--- | Parse a token with offset
+-- | Parse a token with offset.
 pLocatedToken :: Parser LocatedToken
 pLocatedToken = do
   offset <- getOffset

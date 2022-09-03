@@ -14,7 +14,7 @@
 -- Stability: experimental
 -- Portability: portable
 --
--- Parser for taype.
+-- Parser for the taype language.
 module Taype.Parser (parse) where
 
 import Control.Applicative.Combinators (choice)
@@ -98,9 +98,10 @@ infixToTypeFormer "~*" = OProd
 infixToTypeFormer "~+" = OSum
 infixToTypeFormer _ = oops "unknown type infix"
 
+-- | The grammar for taype language
 grammar :: Grammar r (Parser r [(Text, Def Text)])
 grammar = mdo
-  -- A program is a list of global definitions
+  -- A program is a list of global definitions.
   pProg <- rule $ many pDef
 
   -- Global definition
@@ -126,7 +127,6 @@ grammar = mdo
                   ty <- pType
                   pToken L.RParen
                   return (binder, ty)
-            -- Only support one argument for oblivious type at the moment
             ~(binder, ty) <- pArg
             pToken L.Equals
             body <- pType
@@ -225,9 +225,10 @@ grammar = mdo
   pAddExpr <-
     rule $ choice [pInfixExpr ["+", "-", "~+", "~-"] pAddExpr pMulExpr, pMulExpr]
 
-  -- Left-associative multiplicative infix. We do not have any of these at the
-  -- moment, but we will probably have at least integer multiplication in the
-  -- future
+  -- Left-associative multiplicative infix
+  --
+  -- We do not have any of these at the moment, but we will probably add at
+  -- least integer multiplication in the future.
   pMulExpr <- rule pAppExpr
 
   -- Application expression
@@ -289,9 +290,11 @@ grammar = mdo
           pParen pExpr
         ]
 
-  -- Type. Technically we can have one production rule for both expressions and
-  -- types. However, separating them allows us to easily disambiguate term-level
-  -- and type-level operations.
+  -- Type
+  --
+  -- Technically we can have one production rule for both expressions and types.
+  -- However, separating them allows us to easily disambiguate term-level and
+  -- type-level operations.
   pType <-
     rule $
       choice
@@ -464,8 +467,7 @@ grammar = mdo
 
   return pProg
 
--- | Main parser which returns a global context with the list of definition
--- names
+-- | Main parser
 parse :: MonadError Err m => [LocatedToken] -> m [(Text, Def Text)]
 parse tokens =
   case fullParses (parser grammar) tokens of

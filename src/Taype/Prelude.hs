@@ -16,10 +16,12 @@ module Taype.Prelude
 
     -- * Common functions
     oops,
+    mustClosed,
   )
 where
 
 import qualified Prettyprinter as PP
+import Bound
 
 -- | Document type for all sorts of printing
 type Doc = PP.Doc ()
@@ -39,3 +41,6 @@ data Options = Options
 
 oops :: Text -> a
 oops msg = error $ "Oops! This should not happen:\n" <> msg
+
+mustClosed :: Traversable f => Text -> f a -> f b
+mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a

@@ -12,7 +12,7 @@
 -- Stability: experimental
 -- Portability: portable
 --
--- Utilities about naming, such as fresh name generator.
+-- Naming related utilities.
 module Taype.Name
   ( Name,
 
@@ -27,7 +27,6 @@ module Taype.Name
     getFresh,
     fresh,
     freshes,
-    freshWith,
 
     -- * Specialized locally nameless abstraction and instantiation
     ScopeOps,
@@ -55,7 +54,10 @@ import Taype.Prelude
 -- | Names are integers
 type Name = Int
 
--- | Fresh name monad transformer is just state monad transformer
+----------------------------------------------------------------
+-- Fresh name generator
+
+-- | Fresh name monad transformer is just state monad transformer.
 type FreshT = StateT Name
 
 type MonadFresh = MonadState Name
@@ -78,28 +80,28 @@ contFreshM = runIdentity <<$>> contFreshT
 getFresh :: MonadFresh m => m Name
 getFresh = get
 
--- | Generate a fresh name
+-- | Generate a fresh name.
 fresh :: MonadFresh m => m Name
 fresh = do
   n <- get
   put (n + 1)
   return n
 
--- | Generate many fresh names
+-- | Generate many fresh names.
 freshes :: MonadFresh m => Int -> m [Name]
 freshes k = do
   n <- get
   put (n + k)
   return [n .. n + k - 1]
 
--- | Generate a fresh name given a transform function
-freshWith :: MonadFresh m => (Name -> Text) -> m Text
-freshWith to = to <$> fresh
+----------------------------------------------------------------
+-- Specialized locally nameless abstraction and instantiation
 
 class ScopeOps s b b' | s b -> b' where
   abstractBy :: Monad f => (a -> b -> Bool) -> b' -> f a -> Scope s f a
   instantiateBy :: Monad f => (b -> f a) -> b' -> Scope s f a -> f a
 
+-- | Abstract and instantiate for one bound variable.
 instance ScopeOps () b b where
   abstractBy eq b = abstract $ \a ->
     if eq a b
@@ -107,6 +109,7 @@ instance ScopeOps () b b where
       else Nothing
   instantiateBy proj = instantiate . const . proj
 
+-- | Abstract and instantiate for two bound variables.
 instance ScopeOps Bool b (b, b) where
   abstractBy eq (left, right) = abstract $ \a ->
     if
@@ -116,6 +119,7 @@ instance ScopeOps Bool b (b, b) where
   instantiateBy proj (left, right) = instantiate $ \i ->
     proj $ if i then left else right
 
+-- | Abstract and instantiate for many bound variables.
 instance ScopeOps Int b [b] where
   abstractBy eq bs = abstract $ \a -> findIndex (eq a) bs
   instantiateBy proj bs = instantiate $ \i ->
@@ -131,6 +135,9 @@ instantiate_ = instantiateBy id
 
 instantiateName :: (ScopeOps s a b', Monad f) => b' -> Scope s f a -> f a
 instantiateName = instantiateBy return
+
+----------------------------------------------------------------
+-- Unbound-style functions
 
 unbindBy ::
   (ScopeOps s a b', Monad m, Monad f) => m b' -> Scope s f a -> m (b', f a)

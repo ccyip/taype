@@ -9,7 +9,7 @@
 -- Stability: experimental
 -- Portability: portable
 --
--- Top-level functions.
+-- Entry point of the taype language type checker and compiler.
 module Taype
   ( main,
   )
@@ -17,11 +17,11 @@ where
 
 import Bound
 import Options.Applicative
-import Taype.Prelude
 import Taype.Cute
 import Taype.Error
 import Taype.Lexer
 import Taype.Parser
+import Taype.Prelude
 import Taype.Syntax
 import Taype.TypeChecker
 
@@ -39,6 +39,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
   namedDefs <- parse tokens
   let names = fst <$> namedDefs
+      -- Close all definitions.
       defs = second (>>>= GV) <$> namedDefs
   when optPrintSource $ printDefs (fromList defs) names
   gctx <- checkDefs options defs
@@ -51,7 +52,8 @@ main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)
   where
     helpMod =
-      fullDesc <> header "taype - a programming language with data types and tape"
+      fullDesc
+        <> header "taype - a programming language with data types and tape"
 
 opts :: Parser Options
 opts = do

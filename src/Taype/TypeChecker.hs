@@ -15,7 +15,7 @@
 -- Stability: experimental
 -- Portability: portable
 --
--- Bidirectional type checker for Taype.
+-- Bidirectional type checker for the taype language.
 module Taype.TypeChecker (checkDefs) where
 
 import Algebra.Lattice
@@ -42,15 +42,15 @@ import Taype.Syntax
 -- checking mode otherwise. This function returns the expression's type, label
 -- and its full elaboration.
 --
--- The given type must be well-kinded and in core Taype ANF.
+-- The given type must be well-kinded and in core taype ANF.
 --
--- The returned type must be well-kinded and in core Taype ANF. It is also
+-- The returned type must be well-kinded and in core taype ANF. It is also
 -- equivalent to the given type if in type checking mode.
 --
 -- The returned label must be the same as the given label if in label checking
 -- mode.
 --
--- The returned expression must be in core Taype ANF. Of course, it must also be
+-- The returned expression must be in core taype ANF. Of course, it must also be
 -- typed by the returned type and label, and equivalent to the given expression.
 typing ::
   Expr Name ->
@@ -199,7 +199,7 @@ typing App {..} Nothing ml =
       (argTy', argLabel', arg') <-
         typing arg (Just argTy) (Just (mustLabel argLabel))
       -- Unfortunately we have to kind the pi-type body here even though it is
-      -- well-kinded, because it may not be in core Taype ANF after
+      -- well-kinded, because it may not be in core taype ANF after
       -- instantiation.
       (_, body') <- inferKind (instantiate1 arg' bnd)
       (res, t') <- go args' body'
@@ -209,7 +209,7 @@ typing Let {..} Nothing ml = do
   (x, body) <- unbind1 bnd
   (t, l', body') <- extendCtx1 x rhsTy' rhsLabel' binder $ typing body Nothing ml
   -- Unfortunately, we have to kind @t@ again even though it is kinded, because
-  -- it may not be in core Taype ANF after instantiation.
+  -- it may not be in core taype ANF after instantiation.
   (_, t') <- inferKind $ substitute x rhs' t
   return
     ( t',
@@ -488,20 +488,21 @@ typing Asc {..} Nothing ml = do
   (_, ty') <- inferKind ty
   (l, expr') <- check expr ty' ml
   return (ty', l, expr')
--- Check label
+
+-- Check label.
 typing e mt (Just l') = do
-  -- Note that we never try to infer type but check label if both type and label
-  -- are given. We assume no rule only does that.
+  -- Note that we never try to infer type while checking label, if both type and
+  -- label are given. We assume no rule only does that.
   (t', l, e') <- typing e mt Nothing
   (t',l',) <$> mayPromote l' t' l e'
 
--- Check type but infer label
+-- Check type but infer label.
 typing e (Just t) Nothing = do
   (t', l', e') <- infer e
   equate t t'
   return (t', l', e')
 
--- Failed to infer the type
+-- Failed to infer the type.
 typing _ Nothing Nothing =
   err
     [ [DD "Could not infer the type"],
@@ -516,7 +517,7 @@ typing _ Nothing Nothing =
 --
 -- The returned kind must be the same as the given kind if in checking mode.
 --
--- The returned type must be in core Taype ANF. Of course, it must also be
+-- The returned type must be in core taype ANF. Of course, it must also be
 -- kinded by the returned kind.
 kinding :: Ty Name -> Maybe Kind -> TcM (Kind, Ty Name)
 kinding TUnit Nothing = return (AnyK, TUnit)
@@ -623,7 +624,7 @@ kinding Ite {..} Nothing = do
 kinding PCase {..} Nothing = do
   (t', _, cond') <- typing cond Nothing (Just SafeL)
   -- NOTE: even though 'isProd' performs weak head normalization, the two
-  -- components are still in core Taype ANF. This is because @t'@ is never an
+  -- components are still in core taype ANF. This is because @t'@ is never an
   -- oblivious type if it is a product and well-kinded, so the head of @t'@ has
   -- to be @Prod@ already, with possibly @Loc@ wrappers.
   (left', right') <- mayWithLoc (peekLoc cond) $ isProd t'
@@ -684,7 +685,7 @@ kinding Case {..} Nothing = do
           checkKind body OblivK
       return CaseAlt {bnd = abstract_ xs body', ..}
 kinding Loc {..} mt = withLoc loc $ withCur expr $ kinding expr mt
--- Check kind
+-- Check kind.
 kinding t (Just k) = do
   (k', t') <- inferKind t
   unless (k' `leq` k) $
@@ -695,36 +696,36 @@ kinding t (Just k) = do
       ]
   return (k, t')
 
--- Failed
+-- Failed to infer kind.
 kinding _ Nothing =
   err
     [ [DD "Could not infer the kind"],
       [DD "Are you sure this is a type?"]
     ]
 
--- | Infer the type of the expression
+-- | Infer the type of the expression.
 infer :: Expr Name -> TcM (Ty Name, Label, Expr Name)
 infer e = typing e Nothing Nothing
 
--- | Check the type of the expression
+-- | Check the type of the expression.
 check :: Expr Name -> Ty Name -> Maybe Label -> TcM (Label, Expr Name)
 check e t ml = typing e (Just t) ml <&> \(_, l, e') -> (l, e')
 
--- | Infer the kind of the type
+-- | Infer the kind of the type.
 inferKind :: Ty Name -> TcM (Kind, Ty Name)
 inferKind t = kinding t Nothing
 
--- | Check the kind of the type
+-- | Check the kind of the type.
 checkKind :: Ty Name -> Kind -> TcM (Ty Name)
 checkKind t k = kinding t (Just k) <&> snd
 
--- | Infer label if not privided
+-- | Infer label if not privided.
 labeling :: Maybe Label -> TcM Label
 labeling l = do
   Env {..} <- ask
   return $ fromMaybe label l
 
--- | Check label
+-- | Check label.
 checkLabel :: Maybe Label -> Label -> TcM ()
 checkLabel ml l' = whenJust ml $ \l ->
   when (l' /= l) $
@@ -902,11 +903,13 @@ whnf Asc {..} = whnf expr
 -- TODO
 whnf e = return e
 
+-- | Check if a type is a pi-type and return its components.
+--
 -- Unlike other dependent type theory, we do not perform weak head normalization
 -- here because it is unnecessary in our case: dependent types can only be
 -- kinded as oblivious while pi-type is kinded as mixed. On the other hand, if
--- the given type is in core Taype ANF, the returned types are all in core Taype
--- ANF.
+-- the given type is in core taype ANF, the returned types are also in core
+-- taype ANF.
 isPi :: Ty Name -> TcM (Ty Name, Maybe Label, Maybe Binder, Scope () Ty Name)
 isPi Pi {..} = return (ty, label, binder, bnd)
 isPi Loc {..} = isPi expr
@@ -921,8 +924,10 @@ maybeGV GV {..} = (ref,) <<$>> lookupDef ref
 maybeGV Loc {..} = maybeGV expr
 maybeGV _ = return Nothing
 
+-- | Check if a type is a product type and return its components.
+--
 -- Similar to 'isPi', product types are never oblivious types, so weak head
--- normalization is unnecessary. The returned types are in core Taype ANF if the
+-- normalization is unnecessary. The returned types are in core taype ANF if the
 -- given type is so.
 isProd :: Ty Name -> TcM (Ty Name, Ty Name)
 isProd Prod {..} = return (left, right)
@@ -933,6 +938,7 @@ isProd t =
       [DH "But instead got", DC t]
     ]
 
+-- | Check if a type is an oblivious product type and return its components.
 isOProd :: Ty Name -> TcM (Ty Name, Ty Name)
 isOProd t = do
   nf <- whnf t
@@ -944,6 +950,7 @@ isOProd t = do
           [DH "But instead got", DC t]
         ]
 
+-- | Check if a type is an oblivious sum type and return its components.
 isOSum :: Ty Name -> TcM (Ty Name, Ty Name)
 isOSum t = do
   nf <- whnf t
@@ -1086,10 +1093,10 @@ checkDefs options defs = runDcM options $ do
 -- | Type check top-level definitions.
 --
 -- The associated type/type arguments of the given definition must be
--- well-kinded and in core Taype ANF if the definition is a function,
+-- well-kinded and in core taype ANF if the definition is a function,
 -- constructor or OADT.
 --
--- The returned definition must be in core Taype ANF.
+-- The returned definition must be in core taype ANF.
 checkDef :: Def Name -> TcM (Def Name)
 checkDef FunDef {..} = do
   let l = mustLabel label
@@ -1106,7 +1113,7 @@ checkDef OADTDef {..} = do
 checkDef def = return def
 
 -- | Pre-type check all definitions to ensure they are well-formed, and their
--- types are well-kinded and in core Taype ANF.
+-- types are well-kinded and in core taype ANF.
 preCheckDefs :: [(Text, Def Name)] -> DcM (GCtx Name)
 preCheckDefs allDefs = do
   -- We need to pre-check all ADTs first, because they can mutually refer to
@@ -1114,7 +1121,7 @@ preCheckDefs allDefs = do
   let (adtDefs, otherDefs) = partition isADTDef allDefs
   -- Note that @gctx@ trivially satisfies the invariant for global context (i.e.
   -- function types, constructor and OADT type arguments are well-kinded and in
-  -- core Taype ANF), because it only contains ADTs (and prelude) at the moment.
+  -- core taype ANF), because it only contains ADTs (and prelude) at the moment.
   gctx <- extendGCtx preludeGCtx adtDefs
   options <- ask
   adtDefs' <- lift $
