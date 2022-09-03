@@ -225,23 +225,23 @@ typing Let {..} Nothing ml = do
 -- TODO: do not support dependent types
 typing Ite {..} Nothing ml = do
   (_, condLabel, cond') <- typing cond (Just TBool) ml
-  (ifTrueTy', ifTrueLabel, ifTrue') <- typing ifTrue Nothing ml
-  (ifFalseTy', ifFalseLabel, ifFalse') <- typing ifFalse Nothing ml
-  equate ifTrueTy' ifFalseTy'
-  let l' = condLabel \/ ifTrueLabel \/ ifFalseLabel
-  ifTrue'' <- mayPromote l' ifTrueTy' ifTrueLabel ifTrue'
-  ifFalse'' <- mayPromote l' ifFalseTy' ifFalseLabel ifFalse'
+  (leftTy', leftLabel, left') <- typing left Nothing ml
+  (rightTy', rightLabel, right') <- typing right Nothing ml
+  equate leftTy' rightTy'
+  let l' = condLabel \/ leftLabel \/ rightLabel
+  left'' <- mayPromote l' leftTy' leftLabel left'
+  right'' <- mayPromote l' rightTy' rightLabel right'
   x <- fresh
   return
-    ( ifTrueTy',
+    ( leftTy',
       l',
       mayLets
         [(x, TBool, condLabel, cond')]
         Ite
-          { mTy = Just ifTrueTy',
+          { mTy = Just leftTy',
             cond = V x,
-            ifTrue = ifTrue'',
-            ifFalse = ifFalse''
+            left = left'',
+            right = right''
           }
     )
 typing Pair {..} mt ml = do
@@ -338,41 +338,41 @@ typing Case {..} Nothing ml = do
 -- TODO: checking mode is possible
 typing Mux {..} Nothing Nothing = do
   (_, _, cond') <- typing cond (Just OBool) (Just SafeL)
-  (ifTrueTy', _, ifTrue') <- typing ifTrue Nothing (Just SafeL)
-  (ifFalseTy', _, ifFalse') <- typing ifFalse Nothing (Just SafeL)
-  equate ifTrueTy' ifFalseTy'
-  void $ checkKind ifTrueTy' OblivK
+  (leftTy', _, left') <- typing left Nothing (Just SafeL)
+  (rightTy', _, right') <- typing right Nothing (Just SafeL)
+  equate leftTy' rightTy'
+  void $ checkKind leftTy' OblivK
   x <- fresh
   xl <- fresh
   xr <- fresh
   return
-    ( ifTrueTy',
+    ( leftTy',
       SafeL,
       mayLets
         [ (x, OBool, SafeL, cond'),
-          (xl, ifTrueTy', SafeL, ifTrue'),
-          (xr, ifFalseTy', SafeL, ifFalse')
+          (xl, leftTy', SafeL, left'),
+          (xr, rightTy', SafeL, right')
         ]
-        Mux {cond = V x, ifTrue = V xl, ifFalse = V xr}
+        Mux {cond = V x, left = V xl, right = V xr}
     )
 -- TODO: checking mode is possible
 typing OIte {..} Nothing Nothing = do
   (_, _, cond') <- typing cond (Just OBool) (Just SafeL)
-  (ifTrueTy', _, ifTrue') <- typing ifTrue Nothing (Just LeakyL)
-  (ifFalseTy', _, ifFalse') <- typing ifFalse Nothing (Just LeakyL)
-  equate ifTrueTy' ifFalseTy'
+  (leftTy', _, left') <- typing left Nothing (Just LeakyL)
+  (rightTy', _, right') <- typing right Nothing (Just LeakyL)
+  equate leftTy' rightTy'
   x <- fresh
   xl <- fresh
   xr <- fresh
   return
-    ( ifTrueTy',
+    ( leftTy',
       LeakyL,
       mayLets
         [ (x, OBool, SafeL, cond'),
-          (xl, ifTrueTy', LeakyL, ifTrue'),
-          (xr, ifFalseTy', LeakyL, ifFalse')
+          (xl, leftTy', LeakyL, left'),
+          (xr, rightTy', LeakyL, right')
         ]
-        OIte {cond = V x, ifTrue = V xl, ifFalse = V xr}
+        OIte {cond = V x, left = V xl, right = V xr}
     )
 typing OPair {..} mt Nothing = do
   (mLeftTy, mRightTy) <- mapM isOProd mt <&> (\x -> (fst <$> x, snd <$> x))
@@ -600,8 +600,8 @@ kinding Let {..} Nothing = do
     )
 kinding Ite {..} Nothing = do
   (_, cond') <- check cond TBool (Just SafeL)
-  ifTrue' <- checkKind ifTrue OblivK
-  ifFalse' <- checkKind ifFalse OblivK
+  left' <- checkKind left OblivK
+  right' <- checkKind right OblivK
   x <- fresh
   return
     ( OblivK,
@@ -614,8 +614,8 @@ kinding Ite {..} Nothing = do
             abstract1 x $
               Ite
                 { cond = V x,
-                  ifTrue = ifTrue',
-                  ifFalse = ifFalse',
+                  left = left',
+                  right = right',
                   ..
                 }
         }
@@ -768,11 +768,11 @@ equate e e' = do
       (_, body, body') <- unbind1With bnd bnd'
       equate body body'
     go
-      Ite {cond, ifTrue, ifFalse}
-      Ite {cond = cond', ifTrue = ifTrue', ifFalse = ifFalse'} = do
+      Ite {cond, left, right}
+      Ite {cond = cond', left = left', right = right'} = do
         equate cond cond'
-        equate ifTrue ifTrue'
-        equate ifFalse ifFalse'
+        equate left left'
+        equate right right'
     go Case {cond, alts} Case {cond = cond', alts = alts'}
       | length alts == length alts' = do
         equate cond cond'
@@ -789,11 +789,11 @@ equate e e' = do
               equate body body'
         goAlt _ _ = errEquate
     go
-      OIte {cond, ifTrue, ifFalse}
-      OIte {cond = cond', ifTrue = ifTrue', ifFalse = ifFalse'} = do
+      OIte {cond, left, right}
+      OIte {cond = cond', left = left', right = right'} = do
         equate cond cond'
-        equate ifTrue ifTrue'
-        equate ifFalse ifFalse'
+        equate left left'
+        equate right right'
     go Prod {left, right} Prod {left = left', right = right'} = do
       equate left left'
       equate right right'
@@ -829,11 +829,11 @@ equate e e' = do
         equate rBody rBody'
     go nf nf' | nf == nf' = pass
     go
-      Mux {cond, ifTrue, ifFalse}
-      Mux {cond = cond', ifTrue = ifTrue', ifFalse = ifFalse'} = do
+      Mux {cond, left, right}
+      Mux {cond = cond', left = left', right = right'} = do
         equate cond cond'
-        equate ifTrue ifTrue'
-        equate ifFalse ifFalse'
+        equate left left'
+        equate right right'
     go Promote {expr} Promote {expr = expr'} = equate expr expr'
     go Tape {expr} Tape {expr = expr'} = equate expr expr'
     go _ _ = errEquate
@@ -876,7 +876,7 @@ whnf Let {..} = whnf $ instantiate1 rhs bnd
 whnf Ite {..} = do
   nf <- whnf cond
   case nf of
-    BLit {..} -> if bLit then whnf ifTrue else whnf ifFalse
+    BLit {..} -> if bLit then whnf left else whnf right
     _ -> return Ite {cond = nf, ..}
 whnf Case {..} = do
   nf <- whnf cond

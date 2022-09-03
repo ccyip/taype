@@ -240,8 +240,8 @@ grammar = mdo
           do
             loc <- pLocatedToken L.Mux
             cond <- pAtomExpr
-            ifTrue <- pAtomExpr
-            ifFalse <- pAtomExpr
+            left <- pAtomExpr
+            right <- pAtomExpr
             return Loc {expr = Mux {..}, ..},
           -- Oblivious injection
           do
@@ -390,10 +390,10 @@ grammar = mdo
         loc <- pLocatedToken ifToken
         cond <- pExpr
         pToken L.Then
-        ifTrue <- pBranch
+        left <- pBranch
         pToken L.Else
-        ifFalse <- pBranch
-        return Loc {expr = former cond ifTrue ifFalse, ..}
+        right <- pBranch
+        return Loc {expr = former cond left right, ..}
       -- Product-like elimination
       pPCase former caseToken openParenToken pBody = do
         loc <- pLocatedToken caseToken

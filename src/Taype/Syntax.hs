@@ -130,8 +130,8 @@ data Expr a
     Ite
       { mTy :: Maybe (Ty a),
         cond :: Expr a,
-        ifTrue :: Expr a,
-        ifFalse :: Expr a
+        left :: Expr a,
+        right :: Expr a
       }
   | -- | (Dependent) case analysis.
     --  Do not support empty type, i.e. 'alts' must be non empty
@@ -143,8 +143,8 @@ data Expr a
   | -- | Oblivious and leaky if conditional
     OIte
       { cond :: Expr a,
-        ifTrue :: Expr a,
-        ifFalse :: Expr a
+        left :: Expr a,
+        right :: Expr a
       }
   | -- | Product type
     Prod {left :: Ty a, right :: Ty a}
@@ -189,8 +189,8 @@ data Expr a
   | -- | Oblivious conditional, i.e. multiplexer
     Mux
       { cond :: Expr a,
-        ifTrue :: Expr a,
-        ifFalse :: Expr a
+        left :: Expr a,
+        right :: Expr a
       }
   | -- | Ascription. Do not appear in core taype
     Asc {ty :: Ty a, expr :: Expr a}
@@ -364,8 +364,8 @@ instance Monad Expr where
     Ite
       { mTy = mTy <&> (>>= f),
         cond = cond >>= f,
-        ifTrue = ifTrue >>= f,
-        ifFalse = ifFalse >>= f
+        left = left >>= f,
+        right = right >>= f
       }
   Case {..} >>= f =
     Case
@@ -377,8 +377,8 @@ instance Monad Expr where
   OIte {..} >>= f =
     OIte
       { cond = cond >>= f,
-        ifTrue = ifTrue >>= f,
-        ifFalse = ifFalse >>= f,
+        left = left >>= f,
+        right = right >>= f,
         ..
       }
   Prod {..} >>= f = Prod {left = left >>= f, right = right >>= f, ..}
@@ -411,8 +411,8 @@ instance Monad Expr where
   Mux {..} >>= f =
     Mux
       { cond = cond >>= f,
-        ifTrue = ifTrue >>= f,
-        ifFalse = ifFalse >>= f,
+        left = left >>= f,
+        right = right >>= f,
         ..
       }
   Asc {..} >>= f = Asc {ty = ty >>= f, expr = expr >>= f, ..}
@@ -467,20 +467,20 @@ instance Eq1 Expr where
   liftEq _ ILit {iLit} ILit {iLit = iLit'} = iLit == iLit'
   liftEq
     eq
-    Ite {cond, ifTrue, ifFalse}
-    Ite {cond = cond', ifTrue = ifTrue', ifFalse = ifFalse'} =
+    Ite {cond, left, right}
+    Ite {cond = cond', left = left', right = right'} =
       liftEq eq cond cond'
-        && liftEq eq ifTrue ifTrue'
-        && liftEq eq ifFalse ifFalse'
+        && liftEq eq left left'
+        && liftEq eq right right'
   liftEq eq Case {cond, alts} Case {cond = cond', alts = alts'} =
     liftEq eq cond cond' && liftEq (liftEq eq) alts alts'
   liftEq
     eq
-    OIte {cond, ifTrue, ifFalse}
-    OIte {cond = cond', ifTrue = ifTrue', ifFalse = ifFalse'} =
+    OIte {cond, left, right}
+    OIte {cond = cond', left = left', right = right'} =
       liftEq eq cond cond'
-        && liftEq eq ifTrue ifTrue'
-        && liftEq eq ifFalse ifFalse'
+        && liftEq eq left left'
+        && liftEq eq right right'
   liftEq eq Prod {left, right} Prod {left = left', right = right'} =
     liftEq eq left left' && liftEq eq right right'
   liftEq eq Pair {left, right} Pair {left = left', right = right'} =
@@ -505,11 +505,11 @@ instance Eq1 Expr where
       liftEq eq cond cond' && liftEq eq lBnd lBnd' && liftEq eq rBnd rBnd'
   liftEq
     eq
-    Mux {cond, ifTrue, ifFalse}
-    Mux {cond = cond', ifTrue = ifTrue', ifFalse = ifFalse'} =
+    Mux {cond, left, right}
+    Mux {cond = cond', left = left', right = right'} =
       liftEq eq cond cond'
-        && liftEq eq ifTrue ifTrue'
-        && liftEq eq ifFalse ifFalse'
+        && liftEq eq left left'
+        && liftEq eq right right'
   liftEq eq Asc {expr} expr' = liftEq eq expr expr'
   liftEq eq expr' Asc {expr} = liftEq eq expr' expr
   liftEq eq Promote {expr} expr' = liftEq eq expr expr'
@@ -596,10 +596,10 @@ let_ binder mTy rhs body =
     }
 
 ite_ :: Expr a -> Expr a -> Expr a -> Expr a
-ite_ cond ifTrue ifFalse = Ite {mTy = Nothing, ..}
+ite_ cond left right = Ite {mTy = Nothing, ..}
 
 oite_ :: Expr a -> Expr a -> Expr a -> Expr a
-oite_ cond ifTrue ifFalse = OIte {..}
+oite_ cond left right = OIte {..}
 
 case_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 case_ cond alts = Case {mTy = Nothing, alts = abstr <$> alts, ..}

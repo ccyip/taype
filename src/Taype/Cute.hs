@@ -141,12 +141,12 @@ cuteExpr BLit {..} = if bLit then "True" else "False"
 cuteExpr TInt = "Int"
 cuteExpr OInt = "~Int"
 cuteExpr ILit {..} = cute iLit
-cuteExpr Ite {..} = cuteIte "" cond ifTrue ifFalse
+cuteExpr Ite {..} = cuteIte "" cond left right
 cuteExpr Case {..} = do
   condDoc <- cuteExpr cond
   altDocs <- mapM cuteCaseAlt alts
   return $ cuteCaseDoc "" True condDoc altDocs
-cuteExpr OIte {..} = cuteIte "~" cond ifTrue ifFalse
+cuteExpr OIte {..} = cuteIte "~" cond left right
 cuteExpr e@Prod {..} = cuteInfix e "*" left right
 cuteExpr Pair {..} = cutePair "" left right
 cuteExpr PCase {..} = cutePCase "" cond lBinder rBinder bnd2
@@ -168,7 +168,7 @@ cuteExpr OCase {..} = do
   return $
     cuteCaseDoc "~" True condDoc $
       cuteAltDocs [("~inl", [xl], lBodyDoc), ("~inr", [xr], rBodyDoc)]
-cuteExpr Mux {..} = cuteApp "mux" [cond, ifTrue, ifFalse]
+cuteExpr Mux {..} = cuteApp "mux" [cond, left, right]
 cuteExpr Asc {..} = do
   typeDoc <- cuteExpr ty
   exprDoc <- cuteExpr expr
@@ -322,17 +322,17 @@ cuteLet e = do
     go expr = ([],) <$> cuteExpr expr
 
 cuteIte :: Doc -> Expr Text -> Expr Text -> Expr Text -> CuteM Doc
-cuteIte accent cond ifTrue ifFalse = do
+cuteIte accent cond left right = do
   condDoc <- cuteExpr cond
-  ifTrueDoc <- cuteExpr ifTrue
-  ifFalseDoc <- cuteExpr ifFalse
+  leftDoc <- cuteExpr left
+  rightDoc <- cuteExpr right
   return $
     group $
       accent <> "if" <+> condDoc
         <> line
-        <> hang ("then" <> sep1 ifTrueDoc)
+        <> hang ("then" <> sep1 leftDoc)
         <> line
-        <> hang ("else" <> sep1 ifFalseDoc)
+        <> hang ("else" <> sep1 rightDoc)
 
 cuteInfix :: Expr Text -> Doc -> Expr Text -> Expr Text -> CuteM Doc
 cuteInfix super infixDoc left right = do
