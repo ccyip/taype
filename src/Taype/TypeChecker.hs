@@ -256,22 +256,21 @@ typing Let {..} Nothing ml = do
         }
     )
 -- TODO: support dependent types
-typing Ite {..} Nothing ml = do
+typing Ite {..} mt ml = do
   (condLabel, cond') <- check_ cond TBool ml
-  (leftTy', leftLabel, left') <- infer_ left ml
-  (rightTy', rightLabel, right') <- infer_ right ml
-  equate leftTy' rightTy'
+  (t', leftLabel, left') <- typing left mt ml
+  (rightLabel, right') <- check_ right t' ml
   let l' = condLabel \/ leftLabel \/ rightLabel
-  left'' <- mayPromote l' leftTy' leftLabel left'
-  right'' <- mayPromote l' rightTy' rightLabel right'
+  left'' <- mayPromote l' t' leftLabel left'
+  right'' <- mayPromote l' t' rightLabel right'
   x <- fresh
   return
-    ( leftTy',
+    ( t',
       l',
       lets_
         [(x, TBool, condLabel, cond')]
         Ite
-          { mTy = Just leftTy',
+          { mTy = Just t',
             cond = V x,
             left = left'',
             right = right''
@@ -296,7 +295,7 @@ typing Pair {..} mt ml = do
         Pair {left = V xl, right = V xr}
     )
 -- TODO: support dependent types
-typing PCase {..} Nothing ml = do
+typing PCase {..} mt ml = do
   (condTy', condLabel, cond') <- infer_ cond ml
   (leftTy', rightTy') <- mayWithLoc (peekLoc cond) $ isProd condTy'
   ((xl, xr), body) <- unbind2 bnd2
@@ -305,7 +304,7 @@ typing PCase {..} Nothing ml = do
       [ (xl, leftTy', condLabel, lBinder),
         (xr, rightTy', condLabel, rBinder)
       ]
-      $ infer_ body ml
+      $ typing body mt ml
   -- @t'@ cannot refer to @xl@ or @xr@, otherwise it would be dependent type.
   notAppearIn [xl, xr] bodyTy'
   let l' = condLabel \/ bodyLabel
@@ -324,17 +323,16 @@ typing PCase {..} Nothing ml = do
           }
     )
 -- TODO: support dependent types
-typing Case {..} Nothing ml = do
+typing Case {..} mt ml = do
   (condTy', condLabel, cond') <- infer_ cond ml
   (ref, ctors) <- isCaseCond cond condTy'
-  augAlts <- joinAlts alts ctors
-  res <- mapM (typeCaseAlt condLabel) augAlts
-  let bodyTs' = res <&> \(_, _, _, t', _, _) -> t'
-  equateMany bodyTs'
+  (alt0 :| restAlts) <- joinAlts alts ctors
+  res0@(_, _, _, bodyTy', _, _) <- typeCaseAlt condLabel mt alt0
+  restRes <- mapM (typeCaseAlt condLabel (Just bodyTy')) restAlts
+  let res = res0 :| restRes
   forM_ res $ \(_, _, xs, t', _, _) -> notAppearIn xs t'
   let l' = flipfoldl' (\(_, _, _, _, l, _) -> (l \/)) condLabel res
   alts' <- mapM (promoteAlt l') res
-  let bodyTy' = head bodyTs'
   x <- fresh
   return
     ( bodyTy',
@@ -349,52 +347,48 @@ typing Case {..} Nothing ml = do
     )
   where
     -- Type check an alternative.
-    typeCaseAlt condLabel (ctor, paraTypes, binders, bnd) = do
+    typeCaseAlt condLabel mt' (ctor, paraTypes, binders, bnd) = do
       let n = length paraTypes
       (xs, body) <- unbindMany n bnd
       (bodyTy', bodyLabel, body') <-
         extendCtx (zip4 xs paraTypes (replicate n condLabel) binders) $
-          infer_ body ml
+          typing body mt' ml
       return (ctor, binders, xs, bodyTy', bodyLabel, body')
     promoteAlt l' (ctor, binders, xs, bodyTy', bodyLabel, body') = do
       body'' <- mayPromote l' bodyTy' bodyLabel body'
       return CaseAlt {bnd = abstract_ xs body'', ..}
--- TODO: checking mode is possible
-typing Mux {..} Nothing Nothing = do
+typing Mux {..} mt Nothing = do
   cond' <- check cond OBool SafeL
-  (leftTy', _, left') <- infer_ left (Just SafeL)
-  (rightTy', _, right') <- infer_ right (Just SafeL)
-  equate leftTy' rightTy'
-  void $ checkKind leftTy' OblivK
+  (t', _, left') <- typing left mt (Just SafeL)
+  right' <- check right t' SafeL
+  void $ checkKind t' OblivK
   x <- fresh
   xl <- fresh
   xr <- fresh
   return
-    ( leftTy',
+    ( t',
       SafeL,
       lets_
         [ (x, OBool, SafeL, cond'),
-          (xl, leftTy', SafeL, left'),
-          (xr, rightTy', SafeL, right')
+          (xl, t', SafeL, left'),
+          (xr, t', SafeL, right')
         ]
         Mux {cond = V x, left = V xl, right = V xr}
     )
--- TODO: checking mode is possible
-typing OIte {..} Nothing Nothing = do
+typing OIte {..} mt Nothing = do
   cond' <- check cond OBool SafeL
-  (leftTy', _, left') <- infer_ left (Just LeakyL)
-  (rightTy', _, right') <- infer_ right (Just LeakyL)
-  equate leftTy' rightTy'
+  (t', _, left') <- typing left mt (Just LeakyL)
+  right' <- check right t' LeakyL
   x <- fresh
   xl <- fresh
   xr <- fresh
   return
-    ( leftTy',
+    ( t',
       LeakyL,
       lets_
         [ (x, OBool, SafeL, cond'),
-          (xl, leftTy', LeakyL, left'),
-          (xr, rightTy', LeakyL, right')
+          (xl, t', LeakyL, left'),
+          (xr, t', LeakyL, right')
         ]
         OIte {cond = V x, left = V xl, right = V xr}
     )
@@ -415,7 +409,7 @@ typing OPair {..} mt Nothing = do
         ]
         OPair {left = V xl, right = V xr}
     )
-typing OPCase {..} Nothing ml = do
+typing OPCase {..} mt ml = do
   (condTy', _, cond') <- infer_ cond (Just SafeL)
   (leftTy', rightTy') <- mayWithLoc (peekLoc cond) $ isOProd condTy'
   ((xl, xr), body) <- unbind2 bnd2
@@ -424,7 +418,7 @@ typing OPCase {..} Nothing ml = do
       [ (xl, leftTy', SafeL, lBinder),
         (xr, rightTy', SafeL, rBinder)
       ]
-      $ infer_ body ml
+      $ typing body mt ml
   x <- fresh
   return
     ( bodyTy',
@@ -473,29 +467,27 @@ typing OInj {..} (Just t') Nothing = do
         -- sum form for convenience.
         OInj {mTy = Just (OSum {left = left', right = right'}), inj = V x, ..}
     )
--- TODO: checking mode is possible
-typing OCase {..} Nothing Nothing = do
+typing OCase {..} mt Nothing = do
   (condTy', _, cond') <- infer_ cond (Just SafeL)
   (left, right) <- mayWithLoc (peekLoc cond) $ isOSum condTy'
   left' <- checkKind left OblivK
   right' <- checkKind right OblivK
   (xl, lBody) <- unbind1 lBnd
   (xr, rBody) <- unbind1 rBnd
-  (lBodyTy', _, lBody') <-
+  (bodyTy', _, lBody') <-
     extendCtx1 xl left' SafeL lBinder $
-      infer_ lBody (Just LeakyL)
-  (rBodyTy', _, rBody') <-
+      typing lBody mt (Just LeakyL)
+  rBody' <-
     extendCtx1 xr right' SafeL rBinder $
-      infer_ rBody (Just LeakyL)
-  equate lBodyTy' rBodyTy'
+      check rBody bodyTy' LeakyL
   x <- fresh
   return
-    ( lBodyTy',
+    ( bodyTy',
       LeakyL,
       lets_
         [(x, OSum {left = left', right = right'}, SafeL, cond')]
         OCase
-          { mTy = Just lBodyTy',
+          { mTy = Just bodyTy',
             cond = V x,
             lBnd = abstract_ xl lBody',
             rBnd = abstract_ xr rBody',

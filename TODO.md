@@ -1,4 +1,3 @@
-- For multi-branches construct, infer one branch and check others
 - Unordered oblivious case (only need to change parser)
 - Uniplate inspired transform and universe
 - Case pattern variables should not allow duplicates
@@ -11,4 +10,5 @@
 - Separate global context into types and definitions, and maintain the right
   order when kinding or typing
 - Add program context for better inference
-- Error message for `isProd` / `isOProd` / `isPi` could be confusing in introduction form
+- Error messages for `isProd` / `isOProd` / `isPi` could be confusing in
+  introduction form
