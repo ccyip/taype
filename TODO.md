@@ -1,17 +1,14 @@
-- Bidirectional label checking
-- Use undefined instead of wip
-- Fix comments
-  + comments should end with period if they are sentences
-  + properly add new lines and headers
-- Error message for typing
-- Consider removing label from infer/check?
-- Smart constructors for internal use?
-- Error takes a list of Cute instances and return Doc
+- For multi-branches construct, infer one branch and check others
+- Unordered oblivious case (only need to change parser)
 - Uniplate inspired transform and universe
 - Case pattern variables should not allow duplicates
 - Scrap my boilerplate: instances for Monad, Eq1, etc
 - Support tuple pattern in product case and oblivious sum case
 - Consider using default language extensions in cabal file
 - Consider define Fresh as a newtype
+- Consider define contexts as a newtype
 - Consider adding tests
-- Consider let taking a list of bindings. May simplify flattening let
+- Separate global context into types and definitions, and maintain the right
+  order when kinding or typing
+- Add program context for better inference
+- Error message for `isProd` / `isOProd` / `isPi` could be confusing in introduction form

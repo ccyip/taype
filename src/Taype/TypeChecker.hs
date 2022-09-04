@@ -25,6 +25,7 @@ import Control.Monad.Error.Class
 import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
 import Data.List (lookup, partition, zip4, zipWith3)
+import qualified Data.List.NonEmpty as NE
 import Prettyprinter hiding (Doc, hang, indent)
 import Relude.Extra.Bifunctor
 import Relude.Extra.Tuple
@@ -35,12 +36,21 @@ import Taype.Name
 import Taype.Prelude
 import Taype.Syntax
 
+----------------------------------------------------------------
+-- Bidirectional type and kind checkers
+
 -- | Type check an expression bidirectionally.
 --
 -- Both types (the second argument) and labels (the third argument) may be
 -- inferred or checked. They are in inference mode if they are 'Nothing', or in
 -- checking mode otherwise. This function returns the expression's type, label
 -- and its full elaboration.
+--
+-- Before type checking, all types in the local typing context and in the global
+-- context (ADTs, function types, constructor and OADT argument types) are
+-- well-kinded and in core taype ANF. However, the function and OADT definitions
+-- in the global context may not be typed yet. NOTE: This assumption will change
+-- in the future.
 --
 -- The given type must be well-kinded and in core taype ANF.
 --
@@ -63,6 +73,8 @@ typing e@ILit {} Nothing Nothing = return (TInt, SafeL, e)
 typing e@V {..} Nothing Nothing =
   lookupTy name >>= \case
     Just (t, l) -> return (t, l, e)
+    -- The expression is locally closed before type checking, so open local
+    -- variables are not possible.
     _ -> oops $ "Local variable not in scope: " <> show name
 typing e@GV {..} Nothing Nothing =
   lookupDef ref >>= \case
@@ -72,6 +84,8 @@ typing e@GV {..} Nothing Nothing =
       return
         ( GV dataType,
           SafeL,
+          -- All constructors are in application form even if they have zero
+          -- argument.
           App {fn = e, args = [], appKind = Just CtorApp}
         )
     Just BuiltinDef {..} -> do
@@ -79,6 +93,8 @@ typing e@GV {..} Nothing Nothing =
       return
         ( resType,
           SafeL,
+          -- All builtin functions are in application form even if they have
+          -- zero argument.
           App {fn = e, args = [], appKind = Just BuiltinApp}
         )
     Just _ ->
@@ -86,131 +102,148 @@ typing e@GV {..} Nothing Nothing =
     _ ->
       err [[DD "Variable", DQ ref, DD "is not in scope"]]
 typing Lam {mTy = Just binderTy, ..} Nothing ml = do
-  -- This is the label of the binder, not the label of the whole lambda.
+  -- Note that this is the label of the binder, not the label of the whole
+  -- lambda.
   binderLabel <- labeling label
-  (_, binderTy') <- inferKind binderTy
+  binderTy' <- kinded binderTy
   (x, body) <- unbind1 bnd
   (tBody', l', body') <-
-    extendCtx1 x binderTy' binderLabel binder $
-      typing body Nothing ml
+    extendCtx1 x binderTy' binderLabel binder $ infer_ body ml
   return
     ( Pi
         { ty = binderTy',
           label = Just binderLabel,
-          bnd = abstract1 x tBody',
+          bnd = abstract_ x tBody',
           ..
         },
       l',
       Lam
         { mTy = Just binderTy',
           label = Just binderLabel,
-          bnd = abstract1 x body',
+          bnd = abstract_ x body',
           ..
         }
     )
 typing Lam {..} (Just t) ml = do
   (binderTy', binderLabel, _, tBnd') <- isPi t
   let binderLabel' = mustLabel binderLabel
-  -- If the binder label is given, it has to agree with the one in the pi-type.
+  -- If the binder label is given in the lambda term, it has to agree with the
+  -- one in the pi-type.
   checkLabel label binderLabel'
   whenJust mTy $ \binderTy -> do
-    (_, t') <- inferKind binderTy
-    -- If the binder type is given, it has to agree with the one in the pi-type.
+    t' <- kinded binderTy
+    -- If the binder type is given in the lambda term, it has to agree with the
+    -- one in the pi-type.
     mayWithLoc (peekLoc binderTy) $
       equate binderTy' t'
   (x, body, tBody') <- unbind1With bnd tBnd'
   (l, body') <-
     extendCtx1 x binderTy' binderLabel' binder $
-      check body tBody' ml
+      check_ body tBody' ml
   return
     ( Pi
         { ty = binderTy',
           label = Just binderLabel',
-          bnd = abstract1 x tBody',
+          bnd = abstract_ x tBody',
           ..
         },
       l,
       Lam
         { mTy = Just binderTy',
           label = Just binderLabel',
-          bnd = abstract1 x body',
+          bnd = abstract_ x body',
           ..
         }
     )
 typing App {..} Nothing ml =
   maybeGV fn >>= \case
+    -- Constructors and builtin functions have to be fully applied, and the
+    -- resulting label is determined by their label polymorphism strategies.
     Just (ctor, CtorDef {..}) ->
       typePolyApp ctor paraTypes (GV dataType) JoinStrategy CtorApp
     Just (f, BuiltinDef {..}) ->
       typePolyApp f paraTypes resType strategy BuiltinApp
     _ -> typeFnApp
   where
+    -- Application for constructors and builtin functions
     typePolyApp f paraTypes resType strat appKind' = do
       checkArity appKind' f args paraTypes
-      -- TODO: quite messy here
-      let ml' = case strat of
+      let argLabel = case strat of
+            -- In join strategy, argument labels are either inferred or the
+            -- given one.
             JoinStrategy -> ml
+            -- In other strategies, argument labels must be safe.
             _ -> Just SafeL
-      res <- zipWithM (\arg ty -> typing arg (Just ty) ml') args paraTypes
-      xs <- freshes $ length res
-      let (ts, ls, _) = unzip3 res
-          l' = foldl' (\/) (fromMaybe SafeL ml') ls
-      es' <- forM res $ \(t, l, e) -> mayPromote l' t l e
-      let bindings = zipWith3 (\x t e -> (x, t, l', e)) xs ts es'
-          l = case strat of
+      argRes <-
+        zipWithM (\arg t -> typing arg (Just t) argLabel) args paraTypes
+      let (argTs', argLs, _) = unzip3 argRes
+          argLabel' = case strat of
+            JoinStrategy -> fromMaybe (foldl' (\/) SafeL argLs) argLabel
+            _ -> SafeL
+      -- Promote all arguments to the right labels.
+      args' <- forM argRes $ uncurry3 $ mayPromote argLabel'
+      xs <- freshes $ length argRes
+      let bindings = zipWith3 (\x t e -> (x, t, argLabel', e)) xs argTs' args'
+          minLabel = case strat of
+            JoinStrategy -> argLabel'
             LeakyStrategy -> LeakyL
             SafeStrategy -> SafeL
-            _ -> l'
-          l'' = fromMaybe l ml
+          -- The resulting label of this expression is either the given one, or
+          -- the minimal label.
+          l' = fromMaybe minLabel ml
+      -- Promote the resulting expression.
       e' <-
-        mayPromote l'' resType l $
-          mayLets
+        mayPromote l' resType minLabel $
+          lets_
             bindings
             App
               { fn = GV f,
                 args = V <$> xs,
-                appKind = Just $ fromMaybe appKind' appKind
+                appKind = case appKind of
+                  Just InfixApp -> Just InfixApp
+                  _ -> Just appKind'
               }
-      return
-        ( resType,
-          l'',
-          e'
-        )
+      return (resType, l', e')
+    -- Application for functions
     typeFnApp = do
-      (tFn', l', fn') <- typing fn Nothing ml
-      (res, t') <- go args tFn'
+      (fnTy', l', fn') <- infer_ fn ml
+      (argRes, t') <- go args fnTy'
       xs <- freshes (length args)
-      let bindings = zipWith (\x (t, l, e) -> (x, t, l, e)) xs res
+      let bindings = zipWith (\x (t, l, e) -> (x, t, l, e)) xs argRes
       x <- fresh
       return
         ( t',
           l',
-          mayLets
-            ((x, tFn', l', fn') : bindings)
+          lets_
+            ((x, fnTy', l', fn') : bindings)
             App
               { fn = V x,
                 args = V <$> xs,
                 appKind = Just FunApp
               }
         )
+    -- @t@ must be well-kinded and in core taype ANF.
     go [] t = return ([], t)
     go (arg : args') t = do
-      (argTy, argLabel, _, bnd) <- isPi t
-      (argTy', argLabel', arg') <-
-        typing arg (Just argTy) (Just (mustLabel argLabel))
-      -- Unfortunately we have to kind the pi-type body here even though it is
-      -- well-kinded, because it may not be in core taype ANF after
-      -- instantiation.
-      (_, body') <- inferKind (instantiate1 arg' bnd)
+      (argTy', argLabel, _, bnd) <- isPi t
+      let argLabel' = mustLabel argLabel
+      arg' <- check arg argTy' argLabel'
+      -- Unfortunately, we have to kind the pi-type body again here even though
+      -- it was in good form, because it may not be in core taype ANF anymore
+      -- after instantiation.
+      body' <- kinded $ instantiate_ arg' bnd
       (res, t') <- go args' body'
       return ((argTy', argLabel', arg') : res, t')
+
+-- NOTE: checking mode for let is possible, but it requires a local definition
+-- context.
 typing Let {..} Nothing ml = do
   (rhsTy', rhsLabel', rhs') <- typing rhs mTy label
   (x, body) <- unbind1 bnd
-  (t, l', body') <- extendCtx1 x rhsTy' rhsLabel' binder $ typing body Nothing ml
+  (t, l', body') <- extendCtx1 x rhsTy' rhsLabel' binder $ infer_ body ml
   -- Unfortunately, we have to kind @t@ again even though it is kinded, because
-  -- it may not be in core taype ANF after instantiation.
-  (_, t') <- inferKind $ substitute x rhs' t
+  -- it may not be in core taype ANF after substitution.
+  t' <- kinded $ substitute x rhs' t
   return
     ( t',
       l',
@@ -218,15 +251,15 @@ typing Let {..} Nothing ml = do
         { mTy = Just rhsTy',
           label = Just rhsLabel',
           rhs = rhs',
-          bnd = abstract1 x body',
+          bnd = abstract_ x body',
           ..
         }
     )
--- TODO: do not support dependent types
+-- TODO: support dependent types
 typing Ite {..} Nothing ml = do
-  (_, condLabel, cond') <- typing cond (Just TBool) ml
-  (leftTy', leftLabel, left') <- typing left Nothing ml
-  (rightTy', rightLabel, right') <- typing right Nothing ml
+  (condLabel, cond') <- check_ cond TBool ml
+  (leftTy', leftLabel, left') <- infer_ left ml
+  (rightTy', rightLabel, right') <- infer_ right ml
   equate leftTy' rightTy'
   let l' = condLabel \/ leftLabel \/ rightLabel
   left'' <- mayPromote l' leftTy' leftLabel left'
@@ -235,7 +268,7 @@ typing Ite {..} Nothing ml = do
   return
     ( leftTy',
       l',
-      mayLets
+      lets_
         [(x, TBool, condLabel, cond')]
         Ite
           { mTy = Just leftTy',
@@ -245,7 +278,7 @@ typing Ite {..} Nothing ml = do
           }
     )
 typing Pair {..} mt ml = do
-  (mLeftTy, mRightTy) <- mapM isProd mt <&> (\x -> (fst <$> x, snd <$> x))
+  (mLeftTy, mRightTy) <- mapM isProd mt <&> NE.unzip
   (leftTy', leftLabel, left') <- typing left mLeftTy ml
   (rightTy', rightLabel, right') <- typing right mRightTy ml
   let l' = leftLabel \/ rightLabel
@@ -256,90 +289,81 @@ typing Pair {..} mt ml = do
   return
     ( Prod {left = leftTy', right = rightTy'},
       l',
-      mayLets
+      lets_
         [ (xl, leftTy', l', left''),
           (xr, rightTy', l', right'')
         ]
         Pair {left = V xl, right = V xr}
     )
--- TODO: do not support dependent type yet
+-- TODO: support dependent types
 typing PCase {..} Nothing ml = do
-  (condTy', condLabel, cond') <- typing cond Nothing ml
+  (condTy', condLabel, cond') <- infer_ cond ml
   (leftTy', rightTy') <- mayWithLoc (peekLoc cond) $ isProd condTy'
   ((xl, xr), body) <- unbind2 bnd2
-  (t', l, body') <-
+  (bodyTy', bodyLabel, body') <-
     extendCtx
       [ (xl, leftTy', condLabel, lBinder),
         (xr, rightTy', condLabel, rBinder)
       ]
-      $ typing body Nothing ml
+      $ infer_ body ml
   -- @t'@ cannot refer to @xl@ or @xr@, otherwise it would be dependent type.
-  notAppearIn [xl, xr] t'
-  let l' = condLabel \/ l
-  body'' <- mayPromote l' t' l body'
+  notAppearIn [xl, xr] bodyTy'
+  let l' = condLabel \/ bodyLabel
+  body'' <- mayPromote l' bodyTy' bodyLabel body'
   x <- fresh
   return
-    ( t',
+    ( bodyTy',
       l',
-      mayLets
+      lets_
         [(x, Prod {left = leftTy', right = rightTy'}, condLabel, cond')]
         PCase
-          { mTy = Just t',
+          { mTy = Just bodyTy',
             cond = V x,
             bnd2 = abstract_ (xl, xr) body'',
             ..
           }
     )
+-- TODO: support dependent types
 typing Case {..} Nothing ml = do
-  (condTy', condLabel, cond') <- typing cond Nothing ml
-  (ref, ctors) <-
-    maybeGV condTy' >>= \case
-      -- TODO
-      Just (ref, ADTDef {..}) -> return (ref, ctors)
-      _ ->
-        mayWithLoc (peekLoc cond) $
-          err
-            [ [ DH "The discriminee to the pattern matching is not an ADT",
-                DC cond
-              ],
-              [DH "It has type", DC condTy']
-            ]
+  (condTy', condLabel, cond') <- infer_ cond ml
+  (ref, ctors) <- isCaseCond cond condTy'
   augAlts <- joinAlts alts ctors
   res <- mapM (typeCaseAlt condLabel) augAlts
-  let ts' = res <&> \(_, _, _, t, _, _) -> t
-      t' = head ts'
-  equateMany ts'
-  forM_ res $ \(_, _, xs, t, _, _) -> notAppearIn xs t
+  let bodyTs' = res <&> \(_, _, _, t', _, _) -> t'
+  equateMany bodyTs'
+  forM_ res $ \(_, _, xs, t', _, _) -> notAppearIn xs t'
   let l' = flipfoldl' (\(_, _, _, _, l, _) -> (l \/)) condLabel res
-  alts' <- mapM (promote l') res
+  alts' <- mapM (promoteAlt l') res
+  let bodyTy' = head bodyTs'
   x <- fresh
   return
-    ( t',
+    ( bodyTy',
       l',
-      mayLets
-        [(x, GV {..}, condLabel, cond')]
+      lets_
+        [(x, GV ref, condLabel, cond')]
         Case
-          { mTy = Just t',
+          { mTy = Just bodyTy',
             cond = V x,
             alts = alts'
           }
     )
   where
+    -- Type check an alternative.
     typeCaseAlt condLabel (ctor, paraTypes, binders, bnd) = do
       let n = length paraTypes
       (xs, body) <- unbindMany n bnd
-      (t', l, body') <-
+      (bodyTy', bodyLabel, body') <-
         extendCtx (zip4 xs paraTypes (replicate n condLabel) binders) $
-          typing body Nothing ml
-      return (ctor, binders, xs, t', l, body')
-    promote l' (ctor, binders, xs, t', l, body') = do
-      body'' <- mayPromote l' t' l body'
+          infer_ body ml
+      return (ctor, binders, xs, bodyTy', bodyLabel, body')
+    promoteAlt l' (ctor, binders, xs, bodyTy', bodyLabel, body') = do
+      body'' <- mayPromote l' bodyTy' bodyLabel body'
       return CaseAlt {bnd = abstract_ xs body'', ..}
 -- TODO: checking mode is possible
 typing Mux {..} Nothing Nothing = do
-  (_, _, cond') <- typing cond (Just OBool) (Just SafeL)
-  (leftTy', _, left') <- typing left Nothing (Just SafeL)
-  (rightTy', _, right') <- typing right Nothing (Just SafeL)
+  cond' <- check cond OBool SafeL
+  (leftTy', _, left') <- infer_ left (Just SafeL)
+  (rightTy', _, right') <- infer_ right (Just SafeL)
   equate leftTy' rightTy'
   void $ checkKind leftTy' OblivK
   x <- fresh
@@ -348,7 +372,7 @@ typing Mux {..} Nothing Nothing = do
   return
     ( leftTy',
       SafeL,
-      mayLets
+      lets_
         [ (x, OBool, SafeL, cond'),
           (xl, leftTy', SafeL, left'),
           (xr, rightTy', SafeL, right')
@@ -357,9 +381,9 @@ typing Mux {..} Nothing Nothing = do
     )
 -- TODO: checking mode is possible
 typing OIte {..} Nothing Nothing = do
-  (_, _, cond') <- typing cond (Just OBool) (Just SafeL)
-  (leftTy', _, left') <- typing left Nothing (Just LeakyL)
-  (rightTy', _, right') <- typing right Nothing (Just LeakyL)
+  cond' <- check cond OBool SafeL
+  (leftTy', _, left') <- infer_ left (Just LeakyL)
+  (rightTy', _, right') <- infer_ right (Just LeakyL)
   equate leftTy' rightTy'
   x <- fresh
   xl <- fresh
@@ -367,7 +391,7 @@ typing OIte {..} Nothing Nothing = do
   return
     ( leftTy',
       LeakyL,
-      mayLets
+      lets_
         [ (x, OBool, SafeL, cond'),
           (xl, leftTy', LeakyL, left'),
           (xr, rightTy', LeakyL, right')
@@ -375,7 +399,7 @@ typing OIte {..} Nothing Nothing = do
         OIte {cond = V x, left = V xl, right = V xr}
     )
 typing OPair {..} mt Nothing = do
-  (mLeftTy, mRightTy) <- mapM isOProd mt <&> (\x -> (fst <$> x, snd <$> x))
+  (mLeftTy, mRightTy) <- mapM isOProd mt <&> NE.unzip
   (leftTy', _, left') <- typing left mLeftTy (Just SafeL)
   (rightTy', _, right') <- typing right mRightTy (Just SafeL)
   void $ checkKind leftTy' OblivK
@@ -385,27 +409,27 @@ typing OPair {..} mt Nothing = do
   return
     ( OProd {left = leftTy', right = rightTy'},
       SafeL,
-      mayLets
+      lets_
         [ (xl, leftTy', SafeL, left'),
           (xr, rightTy', SafeL, right')
         ]
         OPair {left = V xl, right = V xr}
     )
 typing OPCase {..} Nothing ml = do
-  (condTy', _, cond') <- typing cond Nothing (Just SafeL)
+  (condTy', _, cond') <- infer_ cond (Just SafeL)
   (leftTy', rightTy') <- mayWithLoc (peekLoc cond) $ isOProd condTy'
   ((xl, xr), body) <- unbind2 bnd2
-  (t', l, body') <-
+  (bodyTy', bodyLabel, body') <-
     extendCtx
       [ (xl, leftTy', SafeL, lBinder),
         (xr, rightTy', SafeL, rBinder)
       ]
-      $ typing body Nothing ml
+      $ infer_ body ml
   x <- fresh
   return
-    ( t',
-      l,
-      mayLets
+    ( bodyTy',
+      bodyLabel,
+      lets_
         [(x, OProd {left = leftTy', right = rightTy'}, SafeL, cond')]
         OPCase
           { cond = V x,
@@ -418,34 +442,40 @@ typing OInj {mTy = Just t, ..} Nothing Nothing = do
   left' <- checkKind left OblivK
   right' <- checkKind right OblivK
   let injTy' = if tag then left' else right'
-  (_, _, inj') <- typing inj (Just injTy') (Just SafeL)
+  inj' <- check inj injTy' SafeL
   let t' = OSum {left = left', right = right'}
   x <- fresh
   return
     ( t',
       SafeL,
-      mayLets
+      lets_
         [(x, injTy', SafeL, inj')]
         OInj {mTy = Just t', inj = V x, ..}
     )
 typing OInj {..} (Just t') Nothing = do
-  whenJust mTy $ equate t'
+  whenJust mTy $ \t -> do
+    void $ checkKind t OblivK
+    equate t' t
   (left, right) <- isOSum t'
+  -- We have to check @t'@ again because @left@ and @right@ may not be in core
+  -- taype ANF, after normalization (in 'isOSum').
   left' <- checkKind left OblivK
   right' <- checkKind right OblivK
   let injTy' = if tag then left' else right'
-  (_, _, inj') <- typing inj (Just injTy') (Just SafeL)
+  inj' <- check inj injTy' SafeL
   x <- fresh
   return
     ( t',
       SafeL,
-      mayLets
+      lets_
         [(x, injTy', SafeL, inj')]
-        OInj {mTy = Just t', inj = V x, ..}
+        -- The type annotation in oblivious injection is always in an oblivious
+        -- sum form for convenience.
+        OInj {mTy = Just (OSum {left = left', right = right'}), inj = V x, ..}
     )
 -- TODO: checking mode is possible
 typing OCase {..} Nothing Nothing = do
-  (condTy', _, cond') <- typing cond Nothing (Just SafeL)
+  (condTy', _, cond') <- infer_ cond (Just SafeL)
   (left, right) <- mayWithLoc (peekLoc cond) $ isOSum condTy'
   left' <- checkKind left OblivK
   right' <- checkKind right OblivK
@@ -453,22 +483,22 @@ typing OCase {..} Nothing Nothing = do
   (xr, rBody) <- unbind1 rBnd
   (lBodyTy', _, lBody') <-
     extendCtx1 xl left' SafeL lBinder $
-      typing lBody Nothing (Just LeakyL)
+      infer_ lBody (Just LeakyL)
   (rBodyTy', _, rBody') <-
     extendCtx1 xr right' SafeL rBinder $
-      typing rBody Nothing (Just LeakyL)
+      infer_ rBody (Just LeakyL)
   equate lBodyTy' rBodyTy'
   x <- fresh
   return
     ( lBodyTy',
       LeakyL,
-      mayLets
+      lets_
         [(x, OSum {left = left', right = right'}, SafeL, cond')]
         OCase
           { mTy = Just lBodyTy',
             cond = V x,
-            lBnd = abstract1 xl lBody',
-            rBnd = abstract1 xr rBody',
+            lBnd = abstract_ xl lBody',
+            rBnd = abstract_ xr rBody',
             ..
           }
     )
@@ -479,15 +509,15 @@ typing Tape {..} mt Nothing = do
   return
     ( t',
       SafeL,
-      mayLets
+      lets_
         [(x, t', LeakyL, e')]
         Tape {expr = V x}
     )
 typing Loc {..} mt ml = withLoc loc $ withCur expr $ typing expr mt ml
 typing Asc {..} Nothing ml = do
-  (_, ty') <- inferKind ty
-  (l, expr') <- check expr ty' ml
-  return (ty', l, expr')
+  ty' <- kinded ty
+  (l, e') <- check_ expr ty' ml
+  return (ty', l, e')
 
 -- Check label.
 typing e mt (Just l') = do
@@ -515,6 +545,9 @@ typing _ Nothing Nothing =
 -- checking mode. This function returns the type's kind and its full
 -- elaboration.
 --
+-- Similar to type checker, the local and global contexts have to be well-formed
+-- before kinding.
+--
 -- The returned kind must be the same as the given kind if in checking mode.
 --
 -- The returned type must be in core taype ANF. Of course, it must also be
@@ -533,9 +566,9 @@ kinding GV {..} Nothing =
     _ ->
       err [[DD "Type", DQ ref, DD "is not in scope"]]
 kinding Prod {..} Nothing = do
-  (lk, left') <- inferKind left
-  (rk, right') <- inferKind right
-  return (lk \/ rk \/ PublicK, Prod {left = left', right = right'})
+  (leftKind, left') <- inferKind left
+  (rightKind, right') <- inferKind right
+  return (leftKind \/ rightKind \/ PublicK, Prod {left = left', right = right'})
 kinding OProd {..} Nothing = do
   left' <- checkKind left OblivK
   right' <- checkKind right OblivK
@@ -545,89 +578,60 @@ kinding OSum {..} Nothing = do
   right' <- checkKind right OblivK
   return (OblivK, OSum {left = left', right = right'})
 kinding Pi {..} Nothing = do
-  (_, ty') <- inferKind ty
+  ty' <- kinded ty
   (x, body) <- unbind1 bnd
   l <- labeling label
-  (_, body') <- extendCtx1 x ty' l binder $ inferKind body
-  return (MixedK, Pi {ty = ty', label = Just l, bnd = abstract1 x body', ..})
+  body' <- extendCtx1 x ty' l binder $ kinded body
+  return (MixedK, Pi {ty = ty', label = Just l, bnd = abstract_ x body', ..})
 kinding App {..} Nothing = do
   (ref, ty) <-
     maybeGV fn >>= \case
       Just (ref, OADTDef {..}) -> return (ref, ty)
       Just (ref, _) ->
-        err
-          [ [ DD "Definition",
-              DQ ref,
-              DD "is not an oblivious ADT"
-            ]
-          ]
+        err [[DD "Definition", DQ ref, DD "is not an oblivious ADT"]]
       _ -> err [[DH "Type application is not an oblivious ADT", DC fn]]
+  -- Currently we only support a single argument for OADTs.
   arg <- case args of
     [arg] -> return arg
     _ -> errArity TypeApp ref (length args) 1
-  (_, arg') <- check arg ty (Just SafeL)
+  arg' <- check arg ty SafeL
   x <- fresh
   return
     ( OblivK,
-      Let
-        { mTy = Just ty,
-          label = Just SafeL,
-          rhs = arg',
-          binder = Nothing,
-          bnd =
-            abstract1 x $
-              App
-                { appKind = Just TypeApp,
-                  fn = GV ref,
-                  args = [V x]
-                }
-        }
+      lets_
+        [(x, ty, SafeL, arg')]
+        App {fn = GV ref, args = [V x], appKind = Just TypeApp}
     )
 kinding Let {..} Nothing = do
   checkLabel label SafeL
-  mTy' <- snd <<$>> mapM inferKind mTy
-  (t', _, rhs') <- typing rhs mTy' (Just SafeL)
+  mTy' <- mapM kinded mTy
+  (rhsTy', _, rhs') <- typing rhs mTy' (Just SafeL)
   (x, body) <- unbind1 bnd
-  body' <- extendCtx1 x t' SafeL binder $ checkKind body OblivK
+  body' <- extendCtx1 x rhsTy' SafeL binder $ checkKind body OblivK
   return
     ( OblivK,
       Let
-        { mTy = Just t',
+        { mTy = Just rhsTy',
           label = Just SafeL,
           rhs = rhs',
-          bnd = abstract1 x body',
+          bnd = abstract_ x body',
           ..
         }
     )
 kinding Ite {..} Nothing = do
-  (_, cond') <- check cond TBool (Just SafeL)
+  cond' <- check cond TBool SafeL
   left' <- checkKind left OblivK
   right' <- checkKind right OblivK
   x <- fresh
   return
     ( OblivK,
-      Let
-        { mTy = Just TBool,
-          label = Just SafeL,
-          rhs = cond',
-          binder = Nothing,
-          bnd =
-            abstract1 x $
-              Ite
-                { cond = V x,
-                  left = left',
-                  right = right',
-                  ..
-                }
-        }
+      lets_
+        [(x, TBool, SafeL, cond')]
+        Ite {cond = V x, left = left', right = right', ..}
     )
 kinding PCase {..} Nothing = do
-  (t', _, cond') <- typing cond Nothing (Just SafeL)
-  -- NOTE: even though 'isProd' performs weak head normalization, the two
-  -- components are still in core taype ANF. This is because @t'@ is never an
-  -- oblivious type if it is a product and well-kinded, so the head of @t'@ has
-  -- to be @Prod@ already, with possibly @Loc@ wrappers.
-  (left', right') <- mayWithLoc (peekLoc cond) $ isProd t'
+  (condTy', _, cond') <- infer_ cond (Just SafeL)
+  (left', right') <- mayWithLoc (peekLoc cond) $ isProd condTy'
   ((xl, xr), body) <- unbind2 bnd2
   body' <-
     extendCtx [(xl, left', SafeL, lBinder), (xr, right', SafeL, rBinder)] $
@@ -635,48 +639,24 @@ kinding PCase {..} Nothing = do
   x <- fresh
   return
     ( OblivK,
-      Let
-        { mTy = Just (Prod {left = left', right = right'}),
-          label = Just SafeL,
-          rhs = cond',
-          binder = Nothing,
-          bnd =
-            abstract1 x $
-              PCase
-                { cond = V x,
-                  bnd2 = abstract_ (xl, xr) body',
-                  ..
-                }
-        }
+      lets_
+        [(x, Prod {left = left', right = right'}, SafeL, cond')]
+        PCase {cond = V x, bnd2 = abstract_ (xl, xr) body', ..}
     )
 kinding Case {..} Nothing = do
-  (t', _, cond') <- typing cond Nothing (Just SafeL)
-  (ref, ctors) <-
-    maybeGV t' >>= \case
-      -- TODO
-      Just (ref, ADTDef {..}) -> return (ref, ctors)
-      _ ->
-        mayWithLoc (peekLoc cond) $
-          err
-            [ [ DH "The discriminee to the pattern matching is not an ADT",
-                DC cond
-              ],
-              [DH "It has type", DC t']
-            ]
+  (condTy', _, cond') <- infer_ cond (Just SafeL)
+  (ref, ctors) <- isCaseCond cond condTy'
   augAlts <- joinAlts alts ctors
   alts' <- mapM kindCaseAlt augAlts
   x <- fresh
   return
     ( OblivK,
-      Let
-        { mTy = Just (GV ref),
-          label = Just SafeL,
-          rhs = cond',
-          binder = Nothing,
-          bnd = abstract1 x Case {cond = V x, alts = alts', ..}
-        }
+      lets_
+        [(x, GV ref, SafeL, cond')]
+        Case {cond = V x, alts = alts', ..}
     )
   where
+    -- Kind check an alternative.
     kindCaseAlt (ctor, paraTypes, binders, bnd) = do
       let n = length paraTypes
       (xs, body) <- unbindMany n bnd
@@ -703,21 +683,33 @@ kinding _ Nothing =
       [DD "Are you sure this is a type?"]
     ]
 
--- | Infer the type of the expression.
+-- | Infer the type of an expression.
 infer :: Expr Name -> TcM (Ty Name, Label, Expr Name)
 infer e = typing e Nothing Nothing
 
--- | Check the type of the expression.
-check :: Expr Name -> Ty Name -> Maybe Label -> TcM (Label, Expr Name)
-check e t ml = typing e (Just t) ml <&> \(_, l, e') -> (l, e')
+-- | Infer the type of an expression, with possibly label.
+infer_ :: Expr Name -> Maybe Label -> TcM (Ty Name, Label, Expr Name)
+infer_ e = typing e Nothing
 
--- | Infer the kind of the type.
+-- | Check the type and label of an expression.
+check :: Expr Name -> Ty Name -> Label -> TcM (Expr Name)
+check e t l = snd <$> check_ e t (Just l)
+
+-- | Check the type of an expression, with possibly label.
+check_ :: Expr Name -> Ty Name -> Maybe Label -> TcM (Label, Expr Name)
+check_ e t ml = typing e (Just t) ml <&> \(_, l, e') -> (l, e')
+
+-- | Infer the kind of a type.
 inferKind :: Ty Name -> TcM (Kind, Ty Name)
 inferKind t = kinding t Nothing
 
--- | Check the kind of the type.
+-- | Check the kind of a type.
 checkKind :: Ty Name -> Kind -> TcM (Ty Name)
 checkKind t k = kinding t (Just k) <&> snd
+
+-- | Make sure a type is kinded, but do not care what the kind is.
+kinded :: Ty Name -> TcM (Ty Name)
+kinded t = inferKind t <&> snd
 
 -- | Infer label if not privided.
 labeling :: Maybe Label -> TcM Label
@@ -735,17 +727,18 @@ checkLabel ml l' = whenJust ml $ \l ->
         [DH "Got", DC l]
       ]
 
-mustLabel :: Maybe Label -> Label
-mustLabel = fromMaybe $ oops "Label not available"
-
 checkArity :: AppKind -> Text -> [b] -> [c] -> TcM ()
 checkArity appKind ref args paraTypes =
   let m = length args
       n = length paraTypes
    in unless (m == n) $ errArity appKind ref m n
 
+----------------------------------------------------------------
+-- Equality check
+
 -- | Check the equivalence of two expressions. They must be already well-kinded
--- or well-typed.
+-- or well-typed. However, we do not assume they are in core taype ANF. NOTE:
+-- this assumption may change in the future.
 equate :: Expr Name -> Expr Name -> TcM ()
 equate e e' | e == e' = pass
 equate e e' = do
@@ -777,6 +770,9 @@ equate e e' = do
     go Case {cond, alts} Case {cond = cond', alts = alts'}
       | length alts == length alts' = do
         equate cond cond'
+        -- A simple way to match the alternatives. This will not be needed at
+        -- all in the future, when we assume the input expressions are all in
+        -- core taype ANF.
         let sortedAlts = sortOn (\CaseAlt {..} -> ctor) $ toList alts
             sortedAlts' = sortOn (\CaseAlt {..} -> ctor) $ toList alts'
         zipWithM_ goAlt sortedAlts sortedAlts'
@@ -828,7 +824,6 @@ equate e e' = do
         (_, rBody, rBody') <- unbind1With rBnd rBnd'
         equate lBody lBody'
         equate rBody rBody'
-    go nf nf' | nf == nf' = pass
     go
       Mux {cond, left, right}
       Mux {cond = cond', left = left', right = right'} = do
@@ -837,6 +832,7 @@ equate e e' = do
         equate right right'
     go Promote {expr} Promote {expr = expr'} = equate expr expr'
     go Tape {expr} Tape {expr = expr'} = equate expr expr'
+    go nf nf' | nf == nf' = pass
     go _ _ = errEquate
     errEquate =
       err
@@ -848,10 +844,12 @@ equate e e' = do
 equateMany :: NonEmpty (Expr Name) -> TcM ()
 equateMany (e :| es) = forM_ es $ equate e
 
--- | Weak head normal form.
+-- | Weak head normal form
 --
--- We do not assume the expression is kinded or typed. This function never
--- fails.
+-- This function never fails.
+--
+-- We do not assume the expression is kinded or typed. NOTE: this assumption
+-- may change in the future.
 --
 -- At the moment, oblivious constructs are not normalized. While possible, it is
 -- mostly unnecessary in practice.
@@ -865,15 +863,15 @@ whnf e@App {args = arg : args, ..} = do
   nf <- whnf fn
   case nf of
     Lam {..} ->
-      whnf App {fn = instantiate1 arg bnd, ..}
+      whnf App {fn = instantiate_ arg bnd, ..}
     GV {..} ->
       lookupDef ref >>= \case
-        Just OADTDef {..} -> whnf $ instantiate1 arg bnd
+        Just OADTDef {..} -> whnf $ instantiate_ arg bnd
         _ -> return e {fn = nf}
     App {fn = nf', args = args'} ->
       return App {fn = nf', args = args' <> args, ..}
     _ -> return e {fn = nf}
-whnf Let {..} = whnf $ instantiate1 rhs bnd
+whnf Let {..} = whnf $ instantiate_ rhs bnd
 whnf Ite {..} = do
   nf <- whnf cond
   case nf of
@@ -900,8 +898,32 @@ whnf PCase {..} = do
     _ -> return PCase {cond = nf, ..}
 whnf Loc {..} = whnf expr
 whnf Asc {..} = whnf expr
--- TODO
 whnf e = return e
+
+----------------------------------------------------------------
+-- Helper functions
+
+-- | Build a series of let bindings, given the bindings and body. If the list of
+-- bindings is empty, simply return the body.
+lets_ :: [(Name, Ty Name, Label, Expr Name)] -> Expr Name -> Expr Name
+lets_ = flip $ foldr go
+  where
+    go (x, t, l, rhs) body =
+      Let
+        { mTy = Just t,
+          label = Just l,
+          binder = Nothing,
+          bnd = abstract_ x body,
+          ..
+        }
+
+mustLabel :: Maybe Label -> Label
+mustLabel = fromMaybe $ oops "Label not available"
+
+maybeGV :: MonadReader Env m => Expr Name -> m (Maybe (Text, Def Name))
+maybeGV GV {..} = (ref,) <<$>> lookupDef ref
+maybeGV Loc {..} = maybeGV expr
+maybeGV _ = return Nothing
 
 -- | Check if a type is a pi-type and return its components.
 --
@@ -918,11 +940,6 @@ isPi t =
     [ [DD "Expecting a function"],
       [DH "But instead got", DC t]
     ]
-
-maybeGV :: MonadReader Env m => Expr Name -> m (Maybe (Text, Def Name))
-maybeGV GV {..} = (ref,) <<$>> lookupDef ref
-maybeGV Loc {..} = maybeGV expr
-maybeGV _ = return Nothing
 
 -- | Check if a type is a product type and return its components.
 --
@@ -962,30 +979,28 @@ isOSum t = do
           [DH "But instead got", DC t]
         ]
 
+-- | Check if an expression with its type is a discriminee to an ADT case
+-- analysis, and return the ADT name and the constructors.
+isCaseCond :: Expr Name -> Ty Name -> TcM (Text, NonEmpty (Text, [Expr Name]))
+isCaseCond cond condTy =
+  maybeGV condTy >>= \case
+    Just (ref, ADTDef {..}) -> return (ref, ctors)
+    _ ->
+      mayWithLoc (peekLoc cond) $
+        err
+          [ [ DH "The discriminee to the pattern matching is not an ADT",
+              DC cond
+            ],
+            [DH "It has type", DC condTy]
+          ]
+
+-- | Promote an expression to a higher label if it is the case. If the target
+-- label is lower, then throw an error.
 mayPromote :: Label -> Ty Name -> Label -> Expr Name -> TcM (Expr Name)
 mayPromote l' t l e | l < l' = do
   x <- fresh
-  return
-    Let
-      { mTy = Just t,
-        label = Just l,
-        rhs = e,
-        binder = Nothing,
-        bnd = abstract1 x $ Promote (V x)
-      }
+  return $ lets_ [(x, t, l, e)] $ Promote (V x)
 mayPromote l' _ l e = checkLabel (Just l) l' >> return e
-
-mayLets :: [(Name, Ty Name, Label, Expr Name)] -> Expr Name -> Expr Name
-mayLets = flip $ foldr go
-  where
-    go (x, t, l, rhs) body =
-      Let
-        { mTy = Just t,
-          label = Just l,
-          binder = Nothing,
-          bnd = abstract1 x body,
-          ..
-        }
 
 -- | Join the pattern matching alternatives and the corresponding ADT's
 -- constructors list.
@@ -1038,43 +1053,17 @@ joinAlts alts ctors =
     listD [x, y] = [DC x, DD "and", DC y]
     listD (x : xs) = DC (x <> ",") : listD xs
 
-findAndDel :: (a -> Bool) -> [a] -> Maybe (a, [a])
-findAndDel _ [] = Nothing
-findAndDel p (x : xs)
-  | p x = Just (x, xs)
-  | otherwise = second (x :) <$> findAndDel p xs
-
-insertMany ::
-  (Foldable t, Hashable k) => HashMap k v -> t (k, v) -> HashMap k v
-insertMany = flipfoldl' $ uncurry M.insert
+peekLoc :: Expr Name -> Maybe Int
+peekLoc Loc {..} = Just loc
+peekLoc _ = Nothing
 
 -- TODO
 notAppearIn :: [Name] -> Expr Name -> TcM ()
 notAppearIn xs e =
   when (any (`elem` xs) e) $ oops "do not support dependent types yet"
 
-extendGCtx1 ::
-  (MonadError Err m, MonadReader Options m) =>
-  GCtx Name ->
-  Text ->
-  Def Name ->
-  m (GCtx Name)
-extendGCtx1 gctx name def =
-  case gctx !? name of
-    Just def' -> do
-      Options {optFile = file, optCode = code} <- ask
-      err_ (getDefLoc def) $
-        "Definition" <+> dquotes (pretty name) <+> "has already been defined at"
-          <> hardline
-          <> pretty (renderFancyLocation file code (getDefLoc def'))
-    _ -> return $ M.insert name def gctx
-
-extendGCtx ::
-  (MonadError Err m, MonadReader Options m) =>
-  GCtx Name ->
-  [(Text, Def Name)] ->
-  m (GCtx Name)
-extendGCtx = foldlM $ uncurry . extendGCtx1
+----------------------------------------------------------------
+-- Definitions checker
 
 -- | Type check all definitions.
 checkDefs :: Options -> [(Text, Def Name)] -> ExceptT Err IO (GCtx a)
@@ -1100,14 +1089,14 @@ checkDefs options defs = runDcM options $ do
 checkDef :: Def Name -> TcM (Def Name)
 checkDef FunDef {..} = do
   let l = mustLabel label
-  (_, expr') <- withLabel l $ check expr ty (Just l)
+  expr' <- withLabel l $ check expr ty l
   return FunDef {expr = expr', ..}
 checkDef OADTDef {..} = do
   (x, body) <- unbind1 bnd
   body' <-
     withLabel SafeL $
       extendCtx1 x ty SafeL binder $ checkKind body OblivK
-  return OADTDef {bnd = abstract1 x body', ..}
+  return OADTDef {bnd = abstract_ x body', ..}
 -- 'ADTDef' and 'CtorDef' have been checked in pre-checker, and 'BuiltinDef'
 -- does not need to be checked.
 checkDef def = return def
@@ -1124,10 +1113,9 @@ preCheckDefs allDefs = do
   -- core taype ANF), because it only contains ADTs (and prelude) at the moment.
   gctx <- extendGCtx preludeGCtx adtDefs
   options <- ask
-  adtDefs' <- lift $
-    forM adtDefs $
-      \(name, def) ->
-        (name,) <$> runTcM (initEnv options gctx) (preCheckDef def)
+  adtDefs' <-
+    lift $
+      forM adtDefs $ secondM $ runTcM (initEnv options gctx) . preCheckDef
   -- Extend global context with the ADTs and their constructors. Note that the
   -- types of all constructors are already in the right form after pre-check.
   gctx' <- extendGCtx preludeGCtx $ foldMap adtWithCtors adtDefs'
@@ -1162,17 +1150,15 @@ preCheckDef FunDef {..} = do
     go = case attr of
       SectionAttr -> preCheckSecRetType True ty
       RetractionAttr -> preCheckSecRetType False ty
-      _ -> withLabel label' $ snd <$> inferKind ty
+      _ -> withLabel label' $ kinded ty
     label' = case attr of
       SectionAttr -> SafeL
       RetractionAttr -> LeakyL
       SafeAttr -> SafeL
       LeakyAttr -> LeakyL
 preCheckDef ADTDef {..} = do
-  ctors' <- mapM go ctors
+  ctors' <- forM ctors $ secondM $ mapM (`checkKind` PublicK)
   return ADTDef {ctors = ctors', ..}
-  where
-    go (ctor, paraTypes) = (ctor,) <$> mapM (`checkKind` PublicK) paraTypes
 preCheckDef OADTDef {..} = do
   ty' <- checkKind ty PublicK
   return OADTDef {ty = ty', ..}
@@ -1213,14 +1199,44 @@ preCheckSecRetType b t = do
         label = Just SafeL,
         binder = binder1,
         bnd =
-          abstract1 x1 $
+          abstract_ x1 $
             Pi
               { ty = typ2',
                 label = Just l,
                 binder = binder2,
-                bnd = abstract1 x2 bnd2'
+                bnd = abstract_ x2 bnd2'
               }
       }
+
+insertMany ::
+  (Foldable t, Hashable k) => HashMap k v -> t (k, v) -> HashMap k v
+insertMany = flipfoldl' $ uncurry M.insert
+
+extendGCtx1 ::
+  (MonadError Err m, MonadReader Options m) =>
+  GCtx Name ->
+  Text ->
+  Def Name ->
+  m (GCtx Name)
+extendGCtx1 gctx name def =
+  case gctx !? name of
+    Just def' -> do
+      Options {optFile = file, optCode = code} <- ask
+      err_ (getDefLoc def) $
+        "Definition" <+> dquotes (pretty name) <+> "has already been defined at"
+          <> hardline
+          <> pretty (renderFancyLocation file code (getDefLoc def'))
+    _ -> return $ M.insert name def gctx
+
+extendGCtx ::
+  (MonadError Err m, MonadReader Options m) =>
+  GCtx Name ->
+  [(Text, Def Name)] ->
+  m (GCtx Name)
+extendGCtx = foldlM $ uncurry . extendGCtx1
+
+----------------------------------------------------------------
+-- Error reporting
 
 data D
   = -- | Display a document.
@@ -1326,10 +1342,6 @@ displayMsg dss = do
 
 renderName :: Options -> BCtx Name -> Name -> Text
 renderName options bctx x = nameOrBinder options x $ lookup x bctx
-
-peekLoc :: Expr Name -> Maybe Int
-peekLoc Loc {..} = Just loc
-peekLoc _ = Nothing
 
 errArity :: AppKind -> Text -> Int -> Int -> TcM a
 errArity appKind ref actual expected =
