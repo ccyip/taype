@@ -255,14 +255,18 @@ typing Let {..} Nothing ml = do
           ..
         }
     )
--- TODO: support dependent types
 typing Ite {..} mt ml = do
-  (condLabel, cond') <- check_ cond TBool ml
-  (t', leftLabel, left') <- typing left mt ml
-  (rightLabel, right') <- check_ right t' ml
+  (condLabel, cond') <- check_ cond TBool Nothing
+  (left', leftTy', leftLabel, right', rightTy', rightLabel, t') <-
+    depType
+      typeIte
+      (inferDepIte cond' condLabel)
+      (checkDepIte cond' condLabel)
+      mt
+      (\(_, _, _, _, _, _, t) -> t)
   let l' = condLabel \/ leftLabel \/ rightLabel
-  left'' <- mayPromote l' t' leftLabel left'
-  right'' <- mayPromote l' t' rightLabel right'
+  left'' <- mayPromote l' leftTy' leftLabel left'
+  right'' <- mayPromote l' rightTy' rightLabel right'
   x <- fresh
   return
     ( t',
@@ -276,6 +280,31 @@ typing Ite {..} mt ml = do
             right = right''
           }
     )
+  where
+    typeIte = do
+      (t', leftLabel, left') <- typing left mt ml
+      (rightLabel, right') <- check_ right t' ml
+      return (left', t', leftLabel, right', t', rightLabel, t')
+    inferDepIte cond' condLabel = do
+      checkLabel (Just condLabel) SafeL
+      (leftTy', leftLabel, left') <- infer_ left ml
+      (rightTy', rightLabel, right') <- infer_ right ml
+      t' <-
+        depGen
+          (depGenIte cond')
+          ([] :| [[]])
+          ([] :| [[]])
+          (leftTy' :| [rightTy'])
+      return (left', leftTy', leftLabel, right', rightTy', rightLabel, t')
+    checkDepIte cond' condLabel t' = do
+      checkLabel (Just condLabel) SafeL
+      (leftTy', rightTy') <-
+        depMatch (depMatchIte cond') ([] :| []) ([] :| []) t' >>= \case
+          leftTy' :| [rightTy'] -> return (leftTy', rightTy')
+          _ -> depOops
+      (leftLabel, left') <- check_ left leftTy' ml
+      (rightLabel, right') <- check_ right rightTy' ml
+      return (left', leftTy', leftLabel, right', rightTy', rightLabel, t')
 typing Pair {..} mt ml = do
   (mLeftTy, mRightTy) <- mapM isProd mt <&> NE.unzip
   (leftTy', leftLabel, left') <- typing left mLeftTy ml
@@ -294,9 +323,8 @@ typing Pair {..} mt ml = do
         ]
         Pair {left = V xl, right = V xr}
     )
--- TODO: support dependent types
 typing PCase {..} mt ml = do
-  (condTy', condLabel, cond') <- infer_ cond ml
+  (condTy', condLabel, cond') <- infer cond
   (leftTy', rightTy') <- mayWithLoc (peekLoc cond) $ isProd condTy'
   ((xl, xr), body) <- unbind2 bnd2
   (bodyTy', bodyLabel, body') <-
@@ -306,7 +334,7 @@ typing PCase {..} mt ml = do
       ]
       $ typing body mt ml
   -- @t'@ cannot refer to @xl@ or @xr@, otherwise it would be dependent type.
-  notAppearIn [xl, xr] bodyTy'
+  notAppearIn bodyTy' [xl, xr]
   let l' = condLabel \/ bodyLabel
   body'' <- mayPromote l' bodyTy' bodyLabel body'
   x <- fresh
@@ -322,15 +350,14 @@ typing PCase {..} mt ml = do
             ..
           }
     )
--- TODO: support dependent types
 typing Case {..} mt ml = do
-  (condTy', condLabel, cond') <- infer_ cond ml
+  (condTy', condLabel, cond') <- infer cond
   (ref, ctors) <- isCaseCond cond condTy'
   (alt0 :| restAlts) <- joinAlts alts ctors
   res0@(_, _, _, bodyTy', _, _) <- typeCaseAlt condLabel mt alt0
   restRes <- mapM (typeCaseAlt condLabel (Just bodyTy')) restAlts
   let res = res0 :| restRes
-  forM_ res $ \(_, _, xs, t', _, _) -> notAppearIn xs t'
+  forM_ res $ \(_, _, xs, t', _, _) -> notAppearIn t' xs
   let l' = flipfoldl' (\(_, _, _, _, l, _) -> (l \/)) condLabel res
   alts' <- mapM (promoteAlt l') res
   x <- fresh
@@ -530,6 +557,220 @@ typing _ Nothing Nothing =
     [ [DD "Could not infer the type"],
       [DD "Perhaps you should add some type annotations"]
     ]
+
+-- | Assemble the types of all branches in a dependent case-like expression into
+-- a single well-kinded type.
+--
+-- This function is used in type inference mode for dependent case analysis,
+-- conditional and pair elimination.
+--
+-- The first argument is a dependent expression generator, taking a list of
+-- branch types. These branch types have to be well-kinded (under the context
+-- extended with the second and third arguments) and in core taype ANF. The
+-- generated dependent expression is also well-kinded and in core taype ANF.
+--
+-- The second argument is the extended contexts, one for each branch. It is used
+-- to collect the variables arisen from pi-type. Types in this context are
+-- well-kinded and in core taype ANF.
+--
+-- The third argument is the contexts of pattern variables, one for each branch.
+-- The types are well-kinded and in core taype ANF.
+--
+-- The last argument is the list of branch types. They are well-kinded (under
+-- the extended context) and in core taype ANF.
+--
+-- This function returns a single type that can type check the whole dependent
+-- expression. It is also well-kinded and in core taype ANF.
+depGen ::
+  (NonEmpty (Ty Name) -> TcM (Ty Name)) ->
+  NonEmpty [(Name, Ty Name, Label, Maybe Binder)] ->
+  NonEmpty [(Name, Ty Name, Label, Maybe Binder)] ->
+  NonEmpty (Ty Name) ->
+  TcM (Ty Name)
+-- Do not need to perform 'whnf' or strip 'Loc' for product and pi-types,
+-- because they are not oblivious types, and @bodyTy0@ is in core taype ANF.
+depGen gen ctxs argss branchTs@(Prod {} :| _) = do
+  (leftTs, rightTs) <- NE.unzip <$> mapM isProd branchTs
+  left <- depGen gen ctxs argss leftTs
+  right <- depGen gen ctxs argss rightTs
+  return Prod {..}
+depGen gen ctxs argss branchTs@(Pi {label, binder} :| _) = do
+  res <- mapM isPi branchTs
+  let argTs = res <&> \(argTy, _, _, _) -> argTy
+      bnds = res <&> \(_, _, _, bnd) -> bnd
+      binderLabel = mustLabel label
+  unless (all (\(_, l, _, _) -> label == l) res) $
+    err
+      [ [ DD "All branches are functions,",
+          DD "but some function arguments have different leakage labels"
+        ]
+      ]
+  x <- fresh
+  argTy <- depGen gen ctxs argss argTs
+  let bodies = instantiateName x <$> bnds
+      ctxs' =
+        NE.zipWith
+          (\(ty, _, b, _) ctx -> (x, ty, binderLabel, b) : ctx)
+          res
+          ctxs
+  body <- depGen gen ctxs' argss bodies
+  return Pi {ty = argTy, bnd = abstract_ x body, ..}
+depGen gen ctxs argss branchTs = genSingle `catchError` const genDep
+  where
+    genSingle = do
+      equateSome branchTs
+      zipWithM_
+        (\ty args -> notAppearIn ty $ args <&> \(x, _, _, _) -> x)
+        (toList branchTs)
+        (toList argss)
+      return $ head branchTs
+    genDep = do
+      sequence_ $ zipWith3 goDep (toList branchTs) (toList ctxs) (toList argss)
+      gen branchTs
+    goDep t ctx args = extendCtx ctx $ extendCtx args $ checkKind t OblivK
+
+-- | Dissemble a single type into a list of types for all branches in a
+-- dependent case-like expression.
+--
+-- This function is used in type checking mode for dependent case analysis,
+-- conditional and pair elimination.
+--
+-- The first argument is a matcher that matches the input type with the
+-- dependent expression and returns a list of branch types. The input type must
+-- be well-kinded (in the extended context) and in WHNF. The output list of
+-- types do not need to be in core taype ANF.
+--
+-- The second argument is the extended contexts, similar to the one for
+-- 'depGen'.
+--
+-- The third argument is the contexts of pattern variables, similar to the one
+-- for 'depGen'.
+--
+-- The last argument is the type given to check. It must be well-kinded and in
+-- core taype ANF.
+--
+-- This function returns a list of branch types, ready for checking each branch
+-- in the dependent expression. They are well-kinded and in core taype ANF.
+depMatch ::
+  (Ty Name -> TcM (NonEmpty (Ty Name))) ->
+  NonEmpty [(Name, Ty Name, Label, Maybe Binder)] ->
+  NonEmpty [(Name, Ty Name, Label, Maybe Binder)] ->
+  Ty Name ->
+  TcM (NonEmpty (Ty Name))
+-- Similar to 'depGen', do not need to perform 'whnf' or strip 'Loc' for
+-- product and pi-types.
+depMatch match ctxs argss Prod {..} = do
+  leftTs <- depMatch match ctxs argss left
+  rightTs <- depMatch match ctxs argss right
+  return $ NE.zipWith Prod leftTs rightTs
+depMatch match ctxs argss Pi {..} = do
+  argTs <- depMatch match ctxs argss ty
+  (x, body) <- unbind1 bnd
+  let binderLabel = mustLabel label
+      ctxs' =
+        NE.zipWith
+          (\argTy ctx -> (x, argTy, binderLabel, binder) : ctx)
+          argTs
+          ctxs
+  bodies <- depMatch match ctxs' argss body
+  return $
+    NE.zipWith
+      ( \argTy body' ->
+          Pi
+            { ty = argTy,
+              label = Just binderLabel,
+              bnd = abstract_ x body',
+              ..
+            }
+      )
+      argTs
+      bodies
+depMatch match ctxs argss ty = do
+  matchDep `catchError` const (return $ argss $> ty)
+  where
+    matchDep = do
+      nf <- whnf ty
+      branchTs <- match nf
+      sequence $
+        NE.fromList $
+          zipWith3 goDep (toList branchTs) (toList ctxs) (toList argss)
+    goDep t ctx args = extendCtx ctx $ extendCtx args $ kinded t
+
+-- | Type check an expression by first trying nondependent checker and then
+-- dependent checkers.
+--
+-- The first argument types an expression without dependent types.
+--
+-- The second argument infers the dependent type of an expression.
+--
+-- The third argument checks the dependent type of an expression.
+--
+-- The fourth argument indicates if it is in inference mode or checking mode.
+--
+-- The last argument is a projection function that extracts the type of the
+-- whole expression.
+depType ::
+  TcM a ->
+  TcM a ->
+  (Ty Name -> TcM a) ->
+  Maybe (Ty Name) ->
+  (a -> Ty Name) ->
+  TcM a
+depType typeNoDep inferDep checkDep mt proj =
+  typeNoDep `catchError` \Err {errMsg = noDepMsg} ->
+    case mt of
+      Just t ->
+        checkDep t `catchError` \Err {errMsg = checkMsg} ->
+          ( do
+              a <- inferDep
+              equate t (proj a)
+              return a
+          )
+            `catchError` \Err {errMsg = inferMsg} ->
+              err $
+                [ noDepMsgH,
+                  [DD noDepMsg],
+                  []
+                ]
+                  <> checkMsgHs t
+                  <> [[DD checkMsg], [], inferMsgH, [DD inferMsg]]
+      _ ->
+        inferDep `catchError` \Err {errMsg = inferMsg} ->
+          err
+            [ noDepMsgH,
+              [DD noDepMsg],
+              [],
+              inferMsgH,
+              [DD inferMsg]
+            ]
+  where
+    noDepMsgH =
+      [DD "Tried to type the expression without dependent types, but:"]
+    checkMsgHs t =
+      [ [ DH "Tried to check the expression against the dependent type",
+          DC t
+        ],
+        [DD "But"]
+      ]
+    inferMsgH =
+      [DD "Tried to infer a dependent type for the expression, but:"]
+
+-- | Generator for dependent conditional
+depGenIte :: Expr Name -> NonEmpty (Ty Name) -> TcM (Ty Name)
+depGenIte cond' (leftTy' :| [rightTy']) = do
+  x <- fresh
+  return $
+    lets_
+      [(x, TBool, SafeL, cond')]
+      Ite {cond = V x, left = leftTy', right = rightTy', mTy = Nothing}
+depGenIte _ _ = depOops
+
+-- | Matcher for dependent conditional
+depMatchIte :: Expr Name -> Ty Name -> TcM (NonEmpty (Ty Name))
+depMatchIte cond' Ite {..} = do
+  equate cond' cond
+  return $ left :| [right]
+depMatchIte _ t = depMatchErr t
 
 -- | Kind check a type bidirectionally.
 --
@@ -833,8 +1074,8 @@ equate e e' = do
           [DH "Got", DC e']
         ]
 
-equateMany :: NonEmpty (Expr Name) -> TcM ()
-equateMany (e :| es) = forM_ es $ equate e
+equateSome :: NonEmpty (Expr Name) -> TcM ()
+equateSome (e :| es) = forM_ es $ equate e
 
 -- | Weak head normal form
 --
@@ -1012,7 +1253,7 @@ joinAlts ::
 joinAlts alts ctors =
   let (result, missing, rest) = foldr go ([], [], toList alts) ctors
       (dups, unknowns) =
-        partition (isJust . flip lookup (toList ctors)) $
+        partition (isJust . (`lookup` toList ctors)) $
           rest <&> \CaseAlt {..} -> ctor
    in case nonEmpty result of
         Just r | null missing && null rest -> do
@@ -1049,10 +1290,24 @@ peekLoc :: Expr Name -> Maybe Int
 peekLoc Loc {..} = Just loc
 peekLoc _ = Nothing
 
--- TODO
-notAppearIn :: [Name] -> Expr Name -> TcM ()
-notAppearIn xs e =
-  when (any (`elem` xs) e) $ oops "do not support dependent types yet"
+notAppearIn :: Ty Name -> [Name] -> TcM ()
+notAppearIn ty xs =
+  when (any (`elem` xs) ty) $
+    err
+      [ [DH "Some free variables appear in the inferred type", DC ty],
+        [DD "Could not type this expression without dependent types"]
+      ]
+
+depOops :: a
+depOops = oops "The number of branches do not match"
+
+depMatchErr :: Ty Name -> TcM a
+depMatchErr t =
+  err
+    [ [ DH "Dependent type does not match the expression",
+        DC t
+      ]
+    ]
 
 ----------------------------------------------------------------
 -- Definitions checker
@@ -1318,6 +1573,7 @@ _debug dss = do
   Env {..} <- ask
   doc <- displayMsg dss
   printDoc options $ "Debug" <> colon <> hardline <> doc <> hardline <> hardline
+{-# WARNING _debug "'_debug' remains in code" #-}
 
 displayMsg :: [[D]] -> TcM Doc
 displayMsg dss = do
