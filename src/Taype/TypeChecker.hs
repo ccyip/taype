@@ -1482,7 +1482,7 @@ extendGCtx ::
   m (GCtx Name)
 extendGCtx = foldlM $ uncurry . extendGCtx1
 
-----------------------------------------------------------------
+----------------------------------------------------------------
 -- Error reporting
 
 data D
