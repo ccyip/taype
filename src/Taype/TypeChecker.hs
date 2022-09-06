@@ -16,6 +16,51 @@
 -- Portability: portable
 --
 -- Bidirectional type checker for the taype language.
+--
+-- The expressions or types may be required to be in some particular forms, as
+-- outlined below.
+--
+--   - WHNF: the standard weak head normal form. Specifically, applications with
+--     no arguments are reduced to only the head, and nested applications are
+--     flatterned to a single head with a list of arguments. Builtin functions
+--     are not normalized at the moment although it is possible (e.g., addition
+--     with two integer literals). Oblivious constructs such as boolean section
+--     are not normalized either. While possible, it is mostly unnecessary in
+--     practice.
+--
+--   - Core taype: an expression is in core taype, if it is
+--
+--     * fully annotated. This includes type and label annotations, as well as
+--       annotations specific to certain constructs, e.g., application kinds in
+--       applications and return types in conditionals.
+--
+--     * No ascription or location constructs.
+--
+--     * Use explicit label promotion. The implicit label conversion is disabled
+--       in the typing rules for core taype. Various constructs also require
+--       their subcomponents to have the same label, e.g., arguments of a
+--       constructor.
+--
+--   - Core taype ANF: an expression that is in core taype and also in
+--     administrative normal form. In addition to the standard ANF, we also
+--     require the constructors and builtin functions are always in application
+--     form, even if they have no argument.
+--
+-- We maintain a few invariants throughout the type checking process.
+--
+--   - Types in the global typing context must be well-kinded and in core taype
+--     ANF. It includes the signatures of function definitions, constructor
+--     arguments and OADT arguments. The function signatures should also conform
+--     to their attributes.
+--
+--   - Definitions in the global definition context must be well-typed or
+--     well-kinded (against their signatures in typing context). They must also
+--     be in core taype ANF.
+--
+--   - Types in the local typing context must be well-kinded and in core taype
+--     ANF.
+--
+-- Other invariants for each procedure are documented in that procedure.
 module Taype.TypeChecker (checkDefs) where
 
 import Algebra.Lattice
@@ -28,7 +73,6 @@ import Data.List (lookup, partition, zip4, zipWith3)
 import qualified Data.List.NonEmpty as NE
 import Prettyprinter hiding (Doc, hang, indent)
 import Relude.Extra.Bifunctor
-import Relude.Extra.Tuple
 import Taype.Cute
 import Taype.Environment
 import Taype.Error
@@ -77,7 +121,7 @@ typing e@V {..} Nothing Nothing =
     -- variables are not possible.
     _ -> oops $ "Local variable not in scope: " <> show name
 typing e@GV {..} Nothing Nothing =
-  lookupDef ref >>= \case
+  lookupGSig ref >>= \case
     Just FunDef {..} -> return (ty, mustLabel label, e)
     Just CtorDef {..} -> do
       checkArity CtorApp ref [] paraTypes
@@ -792,7 +836,7 @@ kinding OBool Nothing = return (OblivK, OBool)
 kinding TInt Nothing = return (PublicK, TInt)
 kinding OInt Nothing = return (OblivK, OInt)
 kinding GV {..} Nothing =
-  lookupDef ref >>= \case
+  lookupGSig ref >>= \case
     Just ADTDef {} -> return (PublicK, GV {..})
     Just _ ->
       err [[DD "Definition", DQ ref, DD "is not an ADT"]]
@@ -1088,7 +1132,7 @@ equateSome (e :| es) = forM_ es $ equate e
 -- mostly unnecessary in practice.
 whnf :: Expr Name -> TcM (Expr Name)
 whnf e@GV {..} =
-  lookupDef ref >>= \case
+  lookupGDef ref >>= \case
     Just FunDef {..} -> whnf expr
     _ -> return e
 whnf App {args = [], ..} = whnf fn
@@ -1098,7 +1142,7 @@ whnf e@App {args = arg : args, ..} = do
     Lam {..} ->
       whnf App {fn = instantiate_ arg bnd, ..}
     GV {..} ->
-      lookupDef ref >>= \case
+      lookupGDef ref >>= \case
         Just OADTDef {..} -> whnf $ instantiate_ arg bnd
         _ -> return e {fn = nf}
     App {fn = nf', args = args'} ->
@@ -1154,7 +1198,7 @@ mustLabel :: Maybe Label -> Label
 mustLabel = fromMaybe $ oops "Label not available"
 
 maybeGV :: MonadReader Env m => Expr Name -> m (Maybe (Text, Def Name))
-maybeGV GV {..} = (ref,) <<$>> lookupDef ref
+maybeGV GV {..} = (ref,) <<$>> lookupGSig ref
 maybeGV Loc {..} = maybeGV expr
 maybeGV _ = return Nothing
 
@@ -1312,25 +1356,32 @@ depMatchErr t =
 ----------------------------------------------------------------
 -- Definitions checker
 
--- | Type check all definitions.
+-- | Type check all global definitions.
 checkDefs :: Options -> [(Text, Def Name)] -> ExceptT Err IO (GCtx a)
 checkDefs options defs = runDcM options $ do
-  gctx <- preCheckDefs defs
-  defs' <- lift $ mapM (traverseToSnd (go gctx) . fst) defs
-  return $ mustClosed "Global context" <$> insertMany gctx defs'
+  gsctx <- preCheckDefs defs
+  gctx <- go gsctx mempty defs
+  return $ mustClosed "Global context" <$> gctx
   where
-    go gctx name =
-      runTcM (initEnv options gctx) $
-        checkDef $
-          fromMaybe
-            (oops $ "Definition " <> name <> " does not exist")
-            (gctx !? name)
+    -- Type checking definitions are done in the order of the given definitions.
+    -- They can freely refer to the signatures of all definitions, allowing for
+    -- (mutual) recursion. However, the definitions that have not been checked
+    -- yet will not be unfolded in weak head normalization.
+    go _ gdctx [] = return gdctx
+    go gsctx gdctx ((name, _) : defs') = do
+      -- use the definition in the signature context because the signatures
+      -- there have already been checked.
+      let def =
+            fromMaybe
+              (oops $ "Definition " <> name <> " does not exist")
+              (gsctx !? name)
+      def' <- lift $ runTcM (initEnv options gsctx gdctx) $ checkDef def
+      gdctx' <- extendGCtx1 gdctx name def'
+      go gsctx gdctx' defs'
 
--- | Type check top-level definitions.
+-- | Type check a global definition.
 --
--- The associated type/type arguments of the given definition must be
--- well-kinded and in core taype ANF if the definition is a function,
--- constructor or OADT.
+-- The signature of this definition must be checked already.
 --
 -- The returned definition must be in core taype ANF.
 checkDef :: Def Name -> TcM (Def Name)
@@ -1348,25 +1399,27 @@ checkDef OADTDef {..} = do
 -- does not need to be checked.
 checkDef def = return def
 
--- | Pre-type check all definitions to ensure they are well-formed, and their
+-- | Pre-check all global signatures to ensure they are well-formed, and their
 -- types are well-kinded and in core taype ANF.
 preCheckDefs :: [(Text, Def Name)] -> DcM (GCtx Name)
 preCheckDefs allDefs = do
   -- We need to pre-check all ADTs first, because they can mutually refer to
   -- each other but do not contain dependent types.
   let (adtDefs, otherDefs) = partition isADTDef allDefs
-  -- Note that @gctx@ trivially satisfies the invariant for global context (i.e.
-  -- function types, constructor and OADT type arguments are well-kinded and in
-  -- core taype ANF), because it only contains ADTs (and prelude) at the moment.
+  -- Note that @gctx@ trivially satisfies the invariant for global signature
+  -- context, because it only contains ADTs (and prelude) at the moment.
   gctx <- extendGCtx preludeGCtx adtDefs
   options <- ask
   adtDefs' <-
     lift $
-      forM adtDefs $ secondM $ runTcM (initEnv options gctx) . preCheckDef
-  -- Extend global context with the ADTs and their constructors. Note that the
-  -- types of all constructors are already in the right form after pre-check.
+      forM adtDefs $
+        secondM $
+          runTcM (initEnv options gctx mempty) . preCheckDef
+  -- Extend global signature context with the ADTs and their constructors. Note
+  -- that the types of all constructors are already in the right form after
+  -- pre-check.
   gctx' <- extendGCtx preludeGCtx $ foldMap adtWithCtors adtDefs'
-  -- Now we pre-check the rest of definitions in order.
+  -- Now we pre-check the rest of signatures in order.
   go gctx' otherDefs
   where
     isADTDef (_, ADTDef {}) = True
@@ -1376,18 +1429,17 @@ preCheckDefs allDefs = do
             ctors <&> second (\paraTypes -> CtorDef {dataType = name, ..})
        in (name, def) : toList ctorDefs
     adtWithCtors (_, _) = oops "Not an ADT definition"
-    -- Pre-checking definitions except for ADTs is done in the order of the
-    -- given definitions. While mutual recursion is allowed, the type of a
-    -- definition should not refer to this definition itself, directly or
-    -- transitively.
+    -- Pre-checking signatures except for ADTs is done in the order of the given
+    -- definitions. While mutual recursion is allowed, the type of a definition
+    -- should not refer to this definition itself, directly or transitively.
     go gctx [] = return gctx
     go gctx ((name, def) : defs) = do
       options <- ask
-      def' <- lift $ runTcM (initEnv options gctx) $ preCheckDef def
+      def' <- lift $ runTcM (initEnv options gctx mempty) $ preCheckDef def
       gctx' <- extendGCtx1 gctx name def'
       go gctx' defs
 
--- | pre-Check a top-level definition.
+-- | Pre-check a global definition signature.
 preCheckDef :: Def Name -> TcM (Def Name)
 preCheckDef FunDef {..} = do
   ty' <- go
@@ -1411,53 +1463,49 @@ preCheckDef OADTDef {..} = do
   return OADTDef {ty = ty', ..}
 preCheckDef _ = oops "Pre-checking constructor or builtin definitions"
 
--- | Pre-type check the type of a section or retraction function.
+-- | Pre-type check the signature of a section or retraction function.
 --
 -- The first argument is 'True' if checking section, otherwise checking
 -- retraction.
 
 -- NOTE: be careful! The location information for the two outermost pi-types is
--- erased
+-- erased.
 preCheckSecRetType :: Bool -> Ty Name -> TcM (Ty Name)
 preCheckSecRetType b t = do
   -- A section/retraction must be a function type with two arguments.
-  (typ1, label1, binder1, bnd1) <- isPi t
+  (ty1, label1, binder1, bnd1) <- isPi t
   -- The first argument is the public view which must be public with safe label.
-  typ1' <- checkKind typ1 PublicK
+  ty1' <- checkKind ty1 PublicK
   checkLabel label1 SafeL
   (x1, body1) <- unbind1 bnd1
-  (typ2, label2, binder2, bnd2) <- isPi body1
+  (ty2, label2, binder2, bnd2) <- isPi body1
   -- The second argument of a section must be public with leaky label, while
   -- that of a retraction must be oblivious with safe label.
   let l = if b then LeakyL else SafeL
-  typ2' <-
-    extendCtx1 x1 typ1' SafeL binder1 $
-      checkKind typ2 (if b then PublicK else OblivK)
+  ty2' <-
+    extendCtx1 x1 ty1' SafeL binder1 $
+      checkKind ty2 (if b then PublicK else OblivK)
   checkLabel label2 l
   (x2, body2) <- unbind1 bnd2
   -- The result of a section function must be oblivious, while that of a
   -- retraction must be public.
   bnd2' <-
-    extendCtx [(x1, typ1', SafeL, binder1), (x2, typ2', l, binder2)] $
+    extendCtx [(x1, ty1', SafeL, binder1), (x2, ty2', l, binder2)] $
       checkKind body2 (if b then OblivK else PublicK)
   return
     Pi
-      { ty = typ1',
+      { ty = ty1',
         label = Just SafeL,
         binder = binder1,
         bnd =
           abstract_ x1 $
             Pi
-              { ty = typ2',
+              { ty = ty2',
                 label = Just l,
                 binder = binder2,
                 bnd = abstract_ x2 bnd2'
               }
       }
-
-insertMany ::
-  (Foldable t, Hashable k) => HashMap k v -> t (k, v) -> HashMap k v
-insertMany = flipfoldl' $ uncurry M.insert
 
 extendGCtx1 ::
   (MonadError Err m, MonadReader Options m) =>

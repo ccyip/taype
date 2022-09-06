@@ -23,7 +23,8 @@ module Taype.Environment
     BCtx,
 
     -- * Manipulating environment
-    lookupDef,
+    lookupGSig,
+    lookupGDef,
     lookupTy,
     extendCtx,
     extendCtx1,
@@ -49,14 +50,17 @@ import Taype.Syntax
 data Env = Env
   { -- | Commandline options
     options :: Options,
-    -- | Global context
+    -- | Global signature context
     --
-    -- Function types, constructor arguments and OADT type arguments must be
-    -- well-kinded and in (fully-annotated) core taype ANF before type checking.
-    gctx :: GCtx Name,
+    -- We reuse the same 'GCtx' data as in 'gdctx', but only use the signature
+    -- part.
+    gsctx :: GCtx Name,
+    -- | Global definition context
+    --
+    -- We reuse the same 'GCtx' data as in 'gtctx', but only use the definition
+    -- part.
+    gdctx :: GCtx Name,
     -- | Local typing context
-    --
-    -- Every type must be well-kinded and in (fully-annotated) core taype ANF.
     tctx :: TCtx Name,
     -- | Binder context, used for pretty printing
     bctx :: BCtx Name,
@@ -70,10 +74,9 @@ data Env = Env
 
 -- | Make an initial environment.
 --
--- Some fields are intantiated arbitrarily, because they will be replaced later
--- according to the context.
-initEnv :: Options -> GCtx Name -> Env
-initEnv options gctx =
+-- Some fields are intantiated arbitrarily, because they will be replaced later.
+initEnv :: Options -> GCtx Name -> GCtx Name -> Env
+initEnv options gsctx gdctx =
   Env
     { tctx = [],
       bctx = [],
@@ -95,11 +98,17 @@ type BCtx a = [(a, Binder)]
 ----------------------------------------------------------------
 -- Manipulating environment
 
--- | Look up a definition in the global context.
-lookupDef :: MonadReader Env m => Text -> m (Maybe (Def Name))
-lookupDef x = do
+-- | Look up a definition in the global typing context.
+lookupGSig :: MonadReader Env m => Text -> m (Maybe (Def Name))
+lookupGSig x = do
   Env {..} <- ask
-  return $ gctx !? x
+  return $ gsctx !? x
+
+-- | Look up a definition in the global definition context.
+lookupGDef :: MonadReader Env m => Text -> m (Maybe (Def Name))
+lookupGDef x = do
+  Env {..} <- ask
+  return $ gdctx !? x
 
 -- | Look up a type and its label in the typing context.
 lookupTy :: MonadReader Env m => Name -> m (Maybe (Ty Name, Label))
