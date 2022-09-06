@@ -301,7 +301,8 @@ typing Ite {..} mt ml = do
     depType
       typeIte
       (inferDepIte cond' condLabel)
-      (checkDepIte cond' condLabel)
+      -- (checkDepIte cond' condLabel)
+      (const $ err [[DD "bad"]])
       mt
       (\(_, _, _, _, _, _, t) -> t)
   let l' = condLabel \/ leftLabel \/ rightLabel
@@ -1381,8 +1382,13 @@ checkDefs options defs = runDcM options $ do
 -- The returned definition must be in core taype ANF.
 checkDef :: Def Name -> TcM (Def Name)
 checkDef FunDef {..} = do
-  let l = mustLabel label
-  expr' <- withLabel l $ check expr ty l
+  -- Guess a label for inference.
+  let l = case attr of
+        SectionAttr -> LeakyL
+        RetractionAttr -> SafeL
+        SafeAttr -> SafeL
+        LeakyAttr -> LeakyL
+  expr' <- withLabel l $ check expr ty (mustLabel label)
   return FunDef {expr = expr', ..}
 checkDef OADTDef {..} = do
   (x, body) <- unbind1 bnd
