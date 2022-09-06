@@ -343,7 +343,7 @@ typing Ite {..} mt ml = do
     checkDepIte cond' condLabel t' = do
       checkLabel (Just condLabel) SafeL
       (leftTy', rightTy') <-
-        depMatch (depMatchIte cond') ([] :| []) ([] :| []) t' >>= \case
+        depMatch (depMatchIte cond') ([] :| [[]]) ([] :| [[]]) t' >>= \case
           leftTy' :| [rightTy'] -> return (leftTy', rightTy')
           _ -> depOops
       (leftLabel, left') <- check_ left leftTy' ml
