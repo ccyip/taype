@@ -1366,7 +1366,7 @@ checkDefs options defs = runDcM options $ do
     -- Type checking definitions are done in the order of the given definitions.
     -- They can freely refer to the signatures of all definitions, allowing for
     -- (mutual) recursion. However, the definitions that have not been checked
-    -- yet will not be unfolded in weak head normalization.
+    -- yet will not be unfolded during type equivalence check.
     go _ gdctx [] = return gdctx
     go gsctx gdctx ((name, _) : defs') = do
       -- use the definition in the signature context because the signatures
