@@ -1,4 +1,5 @@
 - Flattern lets
+- Handle equality divergence better
 - Uniplate inspired transform and universe
 - `Cute` reexports `Pretty`?
 - Unordered oblivious case (only need to change parser)

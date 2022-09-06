@@ -1133,7 +1133,12 @@ whnf e@App {args = arg : args, ..} = do
       whnf App {fn = instantiate_ arg bnd, ..}
     GV {..} ->
       lookupGDef ref >>= \case
-        Just OADTDef {..} -> whnf $ instantiate_ arg bnd
+        Just OADTDef {..} -> do
+          -- NOTE: not ideal. we normalize the argument to make the equality
+          -- check less likely to diverge, which is mostly caused by ANF.
+          -- However, this is somewhat hacky and does not work in general.
+          argNf <- whnf arg
+          whnf $ instantiate_ argNf bnd
         _ -> return e {fn = nf}
     App {fn = nf', args = args'} ->
       return App {fn = nf', args = args' <> args, ..}
