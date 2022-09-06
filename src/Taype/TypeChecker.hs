@@ -28,6 +28,10 @@
 --     are not normalized either. While possible, it is mostly unnecessary in
 --     practice.
 --
+--   - ANF: administrative normal form. In addition to the standard ANF, we also
+--     require the constructors and builtin functions are always in application
+--     form, even if they have no argument.
+--
 --   - Core taype: an expression is in core taype, if it is
 --
 --     * fully annotated. This includes type and label annotations, as well as
@@ -41,10 +45,8 @@
 --       their subcomponents to have the same label, e.g., arguments of a
 --       constructor.
 --
---   - Core taype ANF: an expression that is in core taype and also in
---     administrative normal form. In addition to the standard ANF, we also
---     require the constructors and builtin functions are always in application
---     form, even if they have no argument.
+--     * The alternatives in all pattern matchings are in the canonical order,
+--       i.e. the order in the corresponding ADT signature.
 --
 -- We maintain a few invariants throughout the type checking process.
 --
@@ -1284,7 +1286,7 @@ mayPromote l' _ l e = checkLabel (Just l) l' >> return e
 --
 -- Each entry of the returned list, when succeeds, consists of the constructor's
 -- name, its parameter types, binders and pattern matching body. The order of
--- this list follows that of the constructors list.
+-- this list follows that in the ADT signature.
 --
 -- The two input lists must match exactly, i.e. no constructors that are missing
 -- or do not belong to the corresponding ADT. The number of arguments of each
