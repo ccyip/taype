@@ -72,13 +72,13 @@ import Control.Monad.Error.Class
 import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
 import Data.List (lookup, partition, zip4, zipWith3)
-import qualified Data.List.NonEmpty as NE
 import Prettyprinter hiding (Doc, hang, indent)
 import Relude.Extra.Bifunctor
 import Taype.Cute
 import Taype.Environment
 import Taype.Error
 import Taype.Name
+import qualified Taype.NonEmpty as NE
 import Taype.Prelude
 import Taype.Syntax
 
@@ -91,12 +91,6 @@ import Taype.Syntax
 -- inferred or checked. They are in inference mode if they are 'Nothing', or in
 -- checking mode otherwise. This function returns the expression's type, label
 -- and its full elaboration.
---
--- Before type checking, all types in the local typing context and in the global
--- context (ADTs, function types, constructor and OADT argument types) are
--- well-kinded and in core taype ANF. However, the function and OADT definitions
--- in the global context may not be typed yet. NOTE: This assumption will change
--- in the future.
 --
 -- The given type must be well-kinded and in core taype ANF.
 --
@@ -338,16 +332,21 @@ typing Ite {..} mt ml = do
       t' <-
         depGen
           (depGenIte cond')
-          ([] :| [[]])
-          ([] :| [[]])
-          (leftTy' :| [rightTy'])
+          (NE.fromList [[], []])
+          (NE.fromList [[], []])
+          (NE.fromList [leftTy', rightTy'])
       return (left', leftTy', leftLabel, right', rightTy', rightLabel, t')
     checkDepIte cond' condLabel t' = do
       checkLabel (Just condLabel) SafeL
       (leftTy', rightTy') <-
-        depMatch (depMatchIte cond') ([] :| [[]]) ([] :| [[]]) t' >>= \case
-          leftTy' :| [rightTy'] -> return (leftTy', rightTy')
-          _ -> depOops
+        depMatch
+          (depMatchIte cond')
+          (NE.fromList [[], []])
+          (NE.fromList [[], []])
+          t'
+          >>= \case
+            leftTy' :| [rightTy'] -> return (leftTy', rightTy')
+            _ -> depOops
       (leftLabel, left') <- check_ left leftTy' ml
       (rightLabel, right') <- check_ right rightTy' ml
       return (left', leftTy', leftLabel, right', rightTy', rightLabel, t')
@@ -521,8 +520,8 @@ typing OInj {mTy = Just t, ..} Nothing Nothing = do
     )
 typing OInj {..} (Just t') Nothing = do
   whenJust mTy $ \t -> do
-    void $ checkKind t OblivK
-    equate t' t
+    t'' <- checkKind t OblivK
+    equate t' t''
   (left, right) <- isOSum t'
   -- We have to check @t'@ again because @left@ and @right@ may not be in core
   -- taype ANF, after normalization (in 'isOSum').
@@ -642,10 +641,9 @@ depGen gen ctxs argss branchTs@(Prod {} :| _) = do
   return Prod {..}
 depGen gen ctxs argss branchTs@(Pi {label, binder} :| _) = do
   res <- mapM isPi branchTs
-  let argTs = res <&> \(argTy, _, _, _) -> argTy
-      bnds = res <&> \(_, _, _, bnd) -> bnd
+  let (argTs, labels, _, bnds) = NE.unzip4 res
       binderLabel = mustLabel label
-  unless (all (\(_, l, _, _) -> label == l) res) $
+  unless (all (label ==) labels) $
     err
       [ [ DD "All branches are functions,",
           DD "but some function arguments have different leakage labels"
@@ -665,13 +663,13 @@ depGen gen ctxs argss branchTs = genSingle `catchError` const genDep
   where
     genSingle = do
       equateSome branchTs
-      zipWithM_
+      NE.zipWithM_
         (\ty args -> notAppearIn ty $ args <&> \(x, _, _, _) -> x)
-        (toList branchTs)
-        (toList argss)
+        branchTs
+        argss
       return $ head branchTs
     genDep = do
-      sequence_ $ zipWith3 goDep (toList branchTs) (toList ctxs) (toList argss)
+      NE.zipWith3M_ goDep branchTs ctxs argss
       gen branchTs
     goDep t ctx args = extendCtx ctx $ extendCtx args $ checkKind t OblivK
 
@@ -683,8 +681,8 @@ depGen gen ctxs argss branchTs = genSingle `catchError` const genDep
 --
 -- The first argument is a matcher that matches the input type with the
 -- dependent expression and returns a list of branch types. The input type must
--- be well-kinded (in the extended context) and in WHNF. The output list of
--- types do not need to be in core taype ANF.
+-- be well-kinded (in the extended context) and in core taype WHNF. The output
+-- list of types do not need to be in core taype ANF.
 --
 -- The second argument is the extended contexts, similar to the one for
 -- 'depGen'.
@@ -737,9 +735,7 @@ depMatch match ctxs argss ty = do
     matchDep = do
       nf <- whnf ty
       branchTs <- match nf
-      sequence $
-        NE.fromList $
-          zipWith3 goDep (toList branchTs) (toList ctxs) (toList argss)
+      NE.zipWith3M goDep branchTs ctxs argss
     goDep t ctx args = extendCtx ctx $ extendCtx args $ kinded t
 
 -- | Type check an expression by first trying nondependent checker and then
@@ -754,7 +750,7 @@ depMatch match ctxs argss ty = do
 -- The fourth argument indicates if it is in inference mode or checking mode.
 --
 -- The last argument is a projection function that extracts the type of the
--- whole expression.
+-- whole expression. This type must be in core taype.
 depType ::
   TcM a ->
   TcM a ->
@@ -815,7 +811,7 @@ depGenIte _ _ = depOops
 depMatchIte :: Expr Name -> Ty Name -> TcM (NonEmpty (Ty Name))
 depMatchIte cond' Ite {..} = do
   equate cond' cond
-  return $ left :| [right]
+  return $ NE.fromList [left, right]
 depMatchIte _ t = depMatchErr t
 
 -- | Kind check a type bidirectionally.
@@ -823,9 +819,6 @@ depMatchIte _ t = depMatchErr t
 -- It is in inference mode if the second argument is 'Nothing', otherwise in
 -- checking mode. This function returns the type's kind and its full
 -- elaboration.
---
--- Similar to type checker, the local and global contexts have to be well-formed
--- before kinding.
 --
 -- The returned kind must be the same as the given kind if in checking mode.
 --
@@ -1015,9 +1008,9 @@ checkArity appKind ref args paraTypes =
 ----------------------------------------------------------------
 -- Equality check
 
--- | Check the equivalence of two expressions. They must be already well-kinded
--- or well-typed. However, we do not assume they are in core taype ANF. NOTE:
--- this assumption may change in the future.
+-- | Check the equivalence of two expressions.
+--
+-- They must be already well-kinded or well-typed, and in core taype.
 equate :: Expr Name -> Expr Name -> TcM ()
 equate e e' | e == e' = pass
 equate e e' = do
@@ -1049,12 +1042,9 @@ equate e e' = do
     go Case {cond, alts} Case {cond = cond', alts = alts'}
       | length alts == length alts' = do
         equate cond cond'
-        -- A simple way to match the alternatives. This will not be needed at
-        -- all in the future, when we assume the input expressions are all in
-        -- core taype ANF.
-        let sortedAlts = sortOn (\CaseAlt {..} -> ctor) $ toList alts
-            sortedAlts' = sortOn (\CaseAlt {..} -> ctor) $ toList alts'
-        zipWithM_ goAlt sortedAlts sortedAlts'
+        -- Since both case expressions are in core taype, the alternatives are
+        -- in canonical order.
+        NE.zipWithM_ goAlt alts alts'
       where
         goAlt
           CaseAlt {ctor, binders, bnd}
@@ -1127,11 +1117,9 @@ equateSome (e :| es) = forM_ es $ equate e
 --
 -- This function never fails.
 --
--- We do not assume the expression is kinded or typed. NOTE: this assumption
--- may change in the future.
---
--- At the moment, oblivious constructs are not normalized. While possible, it is
--- mostly unnecessary in practice.
+-- The expression is not necessarily in core taype. However, this property is
+-- preserved, i.e. if the input expression is in core taype, the output is in
+-- core taype too.
 whnf :: Expr Name -> TcM (Expr Name)
 whnf e@GV {..} =
   lookupGDef ref >>= \case

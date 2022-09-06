@@ -47,6 +47,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Taype
                        Taype.Prelude
+                       Taype.NonEmpty
                        Taype.Error
                        Taype.Name
                        Taype.Cute
