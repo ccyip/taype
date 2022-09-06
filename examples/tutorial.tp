@@ -44,7 +44,7 @@ fn s_list : (k : Int) -> List -> ~List k = \ k xs ->
   then ()
   else tape (case xs of
              | Nil -> ~inl ()
-             | Cons x xs' -> ~inr (tape (s_int x), s_list (k-1) xs')
+             | Cons x xs' -> ~inr ~(tape (s_int x), s_list (k-1) xs')
              end)
 
 #[retraction]
