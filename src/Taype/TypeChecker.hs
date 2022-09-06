@@ -683,7 +683,7 @@ depGen gen ctxs argss branchTs = genSingle `catchError` const genDep
 -- The first argument is a matcher that matches the input type with the
 -- dependent expression and returns a list of branch types. The input type must
 -- be well-kinded (in the extended context) and in core taype WHNF. The output
--- list of types do not need to be in core taype ANF.
+-- list of types do not need to be in core taype, WHNF or ANF.
 --
 -- The second argument is the extended contexts, similar to the one for
 -- 'depGen'.
