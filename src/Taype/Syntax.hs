@@ -207,6 +207,8 @@ data Expr a
     -- This is the key operation in taype.
     Tape {expr :: Expr a}
   | -- | Location information for error reporting
+    --
+    -- This does not appear in the core language
     Loc {loc :: Int, expr :: Expr a}
   deriving stock (Functor, Foldable, Traversable)
 
