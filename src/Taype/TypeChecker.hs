@@ -888,7 +888,13 @@ depType typeNoDep inferDep checkDep mt proj =
                   []
                 ]
                   <> checkMsgHs t
-                  <> [[DD checkMsg], [], inferMsgH, [DD inferMsg]]
+                  <> [ [DD checkMsg],
+                       [],
+                       inferMsgH,
+                       [DD inferMsg],
+                       [],
+                       gaveupMsg
+                     ]
       _ ->
         inferDep `catchError` \Err {errMsg = inferMsg} ->
           err
@@ -896,7 +902,9 @@ depType typeNoDep inferDep checkDep mt proj =
               [DD noDepMsg],
               [],
               inferMsgH,
-              [DD inferMsg]
+              [DD inferMsg],
+              [],
+              gaveupMsg
             ]
   where
     noDepMsgH =
@@ -909,6 +917,7 @@ depType typeNoDep inferDep checkDep mt proj =
       ]
     inferMsgH =
       [DD "Tried to infer a dependent type for the expression, but:"]
+    gaveupMsg = [DD "Gave up after all attemps"]
 
 -- | Kind check a type bidirectionally.
 --
