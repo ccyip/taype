@@ -8,6 +8,7 @@
 -- Extra functions for 'NonEmpty'.
 module Taype.NonEmpty
   ( module Data.List.NonEmpty,
+    unzip3,
     unzip4,
     zipWith3,
     zipWithM,
@@ -20,7 +21,14 @@ where
 import qualified Data.List as L
 import Data.List.NonEmpty hiding ((:|))
 import qualified Data.List.NonEmpty as NE
-import Prelude hiding (zipWithM, zipWithM_)
+import Prelude hiding (unzip3, zipWithM, zipWithM_)
+
+unzip3 ::
+  NonEmpty (a, b, c) ->
+  (NonEmpty a, NonEmpty b, NonEmpty c)
+unzip3 ~((a, b, c) :| xs) =
+  let (as, bs, cs) = L.unzip3 xs
+   in (a :| as, b :| bs, c :| cs)
 
 unzip4 ::
   NonEmpty (a, b, c, d) ->

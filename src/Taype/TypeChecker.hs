@@ -297,14 +297,51 @@ typing Let {..} Nothing ml = do
     )
 typing Ite {..} mt ml = do
   (condLabel, cond') <- check_ cond TBool Nothing
+  let ctxs = NE.fromList [[], []]
+      argss = NE.fromList [[], []]
+
+      -- Typing without dependent types
+      typeNoDep = do
+        (t', leftLabel, left') <- typing left mt ml
+        (rightLabel, right') <- check_ right t' ml
+        return (left', t', leftLabel, right', t', rightLabel, t')
+
+      -- Infer a dependent type.
+      inferDep = do
+        checkLabel (Just condLabel) SafeL
+        (leftTy', leftLabel, left') <- infer_ left ml
+        (rightTy', rightLabel, right') <- infer_ right ml
+        t' <- depGen gen ctxs argss (NE.fromList [leftTy', rightTy'])
+        return (left', leftTy', leftLabel, right', rightTy', rightLabel, t')
+
+      -- Check a dependent type.
+      checkDep t' = do
+        checkLabel (Just condLabel) SafeL
+        (leftTy', rightTy') <-
+          depMatch match ctxs argss t' >>= \case
+            leftTy' :| [rightTy'] -> return (leftTy', rightTy')
+            _ -> depOops
+        (leftLabel, left') <- check_ left leftTy' ml
+        (rightLabel, right') <- check_ right rightTy' ml
+        return (left', leftTy', leftLabel, right', rightTy', rightLabel, t')
+
+      -- Generator
+      gen (leftTy' :| [rightTy']) = do
+        x <- fresh
+        return $
+          lets_
+            [(x, TBool, SafeL, cond')]
+            Ite {cond = V x, left = leftTy', right = rightTy', mTy = Nothing}
+      gen _ = depOops
+
+      -- Matcher
+      match Ite {cond = condQ, left = leftQ, right = rightQ} = do
+        equate cond' condQ
+        return $ NE.fromList [leftQ, rightQ]
+      match t = depMatchErr t
+
   (left', leftTy', leftLabel, right', rightTy', rightLabel, t') <-
-    depType
-      typeIte
-      (inferDepIte cond' condLabel)
-      -- (checkDepIte cond' condLabel)
-      (const $ err [[DD "bad"]])
-      mt
-      (\(_, _, _, _, _, _, t) -> t)
+    depType typeNoDep inferDep checkDep mt (\(_, _, _, _, _, _, t) -> t)
   let l' = condLabel \/ leftLabel \/ rightLabel
   left'' <- mayPromote l' leftTy' leftLabel left'
   right'' <- mayPromote l' rightTy' rightLabel right'
@@ -321,36 +358,6 @@ typing Ite {..} mt ml = do
             right = right''
           }
     )
-  where
-    typeIte = do
-      (t', leftLabel, left') <- typing left mt ml
-      (rightLabel, right') <- check_ right t' ml
-      return (left', t', leftLabel, right', t', rightLabel, t')
-    inferDepIte cond' condLabel = do
-      checkLabel (Just condLabel) SafeL
-      (leftTy', leftLabel, left') <- infer_ left ml
-      (rightTy', rightLabel, right') <- infer_ right ml
-      t' <-
-        depGen
-          (depGenIte cond')
-          (NE.fromList [[], []])
-          (NE.fromList [[], []])
-          (NE.fromList [leftTy', rightTy'])
-      return (left', leftTy', leftLabel, right', rightTy', rightLabel, t')
-    checkDepIte cond' condLabel t' = do
-      checkLabel (Just condLabel) SafeL
-      (leftTy', rightTy') <-
-        depMatch
-          (depMatchIte cond')
-          (NE.fromList [[], []])
-          (NE.fromList [[], []])
-          t'
-          >>= \case
-            leftTy' :| [rightTy'] -> return (leftTy', rightTy')
-            _ -> depOops
-      (leftLabel, left') <- check_ left leftTy' ml
-      (rightLabel, right') <- check_ right rightTy' ml
-      return (left', leftTy', leftLabel, right', rightTy', rightLabel, t')
 typing Pair {..} mt ml = do
   (mLeftTy, mRightTy) <- mapM isProd mt <&> NE.unzip
   (leftTy', leftLabel, left') <- typing left mLeftTy ml
@@ -373,24 +380,75 @@ typing PCase {..} mt ml = do
   (condTy', condLabel, cond') <- infer cond
   (leftTy', rightTy') <- mayWithLoc (peekLoc cond) $ isProd condTy'
   ((xl, xr), body) <- unbind2 bnd2
-  (bodyTy', bodyLabel, body') <-
-    extendCtx
-      [ (xl, leftTy', condLabel, lBinder),
-        (xr, rightTy', condLabel, rBinder)
-      ]
-      $ typing body mt ml
-  -- @t'@ cannot refer to @xl@ or @xr@, otherwise it would be dependent type.
-  notAppearIn bodyTy' [xl, xr]
+
+  let ctxs = NE.fromList [[]]
+      argss =
+        NE.fromList
+          [ [ (xl, leftTy', condLabel, lBinder),
+              (xr, rightTy', condLabel, rBinder)
+            ]
+          ]
+
+      -- Typing without dependent types
+      typeNoDep = do
+        (bodyTy', bodyLabel, body') <- typeBody mt
+        -- @t'@ cannot refer to @xl@ or @xr@, otherwise it would be dependent
+        -- type.
+        notAppearIn bodyTy' $ head argss
+        return (body', bodyTy', bodyLabel, bodyTy')
+
+      -- Infer a dependent type.
+      inferDep = do
+        checkLabel (Just condLabel) SafeL
+        (bodyTy', bodyLabel, body') <- typeBody Nothing
+        t' <- depGen gen ctxs argss (NE.fromList [bodyTy'])
+        return (body', bodyTy', bodyLabel, t')
+
+      -- Check a dependent type.
+      checkDep t' = do
+        checkLabel (Just condLabel) SafeL
+        bodyTy' <-
+          depMatch match ctxs argss t' >>= \case
+            bodyTy' :| [] -> return bodyTy'
+            _ -> depOops
+        (_, bodyLabel, body') <- typeBody (Just bodyTy')
+        return (body', bodyTy', bodyLabel, t')
+
+      -- Generator
+      gen (bodyTy' :| []) = do
+        x <- fresh
+        return $
+          lets_
+            [(x, condTy', SafeL, cond')]
+            PCase
+              { cond = V x,
+                bnd2 = abstract_ (xl, xr) bodyTy',
+                mTy = Nothing,
+                ..
+              }
+      gen _ = depOops
+
+      -- Matcher
+      match PCase {cond = condQ, bnd2 = bnd2Q} = do
+        equate cond' condQ
+        return $ instantiateName (xl, xr) bnd2Q :| []
+      match t = depMatchErr t
+
+      -- Type check the body.
+      typeBody mt' = extendCtx (head argss) $ typing body mt' ml
+
+  (body', bodyTy', bodyLabel, t') <-
+    depType typeNoDep inferDep checkDep mt (\(_, _, _, t) -> t)
   let l' = condLabel \/ bodyLabel
   body'' <- mayPromote l' bodyTy' bodyLabel body'
   x <- fresh
   return
-    ( bodyTy',
+    ( t',
       l',
       lets_
         [(x, Prod {left = leftTy', right = rightTy'}, condLabel, cond')]
         PCase
-          { mTy = Just bodyTy',
+          { mTy = Just t',
             cond = V x,
             bnd2 = abstract_ (xl, xr) body'',
             ..
@@ -399,37 +457,93 @@ typing PCase {..} mt ml = do
 typing Case {..} mt ml = do
   (condTy', condLabel, cond') <- infer cond
   (ref, ctors) <- isCaseCond cond condTy'
-  (alt0 :| restAlts) <- joinAlts alts ctors
-  res0@(_, _, _, bodyTy', _, _) <- typeCaseAlt condLabel mt alt0
-  restRes <- mapM (typeCaseAlt condLabel (Just bodyTy')) restAlts
-  let res = res0 :| restRes
-  forM_ res $ \(_, _, xs, t', _, _) -> notAppearIn t' xs
-  let l' = flipfoldl' (\(_, _, _, _, l, _) -> (l \/)) condLabel res
-  alts' <- mapM (promoteAlt l') res
+  joinedAlts <- joinAlts alts ctors
+
+  res <-
+    forM joinedAlts $ \(ctor, paraTypes, binders, bnd) -> do
+      let n = length paraTypes
+      (xs, body) <- unbindMany n bnd
+      return (ctor, body, zip4 xs paraTypes (replicate n condLabel) binders)
+
+  let ctxs = joinedAlts $> []
+      (ctorNames, bodies, argss) = NE.unzip3 res
+
+      -- Typing without dependent types
+      typeNoDep = do
+        let (args0 :| argsRest) = argss
+            (body0 :| bodyRest) = bodies
+        altRes0@(bodyTy', _, _) <- typeAlt mt args0 body0
+        altResRest <- zipWithM (typeAlt (Just bodyTy')) argsRest bodyRest
+        let altRes = altRes0 :| altResRest
+        -- The type of each branch cannot refer to the pattern variables,
+        -- otherwise it would be dependent type.
+        NE.zipWithM_ (\(t, _, _) args -> notAppearIn t args) altRes argss
+        return (altRes, bodyTy')
+
+      -- Infer a dependent type.
+      inferDep = do
+        checkLabel (Just condLabel) SafeL
+        altRes <- NE.zipWithM (typeAlt Nothing) argss bodies
+        t' <- depGen gen ctxs argss $ altRes <&> \(t, _, _) -> t
+        return (altRes, t')
+
+      -- Check a dependent type.
+      checkDep t' = do
+        checkLabel (Just condLabel) SafeL
+        bodyTs <- depMatch match ctxs argss t'
+        altRes <- NE.zipWith3M (typeAlt . Just) bodyTs argss bodies
+        return (altRes, t')
+
+      -- Generator
+      gen bodyTs = do
+        let tyAlts = NE.zipWith3 mkCaseAlt ctorNames argss bodyTs
+        x <- fresh
+        return $
+          lets_
+            [(x, condTy', SafeL, cond')]
+            Case {cond = V x, alts = tyAlts, mTy = Nothing}
+
+      -- Matcher
+      match Case {cond = condQ, alts = altsQ} = do
+        equate cond' condQ
+        -- Because the input type is in core taype, the constructors are in the
+        -- canonical order.
+        return $
+          NE.zipWith
+            ( \args CaseAlt {bnd} ->
+                let xs = [x | (x, _, _, _) <- args]
+                 in instantiateName xs bnd
+            )
+            argss
+            altsQ
+      match t = depMatchErr t
+
+      -- Type check an alternative.
+      typeAlt mt' args body = extendCtx args $ typing body mt' ml
+
+  (altRes, t') <- depType typeNoDep inferDep checkDep mt snd
+  let l' = flipfoldl' (\(_, l, _) -> (l \/)) condLabel altRes
+  alts' <- NE.zipWith3M (promoteAlt l') ctorNames argss altRes
   x <- fresh
   return
-    ( bodyTy',
+    ( t',
       l',
       lets_
         [(x, GV ref, condLabel, cond')]
         Case
-          { mTy = Just bodyTy',
+          { mTy = Just t',
             cond = V x,
             alts = alts'
           }
     )
   where
-    -- Type check an alternative.
-    typeCaseAlt condLabel mt' (ctor, paraTypes, binders, bnd) = do
-      let n = length paraTypes
-      (xs, body) <- unbindMany n bnd
-      (bodyTy', bodyLabel, body') <-
-        extendCtx (zip4 xs paraTypes (replicate n condLabel) binders) $
-          typing body mt' ml
-      return (ctor, binders, xs, bodyTy', bodyLabel, body')
-    promoteAlt l' (ctor, binders, xs, bodyTy', bodyLabel, body') = do
+    mkCaseAlt ctor args body =
+      let xs = [x | (x, _, _, _) <- args]
+          binders = [binder | (_, _, _, binder) <- args]
+       in CaseAlt {bnd = abstract_ xs body, ..}
+    promoteAlt l' ctor args (bodyTy', bodyLabel, body') = do
       body'' <- mayPromote l' bodyTy' bodyLabel body'
-      return CaseAlt {bnd = abstract_ xs body'', ..}
+      return $ mkCaseAlt ctor args body''
 typing Mux {..} mt Nothing = do
   cond' <- check cond OBool SafeL
   (t', _, left') <- typing left mt (Just SafeL)
@@ -664,10 +778,7 @@ depGen gen ctxs argss branchTs = genSingle `catchError` const genDep
   where
     genSingle = do
       equateSome branchTs
-      NE.zipWithM_
-        (\ty args -> notAppearIn ty $ args <&> \(x, _, _, _) -> x)
-        branchTs
-        argss
+      NE.zipWithM_ notAppearIn branchTs argss
       return $ head branchTs
     genDep = do
       NE.zipWith3M_ goDep branchTs ctxs argss
@@ -798,23 +909,6 @@ depType typeNoDep inferDep checkDep mt proj =
     inferMsgH =
       [DD "Tried to infer a dependent type for the expression, but:"]
 
--- | Generator for dependent conditional
-depGenIte :: Expr Name -> NonEmpty (Ty Name) -> TcM (Ty Name)
-depGenIte cond' (leftTy' :| [rightTy']) = do
-  x <- fresh
-  return $
-    lets_
-      [(x, TBool, SafeL, cond')]
-      Ite {cond = V x, left = leftTy', right = rightTy', mTy = Nothing}
-depGenIte _ _ = depOops
-
--- | Matcher for dependent conditional
-depMatchIte :: Expr Name -> Ty Name -> TcM (NonEmpty (Ty Name))
-depMatchIte cond' Ite {..} = do
-  equate cond' cond
-  return $ NE.fromList [left, right]
-depMatchIte _ t = depMatchErr t
-
 -- | Kind check a type bidirectionally.
 --
 -- It is in inference mode if the second argument is 'Nothing', otherwise in
@@ -919,8 +1013,8 @@ kinding PCase {..} Nothing = do
 kinding Case {..} Nothing = do
   (condTy', _, cond') <- infer_ cond (Just SafeL)
   (ref, ctors) <- isCaseCond cond condTy'
-  augAlts <- joinAlts alts ctors
-  alts' <- mapM kindCaseAlt augAlts
+  joinedAlts <- joinAlts alts ctors
+  alts' <- mapM kindCaseAlt joinedAlts
   x <- fresh
   return
     ( OblivK,
@@ -1303,15 +1397,15 @@ joinAlts alts ctors =
         _ ->
           err $
             [ DH "Some constructors are missing from this pattern matching" :
-              listD missing
+              andList missing
               | not $ null missing
             ]
               <> [ DH "This pattern matching has some duplicate constructors" :
-                   listD dups
+                   andList dups
                    | not $ null dups
                  ]
               <> [ DH "Some constructors do not belong to this ADT" :
-                   listD unknowns
+                   andList unknowns
                    | not $ null unknowns
                  ]
   where
@@ -1321,20 +1415,23 @@ joinAlts alts ctors =
           ((ctor, paraTypes, binders, bnd) : result, missing, rest')
         _ -> (result, ctor : missing, rest)
     match key CaseAlt {..} = ctor == key
-    listD [] = []
-    listD [x] = [DC x]
-    listD [x, y] = [DC x, DD "and", DC y]
-    listD (x : xs) = DC (x <> ",") : listD xs
 
 peekLoc :: Expr Name -> Maybe Int
 peekLoc Loc {..} = Just loc
 peekLoc _ = Nothing
 
-notAppearIn :: Ty Name -> [Name] -> TcM ()
-notAppearIn ty xs =
-  when (any (`elem` xs) ty) $
+notAppearIn :: Ty Name -> [(Name, Ty Name, Label, Maybe Binder)] -> TcM ()
+notAppearIn ty args = do
+  Env {options} <- ask
+  let xs =
+        [ nameOrBinder options x binder
+          | (x, _, _, binder) <- args,
+            x `elem` ty
+        ]
+  unless (null xs) $
     err
       [ [DH "Some free variables appear in the inferred type", DC ty],
+        DH "These variables are" : andList xs,
         [DD "Could not type this expression without dependent types"]
       ]
 
@@ -1663,6 +1760,12 @@ errArity appKind ref actual expected =
               \are required to be fully applied"
           ]
         ]
+
+andList :: [Text] -> [D]
+andList [] = []
+andList [x] = [DC x]
+andList [x, y] = [DC x, DD "and", DC y]
+andList (x : xs) = DC (x <> ",") : andList xs
 
 -- | The definition checking monad
 type DcM = ReaderT Options (ExceptT Err IO)
