@@ -1506,13 +1506,18 @@ checkDef def = return def
 -- types are well-kinded and in core taype ANF.
 preCheckDefs :: [(Text, Def Name)] -> DcM (GCtx Name)
 preCheckDefs allDefs = do
+  options <- ask
+  -- First we check if any pattern matchings have conflicting pattern varaibles.
+  lift $
+    forM_ allDefs $
+      secondM $
+        runTcM (initEnv options mempty mempty) . noDupPattenVars
   -- We need to pre-check all ADTs first, because they can mutually refer to
   -- each other but do not contain dependent types.
   let (adtDefs, otherDefs) = partition isADTDef allDefs
   -- Note that @gctx@ trivially satisfies the invariant for global signature
   -- context, because it only contains ADTs (and prelude) at the moment.
   gctx <- extendGCtx preludeGCtx adtDefs
-  options <- ask
   adtDefs' <-
     lift $
       forM adtDefs $
@@ -1632,6 +1637,22 @@ extendGCtx ::
   [(Text, Def Name)] ->
   m (GCtx Name)
 extendGCtx = foldlM $ uncurry . extendGCtx1
+
+-- | Check if there are pattern matchings with duplicate patten variables.
+noDupPattenVars :: Def Name -> TcM ()
+noDupPattenVars = void . transformBiM go
+  where
+    go :: Expr Name -> TcM (Expr Name)
+    go e@Case {..} = do
+      forM_ alts $ \CaseAlt {..} ->
+        whenJust (findDupBinderName (catMaybes binders)) $ \case
+          Named loc name ->
+            withCur e $
+              withLoc loc $
+                err [[DH "Found conflicting pattern variables", DC name]]
+          _ -> oops "Anonymous binders cannot be duplicate"
+      return e
+    go e = return e
 
 -- | Flatten all nested let bindings and remove single variable bindings.
 --
