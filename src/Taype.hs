@@ -64,6 +64,10 @@ opts = do
     switch $
       long "internal-names" <> short 'i'
         <> help "Whether to print the internal names for variables"
+  optNoFlattenLets <-
+    switch $
+      long "no-flatten-lets"
+        <> help "Do not flatten let bindings"
   optNamePrefix <-
     strOption $
       long "prefix" <> short 'p' <> metavar "PREFIX"

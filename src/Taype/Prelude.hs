@@ -39,6 +39,7 @@ data Options = Options
   { optFile :: FilePath,
     optCode :: Text,
     optInternalNames :: Bool,
+    optNoFlattenLets :: Bool,
     optNamePrefix :: Text,
     optPrintLabels :: Bool,
     optPrintTokens :: Bool,
