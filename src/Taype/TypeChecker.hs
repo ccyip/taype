@@ -79,6 +79,7 @@ import Taype.Environment
 import Taype.Error
 import Taype.Name
 import qualified Taype.NonEmpty as NE
+import Taype.Plate
 import Taype.Prelude
 import Taype.Syntax
 
@@ -1457,7 +1458,7 @@ checkDefs options@Options {..} defs = runDcM options $ do
   let gctx' =
         if optNoFlattenLets
           then gctx
-          else runFreshM $ mapM flattenLetsDef gctx
+          else runFreshM $ mapM flattenLets gctx
   return $ mustClosed "Global context" <$> gctx'
   where
     -- Type checking definitions are done in the order of the given definitions.
@@ -1634,158 +1635,33 @@ extendGCtx = foldlM $ uncurry . extendGCtx1
 
 -- | Flatten all nested let bindings and remove single variable bindings.
 --
--- If the input expression is in core taype ANF, the result must still be in
--- core taype ANF.
-flattenLets :: MonadFresh m => Expr Name -> m (Expr Name)
-flattenLets Let {..} = do
-  rhs' <- flattenLets rhs
-  case rhs' of
-    V {..} -> flattenLets $ instantiateName name bnd
-    GV {..} -> flattenLets $ instantiate_ (GV ref) bnd
-    Let
-      { mTy = mTyN,
-        label = labelN,
-        rhs = rhsN,
-        binder = binderN,
-        bnd = bndN
-      } -> do
-        (x, bodyN) <- unbind1 bndN
-        body' <- flattenLets Let {rhs = bodyN, ..}
-        return
-          Let
-            { mTy = mTyN,
-              label = labelN,
-              rhs = rhsN,
-              binder = binderN,
-              bnd = abstract_ x body'
-            }
-    _ -> do
-      mTy' <- mapM flattenLets mTy
-      (x, body) <- unbind1 bnd
-      body' <- flattenLets body
-      return Let {mTy = mTy', rhs = rhs', bnd = abstract_ x body', ..}
-flattenLets Pi {..} = do
-  ty' <- flattenLets ty
-  (x, body) <- unbind1 bnd
-  body' <- flattenLets body
-  return Pi {ty = ty', bnd = abstract_ x body', ..}
-flattenLets Lam {..} = do
-  mTy' <- mapM flattenLets mTy
-  (x, body) <- unbind1 bnd
-  body' <- flattenLets body
-  return Lam {mTy = mTy', bnd = abstract_ x body', ..}
-flattenLets App {..} = do
-  fn' <- flattenLets fn
-  args' <- mapM flattenLets args
-  return App {fn = fn', args = args', ..}
-flattenLets Ite {..} = do
-  mTy' <- mapM flattenLets mTy
-  cond' <- flattenLets cond
-  left' <- flattenLets left
-  right' <- flattenLets right
-  return Ite {mTy = mTy', cond = cond', left = left', right = right'}
-flattenLets Case {..} = do
-  mTy' <- mapM flattenLets mTy
-  cond' <- flattenLets cond
-  alts' <- mapM go alts
-  return Case {mTy = mTy', cond = cond', alts = alts'}
+-- If the input is in core taype ANF, the result must still be in core taype
+-- ANF.
+flattenLets :: MonadFresh m => Def Name -> m (Def Name)
+flattenLets = transformBiM go
   where
-    go CaseAlt {..} = do
-      (xs, body) <- unbindMany (length binders) bnd
-      body' <- flattenLets body
-      return CaseAlt {bnd = abstract_ xs body', ..}
-flattenLets OIte {..} = do
-  cond' <- flattenLets cond
-  left' <- flattenLets left
-  right' <- flattenLets right
-  return OIte {cond = cond', left = left', right = right'}
-flattenLets Prod {..} = do
-  left' <- flattenLets left
-  right' <- flattenLets right
-  return Prod {left = left', right = right'}
-flattenLets Pair {..} = do
-  left' <- flattenLets left
-  right' <- flattenLets right
-  return Pair {left = left', right = right'}
-flattenLets PCase {..} = do
-  mTy' <- mapM flattenLets mTy
-  cond' <- flattenLets cond
-  ((xl, xr), body) <- unbind2 bnd2
-  body' <- flattenLets body
-  return PCase {mTy = mTy', cond = cond', bnd2 = abstract_ (xl, xr) body', ..}
-flattenLets OProd {..} = do
-  left' <- flattenLets left
-  right' <- flattenLets right
-  return OProd {left = left', right = right'}
-flattenLets OPair {..} = do
-  left' <- flattenLets left
-  right' <- flattenLets right
-  return OPair {left = left', right = right'}
-flattenLets OPCase {..} = do
-  cond' <- flattenLets cond
-  ((xl, xr), body) <- unbind2 bnd2
-  body' <- flattenLets body
-  return OPCase {cond = cond', bnd2 = abstract_ (xl, xr) body', ..}
-flattenLets OSum {..} = do
-  left' <- flattenLets left
-  right' <- flattenLets right
-  return OSum {left = left', right = right'}
-flattenLets OInj {..} = do
-  mTy' <- mapM flattenLets mTy
-  inj' <- flattenLets inj
-  return OInj {mTy = mTy', inj = inj', ..}
-flattenLets OCase {..} = do
-  mTy' <- mapM flattenLets mTy
-  cond' <- flattenLets cond
-  (xl, lBody) <- unbind1 lBnd
-  lBody' <- flattenLets lBody
-  (xr, rBody) <- unbind1 rBnd
-  rBody' <- flattenLets rBody
-  return
-    OCase
-      { mTy = mTy',
-        cond = cond',
-        lBnd = abstract_ xl lBody',
-        rBnd = abstract_ xr rBody',
-        ..
-      }
-flattenLets Mux {..} = do
-  cond' <- flattenLets cond
-  left' <- flattenLets left
-  right' <- flattenLets right
-  return Mux {cond = cond', left = left', right = right'}
-flattenLets Asc {..} = do
-  ty' <- flattenLets ty
-  expr' <- flattenLets expr
-  return Asc {ty = ty', expr = expr'}
-flattenLets Promote {..} = do
-  expr' <- flattenLets expr
-  return Promote {expr = expr'}
-flattenLets Tape {..} = do
-  expr' <- flattenLets expr
-  return Tape {expr = expr'}
-flattenLets Loc {..} = do
-  expr' <- flattenLets expr
-  return Loc {expr = expr', ..}
-flattenLets e = return e
-
-flattenLetsDef :: MonadFresh m => Def Name -> m (Def Name)
-flattenLetsDef FunDef {..} = do
-  ty' <- flattenLets ty
-  expr' <- flattenLets expr
-  return FunDef {ty = ty', expr = expr', ..}
-flattenLetsDef ADTDef {..} = do
-  ctors' <- forM ctors $ secondM (mapM flattenLets)
-  return ADTDef {ctors = ctors', ..}
-flattenLetsDef OADTDef {..} = do
-  ty' <- flattenLets ty
-  (x, body) <- unbind1 bnd
-  body' <- flattenLets body
-  return OADTDef {ty = ty', bnd = abstract_ x body', ..}
--- Skip handling constructor definitions, as they should be in sync with the ADT
--- definitions. The caller is responsible for resyncing these two definitions.
--- Builtin definitions are not handled either.
-flattenLetsDef def = return def
+    go e@Let {..} = case rhs of
+      V {..} -> return $ instantiateName name bnd
+      GV {..} -> return $ instantiate_ (GV ref) bnd
+      Let
+        { mTy = mTyN,
+          label = labelN,
+          rhs = rhsN,
+          binder = binderN,
+          bnd = bndN
+        } -> do
+          (x, bodyN) <- unbind1 bndN
+          body' <- go Let {rhs = bodyN, ..}
+          return
+            Let
+              { mTy = mTyN,
+                label = labelN,
+                rhs = rhsN,
+                binder = binderN,
+                bnd = abstract_ x body'
+              }
+      _ -> return e
+    go e = return e
 
 ----------------------------------------------------------------
 -- Error reporting
