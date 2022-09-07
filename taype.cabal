@@ -50,6 +50,7 @@ library
                        Taype.NonEmpty
                        Taype.Error
                        Taype.Name
+                       Taype.Plate
                        Taype.Cute
                        Taype.Syntax
                        Taype.Environment

@@ -2,9 +2,11 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -68,6 +70,7 @@ import Data.Functor.Classes
 import Data.List (groupBy)
 import Prettyprinter
 import Taype.Name
+import Taype.Plate
 import Taype.Prelude
 import qualified Text.Show
 
@@ -341,6 +344,9 @@ instance Pretty Attribute where
 data LabelPolyStrategy = JoinStrategy | LeakyStrategy | SafeStrategy
   deriving stock (Eq, Show)
 
+----------------------------------------------------------------
+-- Instances of expressions and definitions
+
 instance Applicative Expr where
   pure = V
   (<*>) = ap
@@ -528,6 +534,136 @@ instance Eq1 Expr where
 instance (Eq1 f, Monad f, Eq a) => Eq (CaseAlt f a) where (==) = eq1
 
 instance Eq a => Eq (Expr a) where (==) = eq1
+
+instance PlateM (Expr Name) where
+  plateM f Let {..} = do
+    mTy' <- mapM f mTy
+    rhs' <- f rhs
+    (x, body) <- unbind1 bnd
+    body' <- f body
+    return Let {mTy = mTy', rhs = rhs', bnd = abstract_ x body', ..}
+  plateM f Pi {..} = do
+    ty' <- f ty
+    (x, body) <- unbind1 bnd
+    body' <- f body
+    return Pi {ty = ty', bnd = abstract_ x body', ..}
+  plateM f Lam {..} = do
+    mTy' <- mapM f mTy
+    (x, body) <- unbind1 bnd
+    body' <- f body
+    return Lam {mTy = mTy', bnd = abstract_ x body', ..}
+  plateM f App {..} = do
+    fn' <- f fn
+    args' <- mapM f args
+    return App {fn = fn', args = args', ..}
+  plateM f Ite {..} = do
+    mTy' <- mapM f mTy
+    cond' <- f cond
+    left' <- f left
+    right' <- f right
+    return Ite {mTy = mTy', cond = cond', left = left', right = right'}
+  plateM f Case {..} = do
+    mTy' <- mapM f mTy
+    cond' <- f cond
+    alts' <- mapM go alts
+    return Case {mTy = mTy', cond = cond', alts = alts'}
+    where
+      go CaseAlt {..} = do
+        (xs, body) <- unbindMany (length binders) bnd
+        body' <- f body
+        return CaseAlt {bnd = abstract_ xs body', ..}
+  plateM f OIte {..} = do
+    cond' <- f cond
+    left' <- f left
+    right' <- f right
+    return OIte {cond = cond', left = left', right = right'}
+  plateM f Prod {..} = do
+    left' <- f left
+    right' <- f right
+    return Prod {left = left', right = right'}
+  plateM f Pair {..} = do
+    left' <- f left
+    right' <- f right
+    return Pair {left = left', right = right'}
+  plateM f PCase {..} = do
+    mTy' <- mapM f mTy
+    cond' <- f cond
+    ((xl, xr), body) <- unbind2 bnd2
+    body' <- f body
+    return PCase {mTy = mTy', cond = cond', bnd2 = abstract_ (xl, xr) body', ..}
+  plateM f OProd {..} = do
+    left' <- f left
+    right' <- f right
+    return OProd {left = left', right = right'}
+  plateM f OPair {..} = do
+    left' <- f left
+    right' <- f right
+    return OPair {left = left', right = right'}
+  plateM f OPCase {..} = do
+    cond' <- f cond
+    ((xl, xr), body) <- unbind2 bnd2
+    body' <- f body
+    return OPCase {cond = cond', bnd2 = abstract_ (xl, xr) body', ..}
+  plateM f OSum {..} = do
+    left' <- f left
+    right' <- f right
+    return OSum {left = left', right = right'}
+  plateM f OInj {..} = do
+    mTy' <- mapM f mTy
+    inj' <- f inj
+    return OInj {mTy = mTy', inj = inj', ..}
+  plateM f OCase {..} = do
+    mTy' <- mapM f mTy
+    cond' <- f cond
+    (xl, lBody) <- unbind1 lBnd
+    lBody' <- f lBody
+    (xr, rBody) <- unbind1 rBnd
+    rBody' <- f rBody
+    return
+      OCase
+        { mTy = mTy',
+          cond = cond',
+          lBnd = abstract_ xl lBody',
+          rBnd = abstract_ xr rBody',
+          ..
+        }
+  plateM f Mux {..} = do
+    cond' <- f cond
+    left' <- f left
+    right' <- f right
+    return Mux {cond = cond', left = left', right = right'}
+  plateM f Asc {..} = do
+    ty' <- f ty
+    expr' <- f expr
+    return Asc {ty = ty', expr = expr'}
+  plateM f Promote {..} = do
+    expr' <- f expr
+    return Promote {expr = expr'}
+  plateM f Tape {..} = do
+    expr' <- f expr
+    return Tape {expr = expr'}
+  plateM f Loc {..} = do
+    expr' <- f expr
+    return Loc {expr = expr', ..}
+  plateM _ e = return e
+
+instance BiplateM (Def Name) (Expr Name) where
+  biplateM f FunDef {..} = do
+    ty' <- f ty
+    expr' <- f expr
+    return FunDef {ty = ty', expr = expr', ..}
+  biplateM f ADTDef {..} = do
+    ctors' <- forM ctors $ secondM (mapM f)
+    return ADTDef {ctors = ctors', ..}
+  biplateM f OADTDef {..} = do
+    ty' <- f ty
+    (x, body) <- unbind1 bnd
+    body' <- f body
+    return OADTDef {ty = ty', bnd = abstract_ x body', ..}
+  -- Skip handling constructor definitions, as they should be in sync with the ADT
+  -- definitions. The caller is responsible for resyncing these two definitions.
+  -- Builtin definitions are not handled either.
+  biplateM _ def = return def
 
 ----------------------------------------------------------------
 -- Binders
