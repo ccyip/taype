@@ -1,9 +1,4 @@
-- Flattern lets
-- Handle equality divergence better
-- Uniplate inspired transform and universe
-- `Cute` reexports `Pretty`?
 - Unordered oblivious case (only need to change parser)
-- Case pattern variables should not allow duplicates
 - Scrap my boilerplate: instances for Monad, Eq1, etc
 - Support tuple pattern in product case and oblivious sum case
 - Consider checking labels in type equivalence
@@ -15,3 +10,4 @@
 - Error messages for `isProd` / `isOProd` / `isPi` could be confusing in
   introduction form
 - Error message for dependent expressions are confusing and redundant
+- `Cute` reexports `Pretty`?

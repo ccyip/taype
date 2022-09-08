@@ -20,13 +20,14 @@
 -- The expressions or types may be required to be in some particular forms, as
 -- outlined below.
 --
---   - WHNF: the standard weak head normal form. Specifically, applications with
---     no arguments are reduced to only the head, and nested applications are
---     flatterned to a single head with a list of arguments. Builtin functions
---     are not normalized at the moment although it is possible (e.g., addition
---     with two integer literals). Oblivious constructs such as boolean section
---     are not normalized either. While possible, it is mostly unnecessary in
---     practice.
+--   - WHNF: weak head normal form. Unlike standard WHNF, global variables are
+--     not unfolded until type equivalence check, to avoid a class of divergence
+--     likely caused by ANF. Applications with no arguments are reduced to only
+--     the head, and nested applications are flatterned to a single head with a
+--     list of arguments. Builtin functions are not normalized at the moment
+--     although it is possible (e.g., addition with two integer literals).
+--     Oblivious constructs such as boolean section are not normalized either.
+--     While possible, it is mostly unnecessary in practice.
 --
 --   - ANF: administrative normal form. In addition to the standard ANF, we also
 --     require the constructors and builtin functions are always in application
@@ -846,7 +847,7 @@ depMatch match ctxs argss ty = do
   matchDep `catchError` const (return $ argss $> ty)
   where
     matchDep = do
-      nf <- whnf ty
+      nf <- whnf_ ty
       branchTs <- match nf
       NE.zipWith3M goDep branchTs ctxs argss
     goDep t ctx args = extendCtx ctx $ extendCtx args $ kinded t
@@ -1123,6 +1124,10 @@ equate e e' = do
   nf' <- whnf e'
   go nf nf'
   where
+    go nf@GV {} nf' = equateGV nf nf'
+    go nf nf'@GV {} = equateGV nf nf'
+    go nf@App {} nf' = equateApp nf nf'
+    go nf nf'@App {} = equateApp nf nf'
     go Pi {ty, bnd} Pi {ty = ty', bnd = bnd'} = do
       equate ty ty'
       (_, body, body') <- unbind1With bnd bnd'
@@ -1130,10 +1135,6 @@ equate e e' = do
     go Lam {bnd} Lam {bnd = bnd'} = do
       (_, body, body') <- unbind1With bnd bnd'
       equate body body'
-    go App {fn, args} App {fn = fn', args = args'}
-      | length args == length args' = do
-        equate fn fn'
-        zipWithM_ equate args args'
     go Let {rhs, bnd} Let {rhs = rhs', bnd = bnd'} = do
       equate rhs rhs'
       (_, body, body') <- unbind1With bnd bnd'
@@ -1208,6 +1209,37 @@ equate e e' = do
     go Tape {expr} Tape {expr = expr'} = equate expr expr'
     go nf nf' | nf == nf' = pass
     go _ _ = errEquate
+
+    -- Equate two expressions, but throw away the error messages.
+    equate_ t t' = equate t t' `catchError` const errEquate
+
+    -- Equate two expressions with at least one being global variable.
+    equateGV nf nf' | nf == nf' = pass
+    equateGV nf nf' =
+      tryUnfold nf >>= \case
+        Just expr -> equate_ expr nf'
+        _ ->
+          tryUnfold nf' >>= \case
+            Just expr' -> equate_ nf expr'
+            _ -> errEquate
+
+    -- Equate two expressions with at least one being application.
+    equateApp :: Expr Name -> Expr Name -> TcM ()
+    equateApp nf nf' = do
+      equateApp_ nf nf' `catchError` \appErr ->
+        tryUnfoldApp nf >>= \case
+          Just expr -> equate_ expr nf'
+          _ ->
+            tryUnfoldApp nf' >>= \case
+              Just expr' -> equate_ nf expr'
+              _ -> throwError appErr
+
+    equateApp_ App {fn, args} App {fn = fn', args = args'}
+      | length args == length args' = do
+        equate fn fn'
+        zipWithM_ equate args args'
+    equateApp_ _ _ = errEquate
+
     errEquate =
       err
         [ [DD "Could not match the type"],
@@ -1218,33 +1250,40 @@ equate e e' = do
 equateSome :: NonEmpty (Expr Name) -> TcM ()
 equateSome (e :| es) = forM_ es $ equate e
 
+tryUnfold :: Expr Name -> TcM (Maybe (Expr Name))
+tryUnfold GV {..} =
+  lookupGDef ref >>= \case
+    Just FunDef {..} -> return $ Just expr
+    _ -> return Nothing
+tryUnfold _ = return Nothing
+
+tryUnfoldApp :: Expr Name -> TcM (Maybe (Expr Name))
+tryUnfoldApp App {..} = case fn of
+  GV {..} ->
+    lookupGDef ref >>= \case
+      Just FunDef {..} -> return $ Just App {fn = expr, ..}
+      Just OADTDef {..} -> return $
+        case args of
+          [arg] -> Just $ instantiate_ arg bnd
+          _ -> Nothing
+      _ -> return Nothing
+  _ -> return Nothing
+tryUnfoldApp _ = return Nothing
+
 -- | Weak head normal form
 --
--- This function never fails.
+-- This function never fails. It also never unfolds global definitions.
 --
 -- The expression is not necessarily in core taype. However, this property is
 -- preserved, i.e. if the input expression is in core taype, the output is in
 -- core taype too.
 whnf :: Expr Name -> TcM (Expr Name)
-whnf e@GV {..} =
-  lookupGDef ref >>= \case
-    Just FunDef {..} -> whnf expr
-    _ -> return e
 whnf App {args = [], ..} = whnf fn
 whnf e@App {args = arg : args, ..} = do
   nf <- whnf fn
   case nf of
     Lam {..} ->
       whnf App {fn = instantiate_ arg bnd, ..}
-    GV {..} ->
-      lookupGDef ref >>= \case
-        Just OADTDef {..} -> do
-          -- NOTE: not ideal. we normalize the argument to make the equality
-          -- check less likely to diverge, which is mostly caused by ANF.
-          -- However, this is somewhat hacky and does not work in general.
-          argNf <- whnf arg
-          whnf $ instantiate_ argNf bnd
-        _ -> return e {fn = nf}
     App {fn = nf', args = args'} ->
       return App {fn = nf', args = args' <> args, ..}
     _ -> return e {fn = nf}
@@ -1276,6 +1315,19 @@ whnf PCase {..} = do
 whnf Loc {..} = whnf expr
 whnf Asc {..} = whnf expr
 whnf e = return e
+
+-- | Weak head normal form but also unfold global definitions
+--
+-- The result is still technically in weak head normal form.
+whnf_ :: Expr Name -> TcM (Expr Name)
+whnf_ e = do
+  nf <- whnf e
+  tryUnfold nf >>= \case
+    Just e' -> whnf_ e'
+    _ ->
+      tryUnfoldApp nf >>= \case
+        Just e' -> whnf_ e'
+        _ -> return nf
 
 ----------------------------------------------------------------
 -- Helper functions
