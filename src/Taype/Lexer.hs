@@ -23,7 +23,7 @@ where
 import Control.Monad.Error.Class
 import Data.Char
 import qualified Data.Text as T
-import Prettyprinter hiding (Doc, space)
+import Taype.Cute hiding (space)
 import Taype.Error
 import Text.Megaparsec hiding (Token, token, tokens)
 import qualified Text.Megaparsec.Char as C

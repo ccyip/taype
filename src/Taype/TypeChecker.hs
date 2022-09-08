@@ -73,7 +73,6 @@ import Control.Monad.Error.Class
 import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
 import Data.List (lookup, partition, zip4, zipWith3)
-import Prettyprinter hiding (Doc, hang, indent)
 import Relude.Extra.Bifunctor
 import Taype.Cute
 import Taype.Environment

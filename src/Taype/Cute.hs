@@ -16,7 +16,8 @@
 --
 -- Pretty printer.
 module Taype.Cute
-  ( -- * Utilities
+  ( module Prettyprinter,
+    -- * Utilities
     hang,
     indent,
     sep1,
