@@ -21,11 +21,12 @@ import Control.Applicative.Combinators (choice)
 import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import Control.Monad.Error.Class
 import Data.List.NonEmpty (some1)
+import Taype.Binder
 import Taype.Cute
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
 import qualified Taype.Lexer as L
-import Taype.Prelude
+import Taype.Common
 import Taype.Syntax
 import Text.Earley hiding (Parser, token)
 

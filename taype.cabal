@@ -48,10 +48,12 @@ library
   exposed-modules:     Taype
                        Taype.Prelude
                        Taype.NonEmpty
+                       Taype.Common
                        Taype.Error
                        Taype.Name
                        Taype.Plate
                        Taype.Cute
+                       Taype.Binder
                        Taype.Syntax
                        Taype.Environment
                        Taype.Lexer

@@ -40,7 +40,8 @@ where
 
 import Data.HashMap.Strict ((!?))
 import Data.List (lookup)
-import Taype.Prelude
+import Taype.Binder
+import Taype.Common
 import Taype.Name
 import Taype.Syntax
 

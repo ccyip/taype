@@ -22,8 +22,8 @@ module Taype.Error
 where
 
 import qualified Data.Text as T
+import Taype.Common
 import Text.Megaparsec
-import Taype.Prelude
 
 data Err = Err
   { errLoc :: Int,

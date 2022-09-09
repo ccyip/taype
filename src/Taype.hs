@@ -17,11 +17,11 @@ where
 
 import Bound
 import Options.Applicative
+import Taype.Common
 import Taype.Cute
 import Taype.Error
 import Taype.Lexer
 import Taype.Parser
-import Taype.Prelude
 import Taype.Syntax
 import Taype.TypeChecker
 

@@ -17,6 +17,7 @@
 -- Pretty printer.
 module Taype.Cute
   ( module Prettyprinter,
+
     -- * Utilities
     hang,
     indent,
@@ -42,10 +43,11 @@ import Prettyprinter hiding (Doc, hang, indent)
 import qualified Prettyprinter as PP
 import Prettyprinter.Render.Text (putDoc)
 import Prettyprinter.Util (putDocW)
+import Taype.Binder
+import Taype.Common
 import Taype.Environment
 import Taype.Error
 import Taype.Name
-import Taype.Prelude
 import Taype.Syntax
 import Prelude hiding (group)
 

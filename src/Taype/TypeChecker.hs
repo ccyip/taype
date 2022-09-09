@@ -74,6 +74,8 @@ import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
 import Data.List (lookup, partition, zip4, zipWith3)
 import Relude.Extra.Bifunctor
+import Taype.Binder
+import Taype.Common
 import Taype.Cute
 import Taype.Environment
 import Taype.Error
