@@ -73,7 +73,6 @@ import Control.Monad.Error.Class
 import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
 import Data.List (lookup, partition, zip4, zipWith3)
-import Relude.Extra.Bifunctor
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -1790,11 +1789,7 @@ instance Cutie (Expr Name) where
 instance Cutie (TCtx Int) where
   cutie tctx = do
     Env {options, bctx} <- ask
-    let tctx' =
-          bimapF
-            (renderName options bctx)
-            (first (renderName options bctx <$>))
-            tctx
+    let tctx' = tctx <&> renderName options bctx
     cutie tctx'
 
 instance Cutie D where

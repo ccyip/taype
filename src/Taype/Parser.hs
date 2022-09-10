@@ -26,7 +26,7 @@ import Taype.Cute
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
 import qualified Taype.Lexer as L
-import Taype.Common
+import Taype.Prelude
 import Taype.Syntax
 import Text.Earley hiding (Parser, token)
 

@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -10,8 +11,7 @@
 --
 -- Error reporting.
 module Taype.Error
-  ( oops,
-    Err (..),
+  ( Err (..),
     initPosState,
     getLocation,
     renderLocation,
@@ -23,6 +23,7 @@ where
 
 import qualified Data.Text as T
 import Taype.Common
+import Taype.Cute
 import Text.Megaparsec
 
 data Err = Err
@@ -88,3 +89,17 @@ renderFancyLocation file code offset
         lpadding = T.replicate (T.length lineTxt) " "
         pointerPadding = T.replicate (col - 1) " "
         bar = " | "
+
+----------------------------------------------------------------
+-- Pretty printer
+
+instance Cute Err where
+  cute Err {..} = do
+    Options {optFile = file, optCode = code} <- ask
+    return $
+      "!!" <> pretty errCategory <> "!!" <> hardline
+        <> pretty (renderFancyLocation file code errLoc)
+        <> hardline
+        <> hardline
+        <> errMsg
+        <> hardline

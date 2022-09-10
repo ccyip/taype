@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -19,7 +20,7 @@ module Taype.Environment
 
     -- * Contexts
     GCtx,
-    TCtx,
+    TCtx (..),
     BCtx,
 
     -- * Manipulating environment
@@ -35,14 +36,20 @@ module Taype.Environment
 
     -- * Prelude context
     preludeGCtx,
+
+    -- * Pretty printer
+    cuteDefs,
   )
 where
 
 import Data.HashMap.Strict ((!?))
 import Data.List (lookup)
+import Relude.Extra.Bifunctor
 import Taype.Binder
 import Taype.Common
+import Taype.Cute
 import Taype.Name
+import Taype.Prelude
 import Taype.Syntax
 
 ----------------------------------------------------------------
@@ -79,7 +86,7 @@ data Env = Env
 initEnv :: Options -> GCtx Name -> GCtx Name -> Env
 initEnv options gsctx gdctx =
   Env
-    { tctx = [],
+    { tctx = TCtx [],
       bctx = [],
       loc = -1,
       cur = V 0,
@@ -92,7 +99,10 @@ initEnv options gsctx gdctx =
 
 type GCtx a = HashMap Text (Def a)
 
-type TCtx a = [(a, (Ty a, Label))]
+newtype TCtx a = TCtx {unTCtx :: [(a, (Ty a, Label))]}
+
+instance Functor TCtx where
+  fmap f (TCtx tctx) = TCtx $ bimapF f (first (f <$>)) tctx
 
 type BCtx a = [(a, Binder)]
 
@@ -114,7 +124,7 @@ lookupGDef x = do
 -- | Look up a type and its label in the typing context.
 lookupTy :: MonadReader Env m => Name -> m (Maybe (Ty Name, Label))
 lookupTy x = do
-  Env {..} <- ask
+  TCtx tctx <- asks tctx
   return $ lookup x tctx
 
 -- | Extend the typing context.
@@ -125,9 +135,9 @@ extendCtx ::
   MonadReader Env m => [(Name, Ty Name, Label, Maybe Binder)] -> m a -> m a
 extendCtx xs = local go
   where
-    go Env {..} =
+    go Env {tctx = TCtx tctx, ..} =
       Env
-        { tctx = (ctx1 <$> xs) <> tctx,
+        { tctx = TCtx $ (ctx1 <$> xs) <> tctx,
           bctx = mapMaybe bctx1 xs <> bctx,
           ..
         }
@@ -175,3 +185,25 @@ preludeGCtx =
 
 builtin :: (Text, [Ty a], Ty a, LabelPolyStrategy) -> (Text, Def a)
 builtin (name, paraTypes, resType, strategy) = (name, BuiltinDef {..})
+
+----------------------------------------------------------------
+-- Pretty printer
+
+instance Cute (TCtx Text) where
+  cute (TCtx tctx) = do
+    docs <- mapM go tctx
+    return $
+      hang $
+        "Typing context" <> colon <> hardline
+          <> if null tctx then "<empty>" else sepWith hardline docs
+    where
+      go (x, (t, l)) = cuteBinder x (Just l) (Just t)
+
+-- | Pretty printer for taype definitions
+cuteDefs :: Options -> GCtx Text -> [Text] -> Doc
+cuteDefs options gctx =
+  foldMap $ \name -> go name <> hardline <> hardline
+  where
+    go name =
+      cuteDef options name $
+        fromMaybe (oops "definition not in context") (gctx !? name)

@@ -1,4 +1,5 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -11,13 +12,17 @@
 --
 -- Some of the functions are taken from the package extra.
 module Taype.Prelude
-  ( curry3,
+  ( oops,
+    curry3,
     uncurry3,
     firstM,
     secondM,
     findAndDel,
   )
 where
+
+oops :: Text -> a
+oops msg = error $ "Oops! This should not happen:\n" <> msg
 
 curry3 :: ((a, b, c) -> d) -> a -> b -> c -> d
 curry3 f a b c = f (a, b, c)
