@@ -658,16 +658,16 @@ oite_ :: Expr a -> Expr a -> Expr a -> Expr a
 oite_ cond left right = OIte {..}
 
 case_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
-case_ cond alts = Case {mTy = Nothing, alts = abstr <$> alts, ..}
-  where
-    abstr (ctor, binders, body) =
-      CaseAlt
-        { bnd = abstractBinder binders body,
-          binders = Just <$> binders,
-          ..
-        }
+case_ cond alts = Case {mTy = Nothing, alts = uncurry3 caseAlt_ <$> alts, ..}
 
-ocase_ :: a ~ Text => Expr a -> BinderM a -> Expr a -> BinderM a -> Expr a -> Expr a
+ocase_ ::
+  a ~ Text =>
+  Expr a ->
+  BinderM a ->
+  Expr a ->
+  BinderM a ->
+  Expr a ->
+  Expr a
 ocase_ cond lBinder lBody rBinder rBody =
   OCase
     { mTy = Nothing,

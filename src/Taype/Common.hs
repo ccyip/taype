@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -20,6 +21,7 @@ module Taype.Common
     Label (..),
     AppKind (..),
     CaseAlt (..),
+    caseAlt_,
     mustClosed,
   )
 where
@@ -102,6 +104,15 @@ instance (Monad f, PlateM (f Name)) => BiplateM (CaseAlt f Name) (f Name) where
 deriveShow1 ''CaseAlt
 
 instance (Show1 f, Show a) => Show (CaseAlt f a) where showsPrec = showsPrec1
+
+-- | Smart constructor for 'CaseAlt'
+caseAlt_ :: (Monad f, a ~ Text) => Text -> [BinderM a] -> f a -> CaseAlt f a
+caseAlt_ ctor binders body =
+  CaseAlt
+    { binders = Just <$> binders,
+      bnd = abstractBinder binders body,
+      ..
+    }
 
 mustClosed :: Traversable f => Text -> f a -> f b
 mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a

@@ -70,8 +70,6 @@ import Algebra.Lattice
 import Algebra.PartialOrd
 import Bound
 import Control.Monad.Error.Class
-import Data.HashMap.Strict ((!?))
-import qualified Data.HashMap.Strict as M
 import Data.List (lookup, partition, zip4, zipWith3)
 import Taype.Binder
 import Taype.Common
@@ -1519,8 +1517,8 @@ checkDefs options@Options {..} defs = runDcM options $ do
   let gctx' =
         if optNoFlattenLets
           then gctx
-          else runFreshM $ mapM flattenLets gctx
-  return $ mustClosed "Global context" <$> gctx'
+          else runFreshM $ mapMGCtxDef flattenLets gctx
+  return $ mustClosed "Global context" gctx'
   where
     -- Type checking definitions are done in the order of the given definitions.
     -- They can freely refer to the signatures of all definitions, allowing for
@@ -1533,7 +1531,7 @@ checkDefs options@Options {..} defs = runDcM options $ do
       let def =
             fromMaybe
               (oops $ "Definition " <> name <> " does not exist")
-              (gsctx !? name)
+              (lookupGCtx name gsctx)
       def' <- lift $ runTcM (initEnv options gsctx gdctx) $ checkDef def
       gdctx' <- extendGCtx1 gdctx name def'
       go gsctx gdctx' defs'
@@ -1683,14 +1681,14 @@ extendGCtx1 ::
   Def Name ->
   m (GCtx Name)
 extendGCtx1 gctx name def =
-  case gctx !? name of
+  case lookupGCtx name gctx of
     Just def' -> do
       Options {optFile = file, optCode = code} <- ask
       err_ (getDefLoc def) $
         "Definition" <+> dquotes (pretty name) <+> "has already been defined at"
           <> hardline
           <> pretty (renderFancyLocation file code (getDefLoc def'))
-    _ -> return $ M.insert name def gctx
+    _ -> return $ insertGCtx name def gctx
 
 extendGCtx ::
   (MonadError Err m, MonadReader Options m) =>
@@ -1781,16 +1779,10 @@ instance Cutie (Expr Text)
 instance Cutie (TCtx Text)
 
 instance Cutie (Expr Name) where
-  cutie e = do
-    Env {options, bctx} <- ask
-    let e' = e <&> renderName options bctx
-    cutie e'
+  cutie = cutie <=< mapM renderName
 
 instance Cutie (TCtx Int) where
-  cutie tctx = do
-    Env {options, bctx} <- ask
-    let tctx' = tctx <&> renderName options bctx
-    cutie tctx'
+  cutie = cutie <=< mapM renderName
 
 instance Cutie D where
   cutie (DD doc) = return doc
@@ -1847,8 +1839,11 @@ displayMsg dss = do
       <> hardline
       <> tctxDoc
 
-renderName :: Options -> BCtx Name -> Name -> Text
-renderName options bctx x = nameOrBinder options x $ lookup x bctx
+renderName :: Name -> TcM Text
+renderName x = do
+  binder <- lookupBinder x
+  Env {options} <- ask
+  return $ nameOrBinder options x binder
 
 errArity :: AppKind -> Text -> Int -> Int -> TcM a
 errArity appKind ref actual expected =

@@ -1,9 +1,12 @@
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -19,14 +22,19 @@ module Taype.Environment
     initEnv,
 
     -- * Contexts
-    GCtx,
+    GCtx (..),
     TCtx (..),
-    BCtx,
+    BCtx (..),
 
     -- * Manipulating environment
+    mapGCtxDef,
+    mapMGCtxDef,
+    lookupGCtx,
+    insertGCtx,
     lookupGSig,
     lookupGDef,
     lookupTy,
+    lookupBinder,
     extendCtx,
     extendCtx1,
     withLabel,
@@ -43,8 +51,9 @@ module Taype.Environment
 where
 
 import Data.HashMap.Strict ((!?))
+import qualified Data.HashMap.Strict as M
 import Data.List (lookup)
-import Relude.Extra.Bifunctor
+import qualified GHC.Exts as E
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -87,7 +96,7 @@ initEnv :: Options -> GCtx Name -> GCtx Name -> Env
 initEnv options gsctx gdctx =
   Env
     { tctx = TCtx [],
-      bctx = [],
+      bctx = BCtx [],
       loc = -1,
       cur = V 0,
       label = LeakyL,
@@ -97,35 +106,62 @@ initEnv options gsctx gdctx =
 ----------------------------------------------------------------
 -- Contexts
 
-type GCtx a = HashMap Text (Def a)
+newtype GCtx a = GCtx {unGCtx :: HashMap Text (Def a)}
+  deriving stock (Functor, Foldable, Traversable)
+  deriving newtype (Semigroup, Monoid)
+
+instance IsList (GCtx a) where
+  type Item (GCtx a) = (Text, Def a)
+  fromList = GCtx . fromList
+  toList = E.toList . unGCtx
 
 newtype TCtx a = TCtx {unTCtx :: [(a, (Ty a, Label))]}
+  deriving stock (Functor, Foldable, Traversable)
 
-instance Functor TCtx where
-  fmap f (TCtx tctx) = TCtx $ bimapF f (first (f <$>)) tctx
-
-type BCtx a = [(a, Binder)]
+newtype BCtx a = BCtx {unBCtx :: [(a, Binder)]}
+  deriving stock (Functor, Foldable, Traversable)
 
 ----------------------------------------------------------------
 -- Manipulating environment
 
+mapGCtxDef :: (Def a -> Def b) -> GCtx a -> GCtx b
+mapGCtxDef f (GCtx gctx) = GCtx $ f <$> gctx
+
+mapMGCtxDef :: (Monad m) => (Def a -> m (Def b)) -> GCtx a -> m (GCtx b)
+mapMGCtxDef f (GCtx gctx) = GCtx <$> mapM f gctx
+
+-- | Lookup a definition in a given global context.
+lookupGCtx :: Text -> GCtx a -> Maybe (Def a)
+lookupGCtx x (GCtx gctx) = gctx !? x
+
+-- | Insert a definition into a given global context. If a definition with the
+-- same name already exists in the context, it will be replaced.
+insertGCtx :: Text -> Def a -> GCtx a -> GCtx a
+insertGCtx x def (GCtx gctx) = GCtx $ M.insert x def gctx
+
 -- | Look up a definition in the global typing context.
 lookupGSig :: MonadReader Env m => Text -> m (Maybe (Def Name))
 lookupGSig x = do
-  Env {..} <- ask
-  return $ gsctx !? x
+  gctx <- asks gsctx
+  return $ lookupGCtx x gctx
 
 -- | Look up a definition in the global definition context.
 lookupGDef :: MonadReader Env m => Text -> m (Maybe (Def Name))
 lookupGDef x = do
-  Env {..} <- ask
-  return $ gdctx !? x
+  gctx <- asks gdctx
+  return $ lookupGCtx x gctx
 
 -- | Look up a type and its label in the typing context.
 lookupTy :: MonadReader Env m => Name -> m (Maybe (Ty Name, Label))
 lookupTy x = do
   TCtx tctx <- asks tctx
   return $ lookup x tctx
+
+-- | Look up the binder of a name.
+lookupBinder :: MonadReader Env m => Name -> m (Maybe Binder)
+lookupBinder x = do
+  BCtx bctx <- asks bctx
+  return $ lookup x bctx
 
 -- | Extend the typing context.
 --
@@ -135,10 +171,10 @@ extendCtx ::
   MonadReader Env m => [(Name, Ty Name, Label, Maybe Binder)] -> m a -> m a
 extendCtx xs = local go
   where
-    go Env {tctx = TCtx tctx, ..} =
+    go Env {tctx = TCtx tctx, bctx = BCtx bctx, ..} =
       Env
         { tctx = TCtx $ (ctx1 <$> xs) <> tctx,
-          bctx = mapMaybe bctx1 xs <> bctx,
+          bctx = BCtx $ mapMaybe bctx1 xs <> bctx,
           ..
         }
     ctx1 (x, t, l, _) = (x, (t, l))
@@ -168,20 +204,21 @@ withCur e = local (\Env {..} -> Env {cur = e, ..})
 -- | The prelude context includes builtin functions.
 preludeGCtx :: GCtx a
 preludeGCtx =
-  fromList $
-    builtin
-      <$> [ ("+", [TInt, TInt], TInt, JoinStrategy),
-            ("~+", [OInt, OInt], OInt, SafeStrategy),
-            ("-", [TInt, TInt], TInt, JoinStrategy),
-            ("~-", [OInt, OInt], OInt, SafeStrategy),
-            ("==", [TInt, TInt], TBool, JoinStrategy),
-            ("~=", [OInt, OInt], OBool, SafeStrategy),
-            ("<=", [TInt, TInt], TBool, JoinStrategy),
-            ("~<=", [OInt, OInt], OBool, SafeStrategy),
-            ("s_bool", [TBool], OBool, JoinStrategy),
-            ("s_int", [TInt], OInt, JoinStrategy),
-            ("r_int", [OInt], TInt, LeakyStrategy)
-          ]
+  GCtx $
+    fromList $
+      builtin
+        <$> [ ("+", [TInt, TInt], TInt, JoinStrategy),
+              ("~+", [OInt, OInt], OInt, SafeStrategy),
+              ("-", [TInt, TInt], TInt, JoinStrategy),
+              ("~-", [OInt, OInt], OInt, SafeStrategy),
+              ("==", [TInt, TInt], TBool, JoinStrategy),
+              ("~=", [OInt, OInt], OBool, SafeStrategy),
+              ("<=", [TInt, TInt], TBool, JoinStrategy),
+              ("~<=", [OInt, OInt], OBool, SafeStrategy),
+              ("s_bool", [TBool], OBool, JoinStrategy),
+              ("s_int", [TInt], OInt, JoinStrategy),
+              ("r_int", [OInt], TInt, LeakyStrategy)
+            ]
 
 builtin :: (Text, [Ty a], Ty a, LabelPolyStrategy) -> (Text, Def a)
 builtin (name, paraTypes, resType, strategy) = (name, BuiltinDef {..})
@@ -201,7 +238,7 @@ instance Cute (TCtx Text) where
 
 -- | Pretty printer for taype definitions
 cuteDefs :: Options -> GCtx Text -> [Text] -> Doc
-cuteDefs options gctx =
+cuteDefs options (GCtx gctx) =
   foldMap $ \name -> go name <> hardline <> hardline
   where
     go name =
