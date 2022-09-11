@@ -4,13 +4,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 
 -- |
@@ -57,7 +55,6 @@ import Algebra.Lattice.M2
 import Algebra.PartialOrd
 import Bound
 import Control.Monad
-import Data.Deriving
 import Data.Functor.Classes
 import qualified Data.Text as T
 import Taype.Binder
@@ -696,13 +693,6 @@ opcase_ cond lBinder rBinder body =
       bnd2 = abstractBinder (lBinder, rBinder) body,
       ..
     }
-
-----------------------------------------------------------------
--- Template Haskell related stuff
-
-deriveShow1 ''Expr
-
-instance Show a => Show (Expr a) where showsPrec = showsPrec1
 
 ----------------------------------------------------------------
 -- Pretty printer

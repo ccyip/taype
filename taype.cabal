@@ -65,7 +65,6 @@ library
   build-depends:       base >= 4.14.3.0 && < 4.16
                      , relude
                      , bound
-                     , deriving-compat
                      , prettyprinter
                      , megaparsec
                      , Earley

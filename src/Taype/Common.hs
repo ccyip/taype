@@ -6,7 +6,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -28,7 +27,6 @@ where
 
 import Algebra.Lattice
 import Bound
-import Data.Deriving
 import Data.Functor.Classes
 import Prettyprinter (Pretty)
 import qualified Prettyprinter as PP
@@ -100,10 +98,6 @@ instance (Monad f, PlateM (f Name)) => BiplateM (CaseAlt f Name) (f Name) where
     (xs, body) <- unbindMany (length binders) bnd
     body' <- f body
     return CaseAlt {bnd = abstract_ xs body', ..}
-
-deriveShow1 ''CaseAlt
-
-instance (Show1 f, Show a) => Show (CaseAlt f a) where showsPrec = showsPrec1
 
 -- | Smart constructor for 'CaseAlt'
 caseAlt_ :: (Monad f, a ~ Text) => Text -> [BinderM a] -> f a -> CaseAlt f a
