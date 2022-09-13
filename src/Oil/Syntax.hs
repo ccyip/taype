@@ -1,10 +1,13 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TupleSections #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -27,15 +30,22 @@ module Oil.Syntax
     arrConcat,
     arrSlice,
     arrMux,
+
+    -- * Pretty printer
+    cuteDefs,
   )
 where
 
 import Bound
-import Control.Monad
+import Control.Monad (ap)
 import Taype.Binder
 import Taype.Common
+import Taype.Cute
 import Taype.Name
+import qualified Taype.NonEmpty as NE
 import Taype.Plate
+import Taype.Prelude
+import Prelude hiding (group)
 
 ----------------------------------------------------------------
 -- Syntax
@@ -106,7 +116,7 @@ data Def b a
   = -- | Function
     FunDef
       { binders :: [Maybe Binder],
-        ty :: Scope Int Ty b,
+        tyBnd :: Scope Int Ty b,
         expr :: Expr a
       }
   | -- | Algebraic data type
@@ -199,3 +209,130 @@ instance Monad Ty where
   OArray >>= _ = OArray
   Arrow {..} >>= f = Arrow {dom = dom >>= f, cod = cod >>= f}
   TApp {..} >>= f = TApp {args = args <&> (>>= f), ..}
+
+----------------------------------------------------------------
+-- Pretty printer
+
+instance Cute (Expr Text) where
+  cute V {..} = cute name
+  cute GV {..} = cute ref
+  cute ILit {..} = cute iLit
+  cute e@Lam {} = cuteLam False e
+  cute e@App {fn = GV {..}, args = [left, right]}
+    | isInfix ref = cuteInfix e ref left right
+  cute App {fn = GV {..}, args = [left, right]}
+    | ref == pairCtor = cutePair "" left right
+  cute App {..} = cuteApp fn args
+  cute Let {..} = do
+    let (binders, bnds) =
+          NE.unzip $ bindings <&> \Binding {..} -> (binder, bnd)
+    (xs, body) <- unbindManyNamesOrBinders (toList binders) bndMany
+    bindingDocs <- zipWithM (cuteBinding xs) xs (toList bnds)
+    bodyDoc <- cute body
+    return $ cuteLetDoc bindingDocs bodyDoc
+    where
+      cuteBinding xs x bnd = do
+        binderDoc <- cute x
+        rhsDoc <- cute $ instantiateName xs bnd
+        return (binderDoc, rhsDoc)
+  cute
+    Case
+      { alts =
+          CaseAlt {ctor = lCtor, binders = [], bnd = lBnd}
+            :| [CaseAlt {ctor = rCtor, binders = [], bnd = rBnd}],
+        ..
+      } | lCtor == trueCtor && rCtor == falseCtor = do
+      (_, left) <- unbindManyNamesOrBinders [] lBnd
+      (_, right) <- unbindManyNamesOrBinders [] rBnd
+      cuteIte "" cond left right
+  cute
+    Case
+      { alts = CaseAlt {..} :| [],
+        ..
+      } | ctor == pairCtor = do
+      (xs, body) <- unbindManyNamesOrBinders binders bnd
+      case xs of
+        [xl, xr] -> cutePCase_ "" cond xl xr body
+        _ -> oops "Binder number does not match"
+  cute Case {..} = cuteCase "" True cond alts
+
+-- | Pretty printer for a type
+instance Cute (Ty Text) where
+  cute TV {..} = cute name
+  cute TGV {..} = cute ref
+  cute TInt = "Int"
+  cute OArray = cute $ oblivAccent <> "Array"
+  cute Arrow {..} = do
+    domDoc <- cute dom
+    codDoc <- cute cod
+    return $ domDoc <+> "->" <> line <> codDoc
+  cute t@TApp {args = [left, right], ..}
+    | isInfix tctor = cuteInfix t tctor left right
+  cute TApp {..} = cuteApp_ (pretty tctor) args
+
+-- | Pretty printer for a definition
+instance Cute (Text, Def Text Text) where
+  cute (name, def) = case def of
+    FunDef {..} -> do
+      (xs, ty) <- unbindManyNamesOrBinders binders tyBnd
+      tyDoc <- cute ty
+      doc <- cuteLam True expr
+      return $
+        hang $
+          "fn" <+> pretty name <> tyVarsDoc xs
+            <> sep1_ name (colon <+> align (group tyDoc))
+            <+> equals
+            <> doc
+    ADTDef {..} -> do
+      xs <- mapM freshNameOrBinder binders
+      ctorDocs <- mapM (cuteCtor xs) ctors
+      return $
+        hang $
+          "data" <+> pretty name <> tyVarsDoc xs
+            <> sep1
+              ( equals
+                  <+> sepWith (line <> pipe <> space) ctorDocs
+              )
+      where
+        cuteCtor xs (ctor, paraBnds) = do
+          let paraTypes = paraBnds <&> instantiateName xs
+          cuteApp_ (pretty ctor) paraTypes
+    where
+      tyVarsDoc [] = ""
+      tyVarsDoc xs = softline <> brackets (sep $ pretty <$> xs)
+
+-- | Pretty printer for OIL definitions
+cuteDefs :: Options -> [(Text, Def Text Text)] -> Doc
+cuteDefs options =
+  foldMap $ \def -> runCuteM options (cute def) <> hardline <> hardline
+
+cuteLam :: Bool -> Expr Text -> CuteM Doc
+cuteLam isRoot e = do
+  (binderDocs, bodyDoc) <- go e
+  return $ cuteLamDoc isRoot binderDocs bodyDoc
+  where
+    go Lam {..} = do
+      (x, body) <- unbind1NameOrBinder binder bnd
+      binderDoc <- cute x
+      (binderDocs, bodyDoc) <- go body
+      return (binderDoc : binderDocs, bodyDoc)
+    go expr = ([],) <$> cute expr
+
+instance HasPLevel (Expr a) where
+  plevel = \case
+    V {} -> 0
+    GV {} -> 0
+    ILit {} -> 0
+    App {fn = GV {..}} | isInfix ref -> 20
+    App {} -> 10
+    _ -> 90
+
+instance HasPLevel (Ty a) where
+  plevel = \case
+    TV {} -> 0
+    TGV {} -> 0
+    TInt {} -> 0
+    OArray {} -> 0
+    TApp {..} | isInfix tctor -> 20
+    TApp {} -> 10
+    _ -> 90
