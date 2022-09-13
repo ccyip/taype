@@ -102,25 +102,25 @@ pToken =
           Let <$ symbol "let",
           In <$ symbol "in",
           If <$ symbol "if",
-          OIf <$ symbol "~if",
+          OIf <$ symbol (oblivAccent <> "if"),
           Then <$ symbol "then",
           Else <$ symbol "else",
           Mux <$ symbol "mux",
           Case <$ symbol "case",
-          OCase <$ symbol "~case",
+          OCase <$ symbol (oblivAccent <> "case"),
           Of <$ symbol "of",
           End <$ symbol "end",
-          OInj True <$ symbol "~inl",
-          OInj False <$ symbol "~inr",
+          OInj True <$ symbol (oblivAccent <> "inl"),
+          OInj False <$ symbol (oblivAccent <> "inr"),
           Tape <$ symbol "tape"
         ]
         <?> "keyword",
       choice
         [ TUnit <$ symbol "Unit",
           TBool <$ symbol boolTCtor,
-          OBool <$ symbol ("~" <> boolTCtor),
+          OBool <$ symbol (oblivAccent <> boolTCtor),
           TInt <$ symbol "Int",
-          OInt <$ symbol "~Int"
+          OInt <$ symbol (oblivAccent <> "Int")
         ]
         <?> "built-in type",
       choice
@@ -140,7 +140,7 @@ pToken =
       LAttr <$ symbol "#[",
       RBrace <$ symbol "]",
       LParen <$ symbol "(",
-      LOParen <$ symbol "~(",
+      LOParen <$ symbol (oblivAccent <> "("),
       RParen <$ symbol ")"
     ]
 
@@ -152,7 +152,7 @@ isIdent c = isAlphaNum c || c == '_' || c == '\''
 
 pIdent :: Parser Token
 pIdent = lexeme . try $ do
-  mayObliv <- option "" $ symbol "~"
+  mayObliv <- option "" $ symbol oblivAccent
   x <- satisfy isIdent0
   xs <- takeWhileP Nothing isIdent
   let ident = mayObliv <> T.cons x xs
@@ -174,19 +174,19 @@ reserved =
     "else",
     "mux",
     "case",
-    "~case",
+    oblivAccent <> "case",
     "of",
     "end",
-    "~inl",
-    "~inr",
+    oblivAccent <> "inl",
+    oblivAccent <> "inr",
     "tape",
     "Unit",
-    "Bool",
-    "~Bool",
+    boolTCtor,
+    oblivAccent <> boolTCtor,
     "Int",
-    "~Int",
-    "True",
-    "False"
+    oblivAccent <> "Int",
+    trueCtor,
+    falseCtor
   ]
 
 -- | Parse a token with offset.

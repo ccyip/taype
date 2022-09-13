@@ -28,33 +28,33 @@ fn insert : Int -> List -> List = \ x xs ->
   end
 
 -- Now let's implement a corresponding oblivious list. By convention, we prefix
--- the oblivious type with "~". All builtin oblivious operations are also
--- prefixed by "~".
-obliv ~List (k : Int) =
+-- the oblivious type with "`". All builtin oblivious operations are also
+-- prefixed by "`".
+obliv `List (k : Int) =
   if k == 0
   then Unit
-  else Unit ~+ ~Int ~* ~List (k-1)
+  else Unit `+ `Int `* `List (k-1)
 
 -- We need to define the corresponding section and retraction functions. We also
 -- add "attributes" before the functions to indicate their roles. We will use
 -- builtin section and retraction functions "s_int" and "r_int".
 #[section]
-fn s_list : (k : Int) -> List -> ~List k = \ k xs ->
+fn s_list : (k : Int) -> List -> `List k = \ k xs ->
   if k == 0
   then ()
   else tape (case xs of
-             | Nil -> ~inl ()
-             | Cons x xs' -> ~inr ~(tape (s_int x), s_list (k-1) xs')
+             | Nil -> `inl ()
+             | Cons x xs' -> `inr `(tape (s_int x), s_list (k-1) xs')
              end)
 
 #[retraction]
-fn r_list : (k : Int) -> ~List k -> List = \ k ->
+fn r_list : (k : Int) -> `List k -> List = \ k ->
   if k == 0
   then \ _ -> Nil
-  else \ xs -> ~case xs of
-               | ~inl _ -> Nil
-               | ~inr p -> ~case p of
-                           ~(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
+  else \ xs -> `case xs of
+               | `inl _ -> Nil
+               | `inr p -> `case p of
+                           `(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
                            end
                end
 
@@ -63,9 +63,9 @@ fn r_list : (k : Int) -> ~List k -> List = \ k ->
 -- attribute indicates that these functions and their arguments are free of
 -- potential leakage.
 #[safe]
-fn ~lookup : (k : Int) -> ~Int -> ~List k -> ~Bool = \ k x xs ->
+fn `lookup : (k : Int) -> `Int -> `List k -> `Bool = \ k x xs ->
   tape (s_bool (lookup (r_int x) (r_list k xs)))
 
 #[safe]
-fn ~insert : (k : Int) -> ~Int -> ~List k -> ~List (k+1) = \ k x xs ->
+fn `insert : (k : Int) -> `Int -> `List k -> `List (k+1) = \ k x xs ->
   s_list (k+1) (insert (r_int x) (r_list k xs))

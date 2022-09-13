@@ -33,6 +33,7 @@ module Taype.Common
     trueCtor,
     falseCtor,
     prodTCtor,
+    sumTCtor,
     pairCtor,
   )
 where
@@ -128,7 +129,7 @@ mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a
 
 -- | Oblivious accent
 oblivAccent :: Text
-oblivAccent = "~"
+oblivAccent = "`"
 
 -- | The infix operators
 infixes :: [Text]
@@ -160,6 +161,12 @@ falseCtor = "False"
 -- | The product type constructor
 prodTCtor :: Text
 prodTCtor = "*"
+
+-- | The sum type constructor
+--
+-- This is not used, as we do not support normal sum type yet.
+sumTCtor :: Text
+sumTCtor = "+"
 
 -- | The pair constructor
 pairCtor :: Text

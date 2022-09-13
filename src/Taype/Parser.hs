@@ -22,6 +22,7 @@ import Control.Applicative.Combinators.NonEmpty (sepBy1)
 import Control.Monad.Error.Class
 import Data.List.NonEmpty (some1)
 import Taype.Binder
+import Taype.Common
 import Taype.Cute
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
@@ -94,9 +95,9 @@ getLoc Loc {loc} = loc
 getLoc _ = oops "Location not available"
 
 infixToTypeFormer :: Text -> (Ty a -> Ty a -> Ty a)
-infixToTypeFormer "*" = Prod
-infixToTypeFormer "~*" = OProd
-infixToTypeFormer "~+" = OSum
+infixToTypeFormer x | x == prodTCtor = Prod
+infixToTypeFormer x | x == oblivAccent <> prodTCtor = OProd
+infixToTypeFormer x | x == oblivAccent <> sumTCtor = OSum
 infixToTypeFormer _ = oops "unknown type infix"
 
 -- | The grammar for taype language
@@ -222,7 +223,10 @@ grammar = mdo
   pCompareExpr <-
     rule $
       choice
-        [ pInfixExpr ["==", "~==", "<=", "~<="] pAddExpr pAddExpr,
+        [ pInfixExpr
+            ["==", "<=", oblivAccent <> "==", oblivAccent <> "<="]
+            pAddExpr
+            pAddExpr,
           pAddExpr
         ]
 
@@ -230,7 +234,10 @@ grammar = mdo
   pAddExpr <-
     rule $
       choice
-        [ pInfixExpr ["+", "-", "~+", "~-"] pAddExpr pMulExpr,
+        [ pInfixExpr
+            ["+", "-", oblivAccent <> "+", oblivAccent <> "-"]
+            pAddExpr
+            pMulExpr,
           pMulExpr
         ]
 
@@ -341,15 +348,23 @@ grammar = mdo
 
   -- Right-associative product type
   pProdType <-
-    rule $ choice [pInfixType ["*"] pOSumType pProdType, pOSumType]
+    rule $ choice [pInfixType [prodTCtor] pOSumType pProdType, pOSumType]
 
   -- Right-associative oblivious sum type
   pOSumType <-
-    rule $ choice [pInfixType ["~+"] pOProdType pOSumType, pOProdType]
+    rule $
+      choice
+        [ pInfixType [oblivAccent <> sumTCtor] pOProdType pOSumType,
+          pOProdType
+        ]
 
   -- Right-associative oblivious product type
   pOProdType <-
-    rule $ choice [pInfixType ["~*"] pAppType pOProdType, pAppType]
+    rule $
+      choice
+        [ pInfixType [oblivAccent <> prodTCtor] pAppType pOProdType,
+          pAppType
+        ]
 
   -- Type application
   pAppType <-
@@ -511,14 +526,14 @@ renderToken = \case
   L.LAttr -> dquotes $ "#" <> lbracket
   L.RBrace -> squotes rbracket
   L.LParen -> squotes lparen
-  L.LOParen -> dquotes $ "~" <> lparen
+  L.LOParen -> dquotes $ pretty oblivAccent <> lparen
   L.RParen -> squotes rparen
   L.TUnit -> "Unit"
-  L.TBool -> "Bool"
-  L.OBool -> "~Bool"
+  L.TBool -> pretty boolTCtor
+  L.OBool -> pretty $ oblivAccent <> boolTCtor
   L.BLit _ -> "boolean literal"
   L.TInt -> "Int"
-  L.OInt -> "~Int"
+  L.OInt -> pretty $ oblivAccent <> "Int"
   L.ILit _ -> "integer literal"
   L.Data -> "data"
   L.Obliv -> "obliv"
@@ -526,15 +541,15 @@ renderToken = \case
   L.Let -> "let"
   L.In -> "in"
   L.If -> "if"
-  L.OIf -> "~if"
+  L.OIf -> pretty $ oblivAccent <> "if"
   L.Then -> "then"
   L.Else -> "else"
   L.Mux -> "mux"
   L.Case -> "case"
-  L.OCase -> "~case"
+  L.OCase -> pretty $ oblivAccent <> "case"
   L.Of -> "of"
   L.End -> "end"
   L.Tape -> "tape"
-  L.OInj tag -> if tag then "~inl" else "~inr"
+  L.OInj tag -> pretty $ oblivAccent <> if tag then "inl" else "inr"
   L.Ident ident -> "identifier" <+> dquotes (pretty ident)
   L.Infix ident -> "infix" <+> dquotes (pretty ident)
