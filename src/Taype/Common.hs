@@ -25,8 +25,10 @@ module Taype.Common
 
     -- * Common names
     oblivAccent,
+    leakyAccent,
     infixes,
     oblivInfixes,
+    leakyInfixes,
     allInfixes,
     isInfix,
     boolTCtor,
@@ -131,6 +133,10 @@ mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a
 oblivAccent :: Text
 oblivAccent = "`"
 
+-- | Leaky accent
+leakyAccent :: Text
+leakyAccent = "~"
+
 -- | The infix operators
 infixes :: [Text]
 infixes = ["<=", "==", "+", "-", "*"]
@@ -139,9 +145,13 @@ infixes = ["<=", "==", "+", "-", "*"]
 oblivInfixes :: [Text]
 oblivInfixes = (oblivAccent <>) <$> infixes
 
+-- | The leaky infix operators
+leakyInfixes :: [Text]
+leakyInfixes = (leakyAccent <>) <$> infixes
+
 -- | All infix operators
 allInfixes :: [Text]
-allInfixes = infixes <> oblivInfixes
+allInfixes = infixes <> oblivInfixes <> leakyInfixes
 
 isInfix :: Text -> Bool
 isInfix = (`elem` allInfixes)
