@@ -54,7 +54,6 @@ import Algebra.PartialOrd
 import Bound
 import Control.Monad
 import Data.Functor.Classes
-import qualified Data.Text as T
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -776,11 +775,12 @@ cuteDef options name = \case
           "fn" <+> go (cuteBinder name label (Just ty)) <+> equals
             <> go (cuteLam True expr)
   ADTDef {..} ->
-    "data" <+> pretty name
-      <+> align
-        ( equals
-            <+> group (sepWith (line <> pipe <> space) (cuteCtor <$> ctors))
-        )
+    hang $
+      "data" <+> pretty name
+        <> sep1
+          ( equals
+              <+> sepWith (line <> pipe <> space) (cuteCtor <$> ctors)
+          )
     where
       cuteCtor (ctor, paraTypes) =
         hang $
@@ -822,12 +822,7 @@ cuteBinder x l (Just ty) = do
   labelDoc <- ifM (asks optPrintLabels) (cuteLabel l) ""
   return $
     hang $
-      pretty x
-        <> ( if T.length x <= indentLevel
-               then (space <>)
-               else sep1
-           )
-          (colon <> labelDoc <+> align (group tyDoc))
+      pretty x <> sep1_ x (colon <> labelDoc <+> align (group tyDoc))
 
 cuteEnclosedBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM Doc
 cuteEnclosedBinder x l mTy = do

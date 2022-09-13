@@ -1,9 +1,9 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE FlexibleInstances #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -22,6 +22,7 @@ module Taype.Cute
     hang,
     indent,
     sep1,
+    sep1_,
     sepWith,
     printDoc,
 
@@ -64,6 +65,7 @@ module Taype.Cute
 where
 
 import Bound
+import qualified Data.Text as T
 import Prettyprinter hiding (Doc, hang, indent)
 import qualified Prettyprinter as PP
 import Prettyprinter.Render.Text (putDoc)
@@ -94,6 +96,9 @@ sepWith s = concatWith (\x y -> x <> s <> y)
 
 sep1 :: Doc -> Doc
 sep1 = group . (line <>)
+
+sep1_ :: Text -> Doc -> Doc
+sep1_ x = if T.length x <= indentLevel then (space <>) else sep1
 
 printDoc :: MonadIO m => Options -> Doc -> m ()
 printDoc Options {..} = liftIO . maybe putDoc putDocW optWidth
