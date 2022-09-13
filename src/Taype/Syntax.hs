@@ -34,8 +34,6 @@ module Taype.Syntax
     lam_,
     pi_,
     app_,
-    iapp_,
-    tapp_,
     let_,
     ite_,
     oite_,
@@ -633,12 +631,6 @@ pi_ binder ty body =
 app_ :: Expr a -> [Expr a] -> Expr a
 app_ fn args = App {appKind = Nothing, ..}
 
-iapp_ :: Expr a -> [Expr a] -> Expr a
-iapp_ fn args = App {appKind = Just InfixApp, ..}
-
-tapp_ :: Expr a -> [Expr a] -> Ty a
-tapp_ fn args = App {appKind = Just TypeApp, ..}
-
 let_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a -> Expr a
 let_ binder mTy rhs body =
   Let
@@ -712,10 +704,12 @@ cuteExpr e@Pi {..} = do
   bodyDoc <- cuteExpr body
   return $ binderDoc <+> "->" <> line <> bodyDoc
 cuteExpr e@Lam {} = cuteLam False e
-cuteExpr e@App {appKind = Just InfixApp, args = left : right : _, ..} = do
-  fnDoc <- cuteSubExprAgg fn
-  cuteInfix e fnDoc left right
-cuteExpr App {appKind = Just InfixApp} = oops "Not enough infix operands"
+cuteExpr e@App {..} | isInfixFn fn =
+  case args of
+    [left, right] -> do
+      fnDoc <- cuteSubExprAgg fn
+      cuteInfix e fnDoc left right
+    _ -> oops "Mismatched infix operands"
 cuteExpr App {..} = do
   fnDoc <- cuteSubExprAgg fn
   cuteApp fnDoc args
@@ -742,8 +736,8 @@ cuteExpr OPair {..} = cutePair "~" left right
 cuteExpr OPCase {..} = cutePCase "~" cond lBinder rBinder bnd2
 cuteExpr e@OSum {..} = cuteInfix e "~+" left right
 cuteExpr OInj {..} = do
-  typeDoc <- fromMaybe "" <$> mapM cuteInjType mTy
-  cuteApp ((if tag then "~inl" else "~inr") <> typeDoc) [inj]
+  tyDoc <- fromMaybe "" <$> mapM cuteInjType mTy
+  cuteApp ((if tag then "~inl" else "~inr") <> tyDoc) [inj]
   where
     cuteInjType ty = angles <$> cuteExpr ty
 cuteExpr OCase {..} = do
@@ -757,9 +751,9 @@ cuteExpr OCase {..} = do
       cuteAltDocs [("~inl", [xl], lBodyDoc), ("~inr", [xr], rBodyDoc)]
 cuteExpr Mux {..} = cuteApp "mux" [cond, left, right]
 cuteExpr Asc {..} = do
-  typeDoc <- cuteExpr ty
+  tyDoc <- cuteExpr ty
   exprDoc <- cuteExpr expr
-  return $ parens $ hang $ align exprDoc <> sep1 (colon <+> typeDoc)
+  return $ parens $ hang $ align exprDoc <> sep1 (colon <+> tyDoc)
 cuteExpr Promote {..} = do
   doc <- cuteSubExprAgg expr
   return $ "!" <> doc
@@ -806,7 +800,7 @@ cuteBinder x l Nothing =
     ((<>) . parens <$> cute x <*> cuteLabel l)
     (cute x)
 cuteBinder x l (Just ty) = do
-  typeDoc <- cuteExpr ty
+  tyDoc <- cuteExpr ty
   labelDoc <- ifM (asks optPrintLabels) (cuteLabel l) ""
   return $
     hang $
@@ -815,7 +809,7 @@ cuteBinder x l (Just ty) = do
                then (space <>)
                else sep1
            )
-          (colon <> labelDoc <+> align (group typeDoc))
+          (colon <> labelDoc <+> align (group tyDoc))
 
 cuteEnclosedBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM Doc
 cuteEnclosedBinder x l mTy = do
@@ -1004,7 +998,7 @@ exprLevel = \case
   V {} -> 0
   GV {} -> 0
   -- Do not distinguish infix further.
-  App {appKind = Just InfixApp} -> 20
+  App {fn} | isInfixFn fn -> 20
   App {} -> 10
   TUnit -> 0
   VUnit -> 0
@@ -1026,3 +1020,8 @@ exprLevel = \case
   Asc {} -> 0
   Loc {..} -> exprLevel expr
   _ -> 90
+
+isInfixFn :: Expr a -> Bool
+isInfixFn GV {..} = isInfix ref
+isInfixFn Loc {..} = isInfixFn expr
+isInfixFn _ = False

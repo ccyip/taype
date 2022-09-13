@@ -239,9 +239,7 @@ typing App {..} Nothing ml =
             App
               { fn = GV f,
                 args = V <$> xs,
-                appKind = case appKind of
-                  Just InfixApp -> Just InfixApp
-                  _ -> Just appKind'
+                appKind = Just appKind'
               }
       return (resType, l', e')
     -- Application for functions
@@ -1850,7 +1848,6 @@ errArity appKind ref actual expected =
   let what = case appKind of
         CtorApp -> "constructor"
         BuiltinApp -> "builtin function"
-        InfixApp -> "builtin function"
         TypeApp -> "oblivious ADT"
         FunApp -> "function"
    in err

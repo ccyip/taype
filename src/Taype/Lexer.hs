@@ -23,6 +23,7 @@ where
 import Control.Monad.Error.Class
 import Data.Char
 import qualified Data.Text as T
+import Taype.Common
 import Taype.Cute hiding (space)
 import Taype.Error
 import Text.Megaparsec hiding (Token, token, tokens)
@@ -93,19 +94,7 @@ pToken =
   choice
     [ pIdent <?> "identifier",
       Arrow <$ symbol "->",
-      choice
-        [ Infix <$> symbol "<=",
-          Infix <$> symbol "~<=",
-          Infix <$> symbol "==",
-          Infix <$> symbol "~=",
-          Infix <$> symbol "+",
-          Infix <$> symbol "-",
-          Infix <$> symbol "~+",
-          Infix <$> symbol "~-",
-          Infix <$> symbol "*",
-          Infix <$> symbol "~*"
-        ]
-        <?> "infix",
+      choice ((Infix <$>) . symbol <$> infixes <> oblivInfixes) <?> "infix",
       choice
         [ Data <$ symbol "data",
           Obliv <$ symbol "obliv",
@@ -128,15 +117,15 @@ pToken =
         <?> "keyword",
       choice
         [ TUnit <$ symbol "Unit",
-          TBool <$ symbol "Bool",
-          OBool <$ symbol "~Bool",
+          TBool <$ symbol boolTCtor,
+          OBool <$ symbol ("~" <> boolTCtor),
           TInt <$ symbol "Int",
           OInt <$ symbol "~Int"
         ]
         <?> "built-in type",
       choice
-        [ BLit True <$ symbol "True",
-          BLit False <$ symbol "False",
+        [ BLit True <$ symbol trueCtor,
+          BLit False <$ symbol falseCtor,
           ILit <$> lexeme L.decimal
         ]
         <?> "literal",

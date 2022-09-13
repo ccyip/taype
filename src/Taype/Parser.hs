@@ -216,15 +216,23 @@ grammar = mdo
           pCompareExpr
         ]
 
-  let pInfixExpr = pInfix $ \ref left right -> iapp_ (GV {..}) [left, right]
+  let pInfixExpr = pInfix $ \ref left right -> app_ (GV {..}) [left, right]
 
   -- Comparative infix
   pCompareExpr <-
-    rule $ choice [pInfixExpr ["==", "~=", "<=", "~<="] pAddExpr pAddExpr, pAddExpr]
+    rule $
+      choice
+        [ pInfixExpr ["==", "~==", "<=", "~<="] pAddExpr pAddExpr,
+          pAddExpr
+        ]
 
   -- Left-associative additive infix
   pAddExpr <-
-    rule $ choice [pInfixExpr ["+", "-", "~+", "~-"] pAddExpr pMulExpr, pMulExpr]
+    rule $
+      choice
+        [ pInfixExpr ["+", "-", "~+", "~-"] pAddExpr pMulExpr,
+          pMulExpr
+        ]
 
   -- Left-associative multiplicative infix
   --
@@ -347,7 +355,7 @@ grammar = mdo
   pAppType <-
     rule $
       choice
-        [ pApp tapp_ pAtomType,
+        [ pApp app_ pAtomType,
           -- Next precedence
           pAtomType
         ]
