@@ -33,12 +33,6 @@ module Taype.Common
     leakyInfixes,
     allInfixes,
     isInfix,
-    boolTCtor,
-    trueCtor,
-    falseCtor,
-    prodTCtor,
-    sumTCtor,
-    pairCtor,
   )
 where
 
@@ -163,30 +157,3 @@ allInfixes = infixes <> oblivInfixes <> leakyInfixes
 
 isInfix :: Text -> Bool
 isInfix = (`elem` allInfixes)
-
--- | Boolean type constructor
-boolTCtor :: Text
-boolTCtor = "Bool"
-
--- | Boolean constructor True
-trueCtor :: Text
-trueCtor = "True"
-
--- | Boolean constructor False
-falseCtor :: Text
-falseCtor = "False"
-
--- | The product type constructor
-prodTCtor :: Text
-prodTCtor = "*"
-
--- | The sum type constructor
---
--- This is not used except for being part of the oblivious sum name, as we do
--- not support normal sum type yet.
-sumTCtor :: Text
-sumTCtor = "+"
-
--- | The pair constructor
-pairCtor :: Text
-pairCtor = "(,)"

@@ -717,23 +717,23 @@ instance Cute (Expr Text) where
       go expr = ([],) <$> cute expr
   cute TUnit = "Unit"
   cute VUnit = "()"
-  cute TBool = cute boolTCtor
-  cute OBool = cute $ oblivName boolTCtor
-  cute BLit {..} = cute $ if bLit then trueCtor else falseCtor
+  cute TBool = "Bool"
+  cute OBool = cute $ oblivName "Bool"
+  cute BLit {..} = if bLit then "True" else "False"
   cute TInt = "Int"
   cute OInt = cute $ oblivName "Int"
   cute ILit {..} = cute iLit
   cute Ite {..} = cuteIte "" cond left right
   cute Case {..} = cuteCase "" True cond alts
   cute OIte {..} = cuteIte oblivAccent cond left right
-  cute e@Prod {..} = cuteInfix e prodTCtor left right
+  cute e@Prod {..} = cuteInfix e "*" left right
   cute Pair {..} = cutePair "" left right
   cute PCase {..} = cutePCase "" cond lBinder rBinder bnd2
   cute e@OProd {..} =
-    cuteInfix e (oblivName prodTCtor) left right
+    cuteInfix e (oblivName "*") left right
   cute OPair {..} = cutePair oblivAccent left right
   cute OPCase {..} = cutePCase oblivAccent cond lBinder rBinder bnd2
-  cute e@OSum {..} = cuteInfix e (oblivName sumTCtor) left right
+  cute e@OSum {..} = cuteInfix e (oblivName "+") left right
   cute OInj {..} = do
     tyDoc <- fromMaybe "" <$> mapM cuteInjType mTy
     cuteApp_

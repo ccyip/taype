@@ -117,15 +117,15 @@ pToken =
         <?> "keyword",
       choice
         [ TUnit <$ symbol "Unit",
-          TBool <$ symbol boolTCtor,
-          OBool <$ symbol (oblivName boolTCtor),
+          TBool <$ symbol "Bool",
+          OBool <$ symbol (oblivName "Bool"),
           TInt <$ symbol "Int",
           OInt <$ symbol (oblivName "Int")
         ]
         <?> "built-in type",
       choice
-        [ BLit True <$ symbol trueCtor,
-          BLit False <$ symbol falseCtor,
+        [ BLit True <$ symbol "True",
+          BLit False <$ symbol "False",
           ILit <$> lexeme L.decimal
         ]
         <?> "literal",
@@ -181,12 +181,12 @@ reserved =
     oblivName "inr",
     "tape",
     "Unit",
-    boolTCtor,
-    oblivName boolTCtor,
+    "Bool",
+    oblivName "Bool",
     "Int",
     oblivName "Int",
-    trueCtor,
-    falseCtor
+    "True",
+    "False"
   ]
 
 -- | Parse a token with offset.

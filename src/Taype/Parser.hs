@@ -95,9 +95,9 @@ getLoc Loc {loc} = loc
 getLoc _ = oops "Location not available"
 
 infixToTypeFormer :: Text -> (Ty a -> Ty a -> Ty a)
-infixToTypeFormer x | x == prodTCtor = Prod
-infixToTypeFormer x | x == oblivName prodTCtor = OProd
-infixToTypeFormer x | x == oblivName sumTCtor = OSum
+infixToTypeFormer "*" = Prod
+infixToTypeFormer x | x == oblivName "*" = OProd
+infixToTypeFormer x | x == oblivName "+" = OSum
 infixToTypeFormer _ = oops "unknown type infix"
 
 -- | The grammar for taype language
@@ -348,13 +348,13 @@ grammar = mdo
 
   -- Right-associative product type
   pProdType <-
-    rule $ choice [pInfixType [prodTCtor] pOSumType pProdType, pOSumType]
+    rule $ choice [pInfixType ["*"] pOSumType pProdType, pOSumType]
 
   -- Right-associative oblivious sum type
   pOSumType <-
     rule $
       choice
-        [ pInfixType [oblivName sumTCtor] pOProdType pOSumType,
+        [ pInfixType [oblivName "+"] pOProdType pOSumType,
           pOProdType
         ]
 
@@ -362,7 +362,7 @@ grammar = mdo
   pOProdType <-
     rule $
       choice
-        [ pInfixType [oblivName prodTCtor] pAppType pOProdType,
+        [ pInfixType [oblivName "*"] pAppType pOProdType,
           pAppType
         ]
 
@@ -529,8 +529,8 @@ renderToken = \case
   L.LOParen -> dquotes $ pretty oblivAccent <> lparen
   L.RParen -> squotes rparen
   L.TUnit -> "Unit"
-  L.TBool -> pretty boolTCtor
-  L.OBool -> pretty $ oblivName boolTCtor
+  L.TBool -> "Bool"
+  L.OBool -> pretty $ oblivName "Bool"
   L.BLit _ -> "boolean literal"
   L.TInt -> "Int"
   L.OInt -> pretty $ oblivName "Int"

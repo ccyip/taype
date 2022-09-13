@@ -134,10 +134,6 @@ type Defs b a = [(Text, Def b a)]
 --
 -- We simply define array operations as global names.
 
--- | Array type constructor
-arrTCtor :: Text
-arrTCtor = "Array"
-
 -- | Array creation with arbitrary values
 arrNew :: Text
 arrNew = "@new"
@@ -227,8 +223,7 @@ instance Cute (Expr Text) where
   cute e@Lam {} = cuteLam False e
   cute e@App {fn = GV {..}, args = [left, right]}
     | isInfix ref = cuteInfix e ref left right
-  cute App {fn = GV {..}, args = [left, right]}
-    | ref == pairCtor = cutePair "" left right
+  cute App {fn = GV "*", args = [left, right]} = cutePair "" left right
   cute App {..} = cuteApp fn args
   cute Let {..} = do
     let (binders, bnds) =
@@ -245,22 +240,18 @@ instance Cute (Expr Text) where
   cute
     Case
       { alts =
-          CaseAlt {ctor = lCtor, binders = [], bnd = lBnd}
-            :| [CaseAlt {ctor = rCtor, binders = [], bnd = rBnd}],
+          CaseAlt {ctor = "True", binders = [], bnd = lBnd}
+            :| [CaseAlt {ctor = "False", binders = [], bnd = rBnd}],
         ..
-      } | lCtor == trueCtor && rCtor == falseCtor = do
+      } = do
       (_, left) <- unbindManyNamesOrBinders [] lBnd
       (_, right) <- unbindManyNamesOrBinders [] rBnd
       cuteIte "" cond left right
-  cute
-    Case
-      { alts = CaseAlt {..} :| [],
-        ..
-      } | ctor == pairCtor = do
-      (xs, body) <- unbindManyNamesOrBinders binders bnd
-      case xs of
-        [xl, xr] -> cutePCase_ "" cond xl xr body
-        _ -> oops "Binder number does not match"
+  cute Case {alts = CaseAlt {ctor = "(,)", ..} :| [], ..} = do
+    (xs, body) <- unbindManyNamesOrBinders binders bnd
+    case xs of
+      [xl, xr] -> cutePCase_ "" cond xl xr body
+      _ -> oops "Binder number does not match"
   cute Case {..} = cuteCase "" True cond alts
 
 -- | Pretty printer for a type
@@ -268,7 +259,7 @@ instance Cute (Ty Text) where
   cute TV {..} = cute name
   cute TGV {..} = cute ref
   cute TInt = "Int"
-  cute OArray = cute arrTCtor
+  cute OArray = "Array"
   cute Arrow {..} = do
     domDoc <- cute dom
     codDoc <- cute cod
