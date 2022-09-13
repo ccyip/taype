@@ -29,9 +29,7 @@ module Taype.Name
     freshes,
 
     -- * Specialized locally nameless abstraction and instantiation
-    ScopeOps,
-    abstractBy,
-    instantiateBy,
+    ScopeOps (..),
     abstract_,
     instantiate_,
     instantiateName,

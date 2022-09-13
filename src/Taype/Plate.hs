@@ -12,10 +12,8 @@
 -- name generator. Some of the functions are taken or modified from the uniplate
 -- library.
 module Taype.Plate
-  ( PlateM,
-    plateM,
-    BiplateM,
-    biplateM,
+  ( PlateM (..),
+    BiplateM (..),
     transformM,
     transformBiM,
   )

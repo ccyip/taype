@@ -24,8 +24,7 @@ module Taype.Cute
     printDoc,
 
     -- * Pretty printing infrastructure
-    Cute,
-    cute,
+    Cute (..),
     CuteM (..),
     runCuteM,
     contCuteM,
