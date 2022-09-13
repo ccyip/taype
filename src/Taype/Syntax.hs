@@ -782,10 +782,7 @@ cuteDef options name = \case
               <+> sepWith (line <> pipe <> space) (cuteCtor <$> ctors)
           )
     where
-      cuteCtor (ctor, paraTypes) =
-        hang $
-          pretty ctor
-            <> group (foldMap ((line <>) . go . cuteSubAgg) paraTypes)
+      cuteCtor (ctor, paraTypes) = go $ cuteApp_ (pretty ctor) paraTypes
   OADTDef {..} ->
     hang $ "obliv" <+> pretty name <+> rest
     where

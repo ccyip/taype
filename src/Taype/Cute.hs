@@ -212,14 +212,14 @@ cuteLetDoc bindingDocs bodyDoc =
   where
     mkBindingDoc (binderDoc, rhsDoc) = hang $ binderDoc <+> equals <> sep1 rhsDoc
 
-cuteAppDoc :: Doc -> [Doc] -> CuteM Doc
-cuteAppDoc fnDoc docs = do
-  return $ hang $ fnDoc <> group (foldMap (line <>) docs)
+cuteAppDoc :: Doc -> [Doc] -> Doc
+cuteAppDoc fnDoc docs =
+  hang $ fnDoc <> group (foldMap (line <>) docs)
 
 cuteApp_ :: (Cute e, HasPLevel e) => Doc -> [e] -> CuteM Doc
 cuteApp_ fnDoc args = do
   docs <- mapM cuteSubAgg args
-  return $ hang $ fnDoc <> group (foldMap (line <>) docs)
+  return $ cuteAppDoc fnDoc docs
 
 cuteApp :: (Cute e, HasPLevel e) => e -> [e] -> CuteM Doc
 cuteApp fn es = do
@@ -234,7 +234,7 @@ cuteInfix :: (Cute e, HasPLevel e) => e -> Text -> e -> e -> CuteM Doc
 cuteInfix super infixT left right = do
   leftDoc <- cuteSub super left
   rightDoc <- cuteSub super right
-  return $ hang $ leftDoc <> sep1 (pretty infixT <+> rightDoc)
+  return $ cuteInfixDoc infixT leftDoc rightDoc
 
 cuteIteDoc :: Text -> Doc -> Doc -> Doc -> Doc
 cuteIteDoc accent condDoc leftDoc rightDoc =
