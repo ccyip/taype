@@ -22,6 +22,18 @@ module Taype.Common
     CaseAlt (..),
     caseAlt_,
     mustClosed,
+
+    -- * Common names
+    oblivAccent,
+    infixes,
+    oblivInfixes,
+    allInfixes,
+    isInfix,
+    boolTCtor,
+    trueCtor,
+    falseCtor,
+    prodTCtor,
+    pairCtor,
   )
 where
 
@@ -70,7 +82,7 @@ instance Lattice Label where
   LeakyL /\ l = l
 
 -- | Application kinds
-data AppKind = FunApp | CtorApp | BuiltinApp | InfixApp | TypeApp
+data AppKind = FunApp | CtorApp | BuiltinApp | TypeApp
   deriving stock (Eq, Show)
 
 -- | Case alternatives
@@ -110,3 +122,45 @@ caseAlt_ ctor binders body =
 
 mustClosed :: Traversable f => Text -> f a -> f b
 mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a
+
+----------------------------------------------------------------
+-- Common names
+
+-- | Oblivious accent
+oblivAccent :: Text
+oblivAccent = "~"
+
+-- | The infix operators
+infixes :: [Text]
+infixes = ["<=", "==", "+", "-", "*"]
+
+-- | The oblivious infix operators
+oblivInfixes :: [Text]
+oblivInfixes = (oblivAccent <>) <$> infixes
+
+-- | All infix operators
+allInfixes :: [Text]
+allInfixes = infixes <> oblivInfixes
+
+isInfix :: Text -> Bool
+isInfix = (`elem` allInfixes)
+
+-- | Boolean type constructor
+boolTCtor :: Text
+boolTCtor = "Bool"
+
+-- | Boolean constructor True
+trueCtor :: Text
+trueCtor = "True"
+
+-- | Boolean constructor False
+falseCtor :: Text
+falseCtor = "False"
+
+-- | The product type constructor
+prodTCtor :: Text
+prodTCtor = "*"
+
+-- | The pair constructor
+pairCtor :: Text
+pairCtor = "(,)"
