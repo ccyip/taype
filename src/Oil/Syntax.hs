@@ -291,7 +291,7 @@ instance Cute (Text, Def Text Text) where
       ctorDocs <- mapM (cuteCtor xs) ctors
       return $
         hang $
-          "data" <+> pretty name <> tyVarsDoc xs
+          "data" <+> adtName <> tyVarsDoc xs
             <> sep1
               ( equals
                   <+> sepWith (line <> pipe <> space) ctorDocs
@@ -300,6 +300,7 @@ instance Cute (Text, Def Text Text) where
         cuteCtor xs (ctor, paraBnds) = do
           let paraTypes = paraBnds <&> instantiateName xs
           cuteApp_ (pretty ctor) paraTypes
+        adtName = if isInfix name then parens $ pretty name else pretty name
     where
       tyVarsDoc [] = ""
       tyVarsDoc xs = softline <> brackets (sep $ pretty <$> xs)
