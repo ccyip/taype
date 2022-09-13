@@ -704,10 +704,10 @@ cuteExpr e@Pi {..} = do
   bodyDoc <- cuteExpr body
   return $ binderDoc <+> "->" <> line <> bodyDoc
 cuteExpr e@Lam {} = cuteLam False e
-cuteExpr e@App {..} | isInfixFn fn =
+cuteExpr e@App {fn = GV {..}, ..} | isInfix ref =
   case args of
     [left, right] -> do
-      fnDoc <- cuteSubExprAgg fn
+      fnDoc <- cute ref
       cuteInfix e fnDoc left right
     _ -> oops "Mismatched infix operands"
 cuteExpr App {..} = do
@@ -716,28 +716,29 @@ cuteExpr App {..} = do
 cuteExpr e@Let {} = cuteLet e
 cuteExpr TUnit = "Unit"
 cuteExpr VUnit = "()"
-cuteExpr TBool = "Bool"
-cuteExpr OBool = "~Bool"
-cuteExpr BLit {..} = if bLit then "True" else "False"
+cuteExpr TBool = cute boolTCtor
+cuteExpr OBool = cute $ oblivAccent <> boolTCtor
+cuteExpr BLit {..} = cute $ if bLit then trueCtor else falseCtor
 cuteExpr TInt = "Int"
-cuteExpr OInt = "~Int"
+cuteExpr OInt = cute $ oblivAccent <> "Int"
 cuteExpr ILit {..} = cute iLit
 cuteExpr Ite {..} = cuteIte "" cond left right
 cuteExpr Case {..} = do
   condDoc <- cuteExpr cond
   altDocs <- mapM cuteCaseAlt alts
   return $ cuteCaseDoc "" True condDoc altDocs
-cuteExpr OIte {..} = cuteIte "~" cond left right
-cuteExpr e@Prod {..} = cuteInfix e "*" left right
+cuteExpr OIte {..} = cuteIte oblivAccent cond left right
+cuteExpr e@Prod {..} = cuteInfix e prodTCtor left right
 cuteExpr Pair {..} = cutePair "" left right
 cuteExpr PCase {..} = cutePCase "" cond lBinder rBinder bnd2
-cuteExpr e@OProd {..} = cuteInfix e "~*" left right
-cuteExpr OPair {..} = cutePair "~" left right
-cuteExpr OPCase {..} = cutePCase "~" cond lBinder rBinder bnd2
-cuteExpr e@OSum {..} = cuteInfix e "~+" left right
+cuteExpr e@OProd {..} =
+  cuteInfix e (oblivAccent <> prodTCtor) left right
+cuteExpr OPair {..} = cutePair oblivAccent left right
+cuteExpr OPCase {..} = cutePCase oblivAccent cond lBinder rBinder bnd2
+cuteExpr e@OSum {..} = cuteInfix e (oblivAccent <> sumTCtor) left right
 cuteExpr OInj {..} = do
   tyDoc <- fromMaybe "" <$> mapM cuteInjType mTy
-  cuteApp ((if tag then "~inl" else "~inr") <> tyDoc) [inj]
+  cuteApp (pretty (oblivAccent <> if tag then "inl" else "inr") <> tyDoc) [inj]
   where
     cuteInjType ty = angles <$> cuteExpr ty
 cuteExpr OCase {..} = do
@@ -747,8 +748,9 @@ cuteExpr OCase {..} = do
   lBodyDoc <- cuteExpr lBody
   rBodyDoc <- cuteExpr rBody
   return $
-    cuteCaseDoc "~" True condDoc $
-      cuteAltDocs [("~inl", [xl], lBodyDoc), ("~inr", [xr], rBodyDoc)]
+    cuteCaseDoc oblivAccent True condDoc $
+      cuteAltDocs [(oblivAccent <> "inl", [xl], lBodyDoc),
+                   (oblivAccent <> "inr", [xr], rBodyDoc)]
 cuteExpr Mux {..} = cuteApp "mux" [cond, left, right]
 cuteExpr Asc {..} = do
   tyDoc <- cuteExpr ty
@@ -897,33 +899,33 @@ cuteLet e = do
     go Loc {..} = go expr
     go expr = ([],) <$> cuteExpr expr
 
-cuteIte :: Doc -> Expr Text -> Expr Text -> Expr Text -> CuteM Doc
+cuteIte :: Text -> Expr Text -> Expr Text -> Expr Text -> CuteM Doc
 cuteIte accent cond left right = do
   condDoc <- cuteExpr cond
   leftDoc <- cuteExpr left
   rightDoc <- cuteExpr right
   return $
     group $
-      accent <> "if" <+> condDoc
+      pretty accent <> "if" <+> condDoc
         <> line
         <> hang ("then" <> sep1 leftDoc)
         <> line
         <> hang ("else" <> sep1 rightDoc)
 
-cuteInfix :: Expr Text -> Doc -> Expr Text -> Expr Text -> CuteM Doc
-cuteInfix super infixDoc left right = do
+cuteInfix :: Expr Text -> Text -> Expr Text -> Expr Text -> CuteM Doc
+cuteInfix super infixT left right = do
   leftDoc <- cuteSubExpr super left
   rightDoc <- cuteSubExpr super right
-  return $ hang $ leftDoc <> sep1 (infixDoc <+> rightDoc)
+  return $ hang $ leftDoc <> sep1 (pretty infixT <+> rightDoc)
 
-cutePair :: Doc -> Expr Text -> Expr Text -> CuteM Doc
+cutePair :: Text -> Expr Text -> Expr Text -> CuteM Doc
 cutePair accent left right = do
   leftDoc <- cuteExpr left
   rightDoc <- cuteExpr right
-  return $ cutePairDoc accent leftDoc rightDoc
+  return $ cutePairDoc (pretty accent) leftDoc rightDoc
 
 cutePCase ::
-  Doc ->
+  Text ->
   Expr Text ->
   Maybe Binder ->
   Maybe Binder ->
@@ -939,7 +941,8 @@ cutePCase accent cond lBinder rBinder bnd2 = do
       False
       condDoc
       [ hang $
-          cutePairDoc accent (pretty xl) (pretty xr) <+> "->" <> sep1 bodyDoc
+          cutePairDoc (pretty accent) (pretty xl) (pretty xr)
+            <+> "->" <> sep1 bodyDoc
       ]
 
 cutePairDoc :: Doc -> Doc -> Doc -> Doc
@@ -951,10 +954,10 @@ cuteApp fnDoc exprs = do
   docs <- mapM cuteSubExprAgg exprs
   return $ hang $ fnDoc <> group (foldMap (line <>) docs)
 
-cuteCaseDoc :: Foldable t => Doc -> Bool -> Doc -> t Doc -> Doc
+cuteCaseDoc :: Foldable t => Text -> Bool -> Doc -> t Doc -> Doc
 cuteCaseDoc accent usePipe condDoc altDocs =
   align $
-    accent <> "case" <+> condDoc <+> "of"
+    pretty accent <> "case" <+> condDoc <+> "of"
       <> ( if usePipe
              then foldMap (\altDoc -> hardline <> pipe <+> altDoc) altDocs
              else foldMap (hardline <>) altDocs
@@ -998,7 +1001,7 @@ exprLevel = \case
   V {} -> 0
   GV {} -> 0
   -- Do not distinguish infix further.
-  App {fn} | isInfixFn fn -> 20
+  App {fn = GV {..}} | isInfix ref -> 20
   App {} -> 10
   TUnit -> 0
   VUnit -> 0
@@ -1020,8 +1023,3 @@ exprLevel = \case
   Asc {} -> 0
   Loc {..} -> exprLevel expr
   _ -> 90
-
-isInfixFn :: Expr a -> Bool
-isInfixFn GV {..} = isInfix ref
-isInfixFn Loc {..} = isInfixFn expr
-isInfixFn _ = False
