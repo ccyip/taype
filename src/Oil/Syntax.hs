@@ -24,6 +24,7 @@ module Oil.Syntax
     Ty (..),
     sizeTy,
     Def (..),
+    Defs,
 
     -- * Array operations
     arrNew,
@@ -125,6 +126,8 @@ data Def b a
         ctors :: NonEmpty (Text, [Scope Int Ty b])
       }
   deriving stock (Functor, Foldable, Traversable)
+
+type Defs b a = [(Text, Def b a)]
 
 ----------------------------------------------------------------
 -- Array operations
@@ -302,7 +305,7 @@ instance Cute (Text, Def Text Text) where
       tyVarsDoc xs = softline <> brackets (sep $ pretty <$> xs)
 
 -- | Pretty printer for OIL definitions
-cuteDefs :: Options -> [(Text, Def Text Text)] -> Doc
+cuteDefs :: Options -> Defs Text Text -> Doc
 cuteDefs options =
   foldMap $ \def -> runCuteM options (cute def) <> hardline <> hardline
 
