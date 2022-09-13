@@ -725,10 +725,7 @@ instance Cute (Expr Text) where
   cute OInt = cute $ oblivAccent <> "Int"
   cute ILit {..} = cute iLit
   cute Ite {..} = cuteIte "" cond left right
-  cute Case {..} = do
-    condDoc <- cute cond
-    altDocs <- mapM cuteCaseAlt alts
-    return $ cuteCaseDoc "" True condDoc altDocs
+  cute Case {..} = cuteCase "" True cond alts
   cute OIte {..} = cuteIte oblivAccent cond left right
   cute e@Prod {..} = cuteInfix e prodTCtor left right
   cute Pair {..} = cutePair "" left right

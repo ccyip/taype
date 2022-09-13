@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 -- |
 -- Copyright: (c) 2022 Qianchuan Ye
@@ -51,9 +52,9 @@ module Taype.Cute
     cutePairDoc,
     cutePair,
     cuteCaseDoc,
+    cuteCase,
     cuteAltDoc,
     cuteAltDocs,
-    cuteCaseAlt,
     cutePCaseDoc,
     cutePCase_,
     cutePCase,
@@ -131,6 +132,12 @@ instance Cute Int
 instance Cute Text
 
 instance Cute Label
+
+instance (Monad f, Cute (f Text)) => Cute (CaseAlt f Text) where
+  cute CaseAlt {..} = do
+    (xs, body) <- unbindManyNamesOrBinders binders bnd
+    bodyDoc <- cute body
+    return $ cuteAltDoc ctor xs bodyDoc
 
 ----------------------------------------------------------------
 -- Binder related utilities
@@ -261,6 +268,18 @@ cuteCaseDoc accent usePipe condDoc altDocs =
       <> hardline
       <> "end"
 
+cuteCase ::
+  (Traversable t, Monad f, Cute (f Text)) =>
+  Text ->
+  Bool ->
+  f Text ->
+  t (CaseAlt f Text) ->
+  CuteM Doc
+cuteCase accent usePipe cond alts = do
+  condDoc <- cute cond
+  altDocs <- mapM cute alts
+  return $ cuteCaseDoc accent usePipe condDoc altDocs
+
 cuteAltDoc :: Text -> [Text] -> Doc -> Doc
 cuteAltDoc ctor xs bodyDoc =
   hang
@@ -272,12 +291,6 @@ cuteAltDocs :: (Functor t) => t (Text, [Text], Doc) -> t Doc
 cuteAltDocs = (go <$>)
   where
     go (ctor, xs, bodyDoc) = cuteAltDoc ctor xs bodyDoc
-
-cuteCaseAlt :: (Monad f, Cute (f Text)) => CaseAlt f Text -> CuteM Doc
-cuteCaseAlt CaseAlt {..} = do
-  (xs, body) <- unbindManyNamesOrBinders binders bnd
-  bodyDoc <- cute body
-  return $ cuteAltDoc ctor xs bodyDoc
 
 cutePCaseDoc :: Text -> Doc -> Text -> Text -> Doc -> Doc
 cutePCaseDoc accent condDoc xl xr bodyDoc =
