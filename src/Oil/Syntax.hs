@@ -134,6 +134,10 @@ type Defs b a = [(Text, Def b a)]
 --
 -- We simply define array operations as global names.
 
+-- | Array type constructor
+arrTCtor :: Text
+arrTCtor = "Array"
+
 -- | Array creation with arbitrary values
 arrNew :: Text
 arrNew = "@new"
@@ -264,7 +268,7 @@ instance Cute (Ty Text) where
   cute TV {..} = cute name
   cute TGV {..} = cute ref
   cute TInt = "Int"
-  cute OArray = cute $ oblivAccent <> "Array"
+  cute OArray = cute arrTCtor
   cute Arrow {..} = do
     domDoc <- cute dom
     codDoc <- cute cod
