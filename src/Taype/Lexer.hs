@@ -102,25 +102,25 @@ pToken =
           Let <$ symbol "let",
           In <$ symbol "in",
           If <$ symbol "if",
-          OIf <$ symbol (oblivAccent <> "if"),
+          OIf <$ symbol (oblivName "if"),
           Then <$ symbol "then",
           Else <$ symbol "else",
           Mux <$ symbol "mux",
           Case <$ symbol "case",
-          OCase <$ symbol (oblivAccent <> "case"),
+          OCase <$ symbol (oblivName "case"),
           Of <$ symbol "of",
           End <$ symbol "end",
-          OInj True <$ symbol (oblivAccent <> "inl"),
-          OInj False <$ symbol (oblivAccent <> "inr"),
+          OInj True <$ symbol (oblivName "inl"),
+          OInj False <$ symbol (oblivName "inr"),
           Tape <$ symbol "tape"
         ]
         <?> "keyword",
       choice
         [ TUnit <$ symbol "Unit",
           TBool <$ symbol boolTCtor,
-          OBool <$ symbol (oblivAccent <> boolTCtor),
+          OBool <$ symbol (oblivName boolTCtor),
           TInt <$ symbol "Int",
-          OInt <$ symbol (oblivAccent <> "Int")
+          OInt <$ symbol (oblivName "Int")
         ]
         <?> "built-in type",
       choice
@@ -140,7 +140,7 @@ pToken =
       LAttr <$ symbol "#[",
       RBrace <$ symbol "]",
       LParen <$ symbol "(",
-      LOParen <$ symbol (oblivAccent <> "("),
+      LOParen <$ symbol (oblivName "("),
       RParen <$ symbol ")"
     ]
 
@@ -174,17 +174,17 @@ reserved =
     "else",
     "mux",
     "case",
-    oblivAccent <> "case",
+    oblivName "case",
     "of",
     "end",
-    oblivAccent <> "inl",
-    oblivAccent <> "inr",
+    oblivName "inl",
+    oblivName "inr",
     "tape",
     "Unit",
     boolTCtor,
-    oblivAccent <> boolTCtor,
+    oblivName boolTCtor,
     "Int",
-    oblivAccent <> "Int",
+    oblivName "Int",
     trueCtor,
     falseCtor
   ]

@@ -718,10 +718,10 @@ instance Cute (Expr Text) where
   cute TUnit = "Unit"
   cute VUnit = "()"
   cute TBool = cute boolTCtor
-  cute OBool = cute $ oblivAccent <> boolTCtor
+  cute OBool = cute $ oblivName boolTCtor
   cute BLit {..} = cute $ if bLit then trueCtor else falseCtor
   cute TInt = "Int"
-  cute OInt = cute $ oblivAccent <> "Int"
+  cute OInt = cute $ oblivName "Int"
   cute ILit {..} = cute iLit
   cute Ite {..} = cuteIte "" cond left right
   cute Case {..} = cuteCase "" True cond alts
@@ -730,14 +730,14 @@ instance Cute (Expr Text) where
   cute Pair {..} = cutePair "" left right
   cute PCase {..} = cutePCase "" cond lBinder rBinder bnd2
   cute e@OProd {..} =
-    cuteInfix e (oblivAccent <> prodTCtor) left right
+    cuteInfix e (oblivName prodTCtor) left right
   cute OPair {..} = cutePair oblivAccent left right
   cute OPCase {..} = cutePCase oblivAccent cond lBinder rBinder bnd2
-  cute e@OSum {..} = cuteInfix e (oblivAccent <> sumTCtor) left right
+  cute e@OSum {..} = cuteInfix e (oblivName sumTCtor) left right
   cute OInj {..} = do
     tyDoc <- fromMaybe "" <$> mapM cuteInjType mTy
     cuteApp_
-      (pretty (oblivAccent <> if tag then "inl" else "inr") <> tyDoc)
+      (pretty (oblivName $ if tag then "inl" else "inr") <> tyDoc)
       [inj]
     where
       cuteInjType ty = angles <$> cute ty
@@ -750,8 +750,8 @@ instance Cute (Expr Text) where
     return $
       cuteCaseDoc oblivAccent True condDoc $
         cuteAltDocs
-          [ (oblivAccent <> "inl", [xl], lBodyDoc),
-            (oblivAccent <> "inr", [xr], rBodyDoc)
+          [ (oblivName "inl", [xl], lBodyDoc),
+            (oblivName "inr", [xr], rBodyDoc)
           ]
   cute Mux {..} = cuteApp_ "mux" [cond, left, right]
   cute Asc {..} = do

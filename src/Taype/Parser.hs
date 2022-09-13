@@ -96,8 +96,8 @@ getLoc _ = oops "Location not available"
 
 infixToTypeFormer :: Text -> (Ty a -> Ty a -> Ty a)
 infixToTypeFormer x | x == prodTCtor = Prod
-infixToTypeFormer x | x == oblivAccent <> prodTCtor = OProd
-infixToTypeFormer x | x == oblivAccent <> sumTCtor = OSum
+infixToTypeFormer x | x == oblivName prodTCtor = OProd
+infixToTypeFormer x | x == oblivName sumTCtor = OSum
 infixToTypeFormer _ = oops "unknown type infix"
 
 -- | The grammar for taype language
@@ -224,7 +224,7 @@ grammar = mdo
     rule $
       choice
         [ pInfixExpr
-            ["==", "<=", oblivAccent <> "==", oblivAccent <> "<="]
+            ["==", "<=", oblivName "==", oblivAccent <> "<="]
             pAddExpr
             pAddExpr,
           pAddExpr
@@ -235,7 +235,7 @@ grammar = mdo
     rule $
       choice
         [ pInfixExpr
-            ["+", "-", oblivAccent <> "+", oblivAccent <> "-"]
+            ["+", "-", oblivName "+", oblivAccent <> "-"]
             pAddExpr
             pMulExpr,
           pMulExpr
@@ -354,7 +354,7 @@ grammar = mdo
   pOSumType <-
     rule $
       choice
-        [ pInfixType [oblivAccent <> sumTCtor] pOProdType pOSumType,
+        [ pInfixType [oblivName sumTCtor] pOProdType pOSumType,
           pOProdType
         ]
 
@@ -362,7 +362,7 @@ grammar = mdo
   pOProdType <-
     rule $
       choice
-        [ pInfixType [oblivAccent <> prodTCtor] pAppType pOProdType,
+        [ pInfixType [oblivName prodTCtor] pAppType pOProdType,
           pAppType
         ]
 
@@ -530,10 +530,10 @@ renderToken = \case
   L.RParen -> squotes rparen
   L.TUnit -> "Unit"
   L.TBool -> pretty boolTCtor
-  L.OBool -> pretty $ oblivAccent <> boolTCtor
+  L.OBool -> pretty $ oblivName boolTCtor
   L.BLit _ -> "boolean literal"
   L.TInt -> "Int"
-  L.OInt -> pretty $ oblivAccent <> "Int"
+  L.OInt -> pretty $ oblivName "Int"
   L.ILit _ -> "integer literal"
   L.Data -> "data"
   L.Obliv -> "obliv"
@@ -541,15 +541,15 @@ renderToken = \case
   L.Let -> "let"
   L.In -> "in"
   L.If -> "if"
-  L.OIf -> pretty $ oblivAccent <> "if"
+  L.OIf -> pretty $ oblivName "if"
   L.Then -> "then"
   L.Else -> "else"
   L.Mux -> "mux"
   L.Case -> "case"
-  L.OCase -> pretty $ oblivAccent <> "case"
+  L.OCase -> pretty $ oblivName "case"
   L.Of -> "of"
   L.End -> "end"
   L.Tape -> "tape"
-  L.OInj tag -> pretty $ oblivAccent <> if tag then "inl" else "inr"
+  L.OInj tag -> pretty $ oblivName $ if tag then "inl" else "inr"
   L.Ident ident -> "identifier" <+> dquotes (pretty ident)
   L.Infix ident -> "infix" <+> dquotes (pretty ident)
