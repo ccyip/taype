@@ -54,6 +54,7 @@ data Options = Options
     optInternalNames :: Bool,
     optNoFlattenLets :: Bool,
     optNamePrefix :: Text,
+    optPrintCore :: Bool,
     optPrintLabels :: Bool,
     optPrintTokens :: Bool,
     optPrintSource :: Bool,

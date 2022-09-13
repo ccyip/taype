@@ -42,7 +42,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
       defs = closeDefs namedDefs
   when optPrintSource $ printDefs (fromList defs) names
   gctx <- checkDefs options defs
-  printDefs gctx names
+  when optPrintCore $ printDefs gctx names
   where
     printDefs gctx defs =
       printDoc options $ cuteDefs options gctx defs
@@ -67,6 +67,10 @@ opts = do
     switch $
       long "no-flatten-lets"
         <> help "Do not flatten let bindings"
+  optPrintCore <-
+    switch $
+      long "print-core" <> short 'c'
+        <> help "Whether to print the generated core taype programs"
   optNamePrefix <-
     strOption $
       long "prefix" <> short 'p' <> metavar "PREFIX"
