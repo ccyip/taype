@@ -101,7 +101,7 @@ infixToTypeFormer x | x == oblivName "+" = OSum
 infixToTypeFormer _ = oops "unknown type infix"
 
 -- | The grammar for taype language
-grammar :: Grammar r (Parser r [(Text, Def Text)])
+grammar :: Grammar r (Parser r (Defs Text))
 grammar = mdo
   -- A program is a list of global definitions.
   pProg <- rule $ many pDef
@@ -492,7 +492,7 @@ grammar = mdo
   return pProg
 
 -- | Main parser
-parse :: MonadError Err m => [LocatedToken] -> m [(Text, Def Text)]
+parse :: MonadError Err m => [LocatedToken] -> m (Defs Text)
 parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> throwError $ renderParserError rpt

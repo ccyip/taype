@@ -26,7 +26,10 @@ module Taype.Syntax
     Kind (..),
     Def,
     DefB (..),
+    NamedDef,
+    Defs,
     getDefLoc,
+    closeDefs,
     Attribute (..),
     LabelPolyStrategy (..),
 
@@ -275,12 +278,19 @@ data DefB f a
       }
   deriving stock (Eq, Show, Functor, Foldable, Traversable)
 
+type NamedDef a = (Text, Def a)
+
+type Defs a = [NamedDef a]
+
 getDefLoc :: DefB f a -> Int
 getDefLoc = \case
   FunDef {..} -> loc
   ADTDef {..} -> loc
   OADTDef {..} -> loc
   _ -> -1
+
+closeDefs :: Defs Text -> Defs a
+closeDefs = (second (>>>= GV) <$>)
 
 -- | Every function has an attribute that can be specified by the users. By
 -- default the attribute is 'LeakyAttr'. Attributes are used for label inference

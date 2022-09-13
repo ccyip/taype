@@ -111,7 +111,7 @@ newtype GCtx a = GCtx {unGCtx :: HashMap Text (Def a)}
   deriving newtype (Semigroup, Monoid)
 
 instance IsList (GCtx a) where
-  type Item (GCtx a) = (Text, Def a)
+  type Item (GCtx a) = NamedDef a
   fromList = GCtx . fromList
   toList = E.toList . unGCtx
 
@@ -220,7 +220,7 @@ preludeGCtx =
               ("r_int", [OInt], TInt, LeakyStrategy)
             ]
 
-builtin :: (Text, [Ty a], Ty a, LabelPolyStrategy) -> (Text, Def a)
+builtin :: (Text, [Ty a], Ty a, LabelPolyStrategy) -> NamedDef a
 builtin (name, paraTypes, resType, strategy) = (name, BuiltinDef {..})
 
 ----------------------------------------------------------------

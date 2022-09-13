@@ -15,7 +15,6 @@ module Taype
   )
 where
 
-import Bound
 import Options.Applicative
 import Taype.Common
 import Taype.Cute
@@ -40,8 +39,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
   namedDefs <- parse tokens
   let names = fst <$> namedDefs
-      -- Close all definitions.
-      defs = second (>>>= GV) <$> namedDefs
+      defs = closeDefs namedDefs
   when optPrintSource $ printDefs (fromList defs) names
   gctx <- checkDefs options defs
   printDefs gctx names

@@ -1345,7 +1345,7 @@ lets_ = flip $ foldr go
 mustLabel :: Maybe Label -> Label
 mustLabel = fromMaybe $ oops "Label not available"
 
-maybeGV :: MonadReader Env m => Expr Name -> m (Maybe (Text, Def Name))
+maybeGV :: MonadReader Env m => Expr Name -> m (Maybe (NamedDef Name))
 maybeGV GV {..} = (ref,) <<$>> lookupGSig ref
 maybeGV Loc {..} = maybeGV expr
 maybeGV _ = return Nothing
@@ -1508,7 +1508,7 @@ depMatchErr t =
 -- Definitions checker
 
 -- | Type check all global definitions.
-checkDefs :: Options -> [(Text, Def Name)] -> ExceptT Err IO (GCtx a)
+checkDefs :: Options -> Defs Name -> ExceptT Err IO (GCtx a)
 checkDefs options@Options {..} defs = runDcM options $ do
   gsctx <- preCheckDefs defs
   gctx <- go gsctx mempty defs
@@ -1561,7 +1561,7 @@ checkDef def = return def
 
 -- | Pre-check all global signatures to ensure they are well-formed, and their
 -- types are well-kinded and in core taype ANF.
-preCheckDefs :: [(Text, Def Name)] -> DcM (GCtx Name)
+preCheckDefs :: Defs Name -> DcM (GCtx Name)
 preCheckDefs allDefs = do
   options <- ask
   -- First we check if any pattern matchings have conflicting pattern varaibles.
@@ -1691,7 +1691,7 @@ extendGCtx1 gctx name def =
 extendGCtx ::
   (MonadError Err m, MonadReader Options m) =>
   GCtx Name ->
-  [(Text, Def Name)] ->
+  Defs Name ->
   m (GCtx Name)
 extendGCtx = foldlM $ uncurry . extendGCtx1
 
