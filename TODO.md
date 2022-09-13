@@ -1,4 +1,3 @@
-- Unify pretty printer for taype and oil
 - Unordered oblivious case (only need to change parser)
 - Scrap my boilerplate: instances for Monad, Eq1, etc
 - Support tuple pattern in product case and oblivious sum case
