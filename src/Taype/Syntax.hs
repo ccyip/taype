@@ -701,11 +701,8 @@ instance Cute (Expr Text) where
     bodyDoc <- cute body
     return $ binderDoc <+> "->" <> line <> bodyDoc
   cute e@Lam {} = cuteLam False e
-  cute e@App {fn = GV {..}, ..} | isInfix ref =
-    case args of
-      [left, right] -> do
-        cuteInfix e ref left right
-      _ -> oops "Mismatched infix operands"
+  cute e@App {fn = GV {..}, args = [left, right]}
+    | isInfix ref = cuteInfix e ref left right
   cute App {..} = cuteApp fn args
   cute e@Let {} = do
     (bindingDocs, bodyDoc) <- go e
