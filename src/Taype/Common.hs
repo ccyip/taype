@@ -174,7 +174,8 @@ prodTCtor = "*"
 
 -- | The sum type constructor
 --
--- This is not used, as we do not support normal sum type yet.
+-- This is not used except for being part of the oblivious sum name, as we do
+-- not support normal sum type yet.
 sumTCtor :: Text
 sumTCtor = "+"
 
