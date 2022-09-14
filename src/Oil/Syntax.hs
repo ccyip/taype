@@ -240,8 +240,8 @@ instance Cute (Expr Text) where
   cute
     Case
       { alts =
-          CaseAlt {ctor = "True", binders = [], bnd = lBnd}
-            :| [CaseAlt {ctor = "False", binders = [], bnd = rBnd}],
+          CaseAlt {ctor = "False", binders = [], bnd = rBnd}
+            :| [CaseAlt {ctor = "True", binders = [], bnd = lBnd}],
         ..
       } = do
       (_, left) <- unbindManyNamesOrBinders [] lBnd
@@ -260,8 +260,8 @@ instance Cute (Ty Text) where
   cute TGV {..} = cute ref
   cute TInt = "Int"
   cute OArray = "Array"
-  cute Arrow {..} = do
-    domDoc <- cute dom
+  cute e@Arrow {..} = do
+    domDoc <- cuteSub e dom
     codDoc <- cute cod
     return $ domDoc <+> "->" <> line <> codDoc
   cute t@TApp {args = [left, right], ..}
