@@ -216,6 +216,7 @@ preludeGCtx =
               ("<=", [TInt, TInt], TBool, JoinStrategy),
               ("~<=", [OInt, OInt], OBool, SafeStrategy),
               ("s_bool", [TBool], OBool, JoinStrategy),
+              ("r_bool", [OBool], TBool, LeakyStrategy),
               ("s_int", [TInt], OInt, JoinStrategy),
               ("r_int", [OInt], TInt, LeakyStrategy)
             ]
