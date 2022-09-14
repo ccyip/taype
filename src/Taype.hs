@@ -15,6 +15,8 @@ module Taype
   )
 where
 
+import qualified Oil.Syntax as Oil (cuteDefs)
+import qualified Oil.Translation as Oil (prelude)
 import Options.Applicative
 import Taype.Common
 import Taype.Cute
@@ -40,12 +42,15 @@ process options@Options {optFile = file, optCode = code, ..} = do
   namedDefs <- parse tokens
   let names = fst <$> namedDefs
       defs = closeDefs namedDefs
-  when optPrintSource $ printDefs (fromList defs) names
+  when optPrintSource $ printTaypeDefs (fromList defs) names
   gctx <- checkDefs options defs
-  when optPrintCore $ printDefs gctx names
+  when optPrintCore $ printTaypeDefs gctx names
+  printOilDefs Oil.prelude
   where
-    printDefs gctx defs =
+    printTaypeDefs gctx defs =
       printDoc options $ cuteDefs options gctx defs
+    printOilDefs defs =
+      printDoc options $ Oil.cuteDefs options defs
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)

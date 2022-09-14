@@ -3,8 +3,9 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -24,13 +25,24 @@ module Oil.Syntax
     Ty (..),
     sizeTy,
     Def (..),
+    NamedDef,
     Defs,
 
+    -- * Smart constructors
+    Apply (..),
+    adtDef_,
+    funDef_,
+    ar_,
+    lam_,
+    lams_,
+    case_,
+
     -- * Array operations
-    arrNew,
-    arrConcat,
-    arrSlice,
-    arrMux,
+    aName,
+    aNew,
+    aConcat,
+    aSlice,
+    aMux,
 
     -- * Pretty printer
     cuteDefs,
@@ -127,31 +139,37 @@ data Def b a
       }
   deriving stock (Functor, Foldable, Traversable)
 
-type Defs b a = [(Text, Def b a)]
+type NamedDef b a = (Text, Def b a)
+
+type Defs b a = [NamedDef b a]
 
 ----------------------------------------------------------------
 -- Array operations
 --
 -- We simply define array operations as global names.
 
+-- | Oblivious array name
+aName :: Text
+aName = "@"
+
 -- | Array creation with arbitrary values
-arrNew :: Text
-arrNew = "@new"
+aNew :: Text
+aNew = "@new"
 
 -- | Array concatenation
-arrConcat :: Text
-arrConcat = "@concat"
+aConcat :: Text
+aConcat = "@concat"
 
 -- | Array slicing
-arrSlice :: Text
-arrSlice = "@slice"
+aSlice :: Text
+aSlice = "@slice"
 
 -- | Multiplexer
 --
 -- Unlike the multiplexer expressions in taype, this also takes an extra
 -- argument for the size of the oblivious array.
-arrMux :: Text
-arrMux = "@mux"
+aMux :: Text
+aMux = "@mux"
 
 ----------------------------------------------------------------
 -- Instances of expressions and definitions
@@ -198,6 +216,9 @@ instance PlateM (Expr Name) where
     return Case {cond = cond', alts = alts'}
   plateM _ e = return e
 
+instance IsString a => IsString (Expr a) where
+  fromString = return . fromString
+
 instance Bound Binding where
   Binding {..} >>>= f = Binding {bnd = bnd >>>= f, ..}
 
@@ -213,6 +234,87 @@ instance Monad Ty where
   Arrow {..} >>= f = Arrow {dom = dom >>= f, cod = cod >>= f}
   TApp {..} >>= f = TApp {args = args <&> (>>= f), ..}
 
+instance IsString a => IsString (Ty a) where
+  fromString = return . fromString
+
+-- | A specialized 'Bound' instance
+--
+-- Similar to '>>>=', but handle both variable classes (one for expressions and
+-- one for types). Perhaps we should introduce a 'Bibound' class.
+boundDef :: Def b a -> (a -> Expr c) -> (b -> Ty d) -> Def d c
+boundDef FunDef {..} f g =
+  FunDef
+    { tyBnd = tyBnd >>>= g,
+      expr = expr >>= f,
+      ..
+    }
+boundDef ADTDef {..} _ g =
+  ADTDef
+    { ctors = ctors <&> second ((>>>= g) <$>),
+      ..
+    }
+
+----------------------------------------------------------------
+-- Smart constructors
+
+class Apply a b | a -> b where
+  (@@) :: b -> [a] -> a
+
+infixl 2 @@
+
+adtDef_ :: Text -> [Binder] -> [(Text, [Ty Text])] -> NamedDef b a
+adtDef_ name binders ctors = (name, boundDef def GV close)
+  where
+    def =
+      ADTDef
+        { binders = Just <$> binders,
+          ctors =
+            mustNonEmpty "constructor list" $
+              ctors <&> second (abstractBinder binders <$>)
+        }
+    close "self" = TGV name
+    close x = TGV x
+
+funDef_ :: Text -> [Binder] -> Ty Text -> Expr Text -> NamedDef b a
+funDef_ name binders ty expr = (name, boundDef def close TGV)
+  where
+    def =
+      FunDef
+        { binders = Just <$> binders,
+          tyBnd = abstractBinder binders ty,
+          ..
+        }
+    close "self" = GV name
+    close x = GV x
+
+ar_ :: [Ty a] -> Ty a
+ar_ [] = oops "Arrow without type"
+ar_ [t] = t
+ar_ (t : ts) = Arrow t $ ar_ ts
+
+lam_ :: a ~ Text => BinderM a -> Expr a -> Expr a
+lam_ binder body =
+  Lam
+    { binder = Just binder,
+      bnd = abstractBinder binder body
+    }
+
+lams_ :: a ~ Text => [BinderM a] -> Expr a -> Expr a
+lams_ = flip $ foldr lam_
+
+instance Apply (Expr a) (Expr a) where
+  fn @@ args = App {appKind = FunApp, ..}
+
+instance Apply (Ty a) Text where
+  tctor @@ args = TApp {..}
+
+case_ :: a ~ Text => Expr a -> [(Text, [BinderM a], Expr a)] -> Expr a
+case_ cond alts =
+  Case
+    { alts = mustNonEmpty "Alternative list" $ uncurry3 caseAlt_ <$> alts,
+      ..
+    }
+
 ----------------------------------------------------------------
 -- Pretty printer
 
@@ -223,7 +325,7 @@ instance Cute (Expr Text) where
   cute e@Lam {} = cuteLam False e
   cute e@App {fn = GV {..}, args = [left, right]}
     | isInfix ref = cuteInfix e ref left right
-  cute App {fn = GV "*", args = [left, right]} = cutePair "" left right
+  cute App {fn = GV "(,)", args = [left, right]} = cutePair "" left right
   cute App {..} = cuteApp fn args
   cute Let {..} = do
     let (binders, bnds) =
@@ -259,7 +361,7 @@ instance Cute (Ty Text) where
   cute TV {..} = cute name
   cute TGV {..} = cute ref
   cute TInt = "Int"
-  cute OArray = "Array"
+  cute OArray = cute aName
   cute e@Arrow {..} = do
     domDoc <- cuteSub e dom
     codDoc <- cute cod
@@ -269,7 +371,7 @@ instance Cute (Ty Text) where
   cute TApp {..} = cuteApp_ (pretty tctor) args
 
 -- | Pretty printer for a definition
-instance Cute (Text, Def Text Text) where
+instance Cute (NamedDef Text Text) where
   cute (name, def) = case def of
     FunDef {..} -> do
       (xs, ty) <- unbindManyNamesOrBinders binders tyBnd

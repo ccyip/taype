@@ -60,6 +60,7 @@ library
                        Taype.Parser
                        Taype.TypeChecker
                        Oil.Syntax
+                       Oil.Translation
   mixins:              base hiding (Prelude)
                      , relude (Relude as Prelude)
                      , relude
