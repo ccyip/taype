@@ -28,6 +28,8 @@ module Taype.Common
     oblivName,
     leakyAccent,
     leakyName,
+    sectionName,
+    retractionName,
     infixes,
     oblivInfixes,
     leakyInfixes,
@@ -139,6 +141,14 @@ leakyAccent = "~"
 
 leakyName :: Text -> Text
 leakyName = (leakyAccent <>)
+
+-- | Section name
+sectionName :: Text -> Text
+sectionName = ("s_" <>)
+
+-- | Retraction name
+retractionName :: Text -> Text
+retractionName = ("r_" <>)
 
 -- | The infix operators
 infixes :: [Text]

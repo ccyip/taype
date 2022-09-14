@@ -215,10 +215,10 @@ preludeGCtx =
               ("~=", [OInt, OInt], OBool, SafeStrategy),
               ("<=", [TInt, TInt], TBool, JoinStrategy),
               ("~<=", [OInt, OInt], OBool, SafeStrategy),
-              ("s_bool", [TBool], OBool, JoinStrategy),
-              ("r_bool", [OBool], TBool, LeakyStrategy),
-              ("s_int", [TInt], OInt, JoinStrategy),
-              ("r_int", [OInt], TInt, LeakyStrategy)
+              (sectionName "Bool", [TBool], OBool, JoinStrategy),
+              (retractionName "Bool", [OBool], TBool, LeakyStrategy),
+              (sectionName "Int", [TInt], OInt, JoinStrategy),
+              (retractionName "Int", [OInt], TInt, LeakyStrategy)
             ]
 
 builtin :: (Text, [Ty a], Ty a, LabelPolyStrategy) -> NamedDef a
