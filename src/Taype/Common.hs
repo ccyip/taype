@@ -22,6 +22,7 @@ module Taype.Common
     CaseAlt (..),
     caseAlt_,
     mustClosed,
+    mustNonEmpty,
 
     -- * Common names
     oblivAccent,
@@ -124,6 +125,9 @@ caseAlt_ ctor binders body =
 
 mustClosed :: Traversable f => Text -> f a -> f b
 mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a
+
+mustNonEmpty :: Text -> [a] -> NonEmpty a
+mustNonEmpty what xs = fromMaybe (oops (what <> " is empty")) $ nonEmpty xs
 
 ----------------------------------------------------------------
 -- Common names
