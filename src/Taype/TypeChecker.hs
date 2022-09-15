@@ -1505,15 +1505,14 @@ depMatchErr t =
 -- Definitions checker
 
 -- | Type check all global definitions.
-checkDefs :: Options -> Defs Name -> ExceptT Err IO (GCtx a)
+checkDefs :: Options -> Defs Name -> ExceptT Err IO (GCtx Name)
 checkDefs options@Options {..} defs = runDcM options $ do
   gsctx <- preCheckDefs defs
   gctx <- go gsctx mempty defs
-  let gctx' =
-        if optNoFlattenLets
-          then gctx
-          else runFreshM $ mapMGCtxDef flattenLets gctx
-  return $ mustClosed "Global context" gctx'
+  return $
+    if optNoFlattenLets
+      then gctx
+      else runFreshM $ mapMGCtxDef flattenLets gctx
   where
     -- Type checking definitions are done in the order of the given definitions.
     -- They can freely refer to the signatures of all definitions, allowing for

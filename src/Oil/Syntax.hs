@@ -27,6 +27,7 @@ module Oil.Syntax
     Def (..),
     NamedDef,
     Defs,
+    closedDef,
 
     -- * Smart constructors
     Apply (..),
@@ -240,18 +241,28 @@ instance IsString a => IsString (Ty a) where
 --
 -- Similar to '>>>=', but handle both variable classes (one for expressions and
 -- one for types). Perhaps we should introduce a 'Bibound' class.
-boundDef :: Def b a -> (a -> Expr c) -> (b -> Ty d) -> Def d c
-boundDef FunDef {..} f g =
+boundDef :: (a -> Expr c) -> (b -> Ty d) -> Def b a -> Def d c
+boundDef f g FunDef {..} =
   FunDef
     { tyBnd = tyBnd >>>= g,
       expr = expr >>= f,
       ..
     }
-boundDef ADTDef {..} _ g =
+boundDef _ g ADTDef {..} =
   ADTDef
     { ctors = ctors <&> second ((>>>= g) <$>),
       ..
     }
+
+-- | Make sure a definition is closed, i.e. there is no free variable.
+--
+-- This is similar to 'mustClosed', but don't bother defining a 'Bitraversable'
+-- instance and a @biclosed@ function corresponding to 'closed' in the bound
+-- library.
+closedDef :: Def b a -> Def d c
+closedDef = boundDef go go
+  where
+    go = oops "Definition is not closed"
 
 ----------------------------------------------------------------
 -- Smart constructors
@@ -262,7 +273,7 @@ class Apply a b | a -> b where
 infixl 2 @@
 
 adtDef_ :: Text -> [Binder] -> [(Text, [Ty Text])] -> NamedDef b a
-adtDef_ name binders ctors = (name, boundDef def GV close)
+adtDef_ name binders ctors = (name, boundDef GV close def)
   where
     def =
       ADTDef
@@ -275,7 +286,7 @@ adtDef_ name binders ctors = (name, boundDef def GV close)
     close x = tGV x
 
 funDef_ :: Text -> [Binder] -> Ty Text -> Expr Text -> NamedDef b a
-funDef_ name binders ty expr = (name, boundDef def close tGV)
+funDef_ name binders ty expr = (name, boundDef close tGV def)
   where
     def =
       FunDef

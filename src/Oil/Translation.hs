@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -10,13 +11,29 @@
 -- Portability: portable
 --
 -- Translate taype to OIL.
+--
+-- We use naming convention to translate definition names and references to the
+-- corresponding leaky types and leaky case analysis definitions, and to resolve
+-- return and leaky if instances. This is more convenient than maintaining a
+-- lookup table. The generated names contain characters that are illegal in the
+-- taype identifiers to avoid name conflicts.
 module Oil.Translation
   ( prelude,
+    toOilDefs
   )
 where
 
+import Data.List (lookup)
 import Oil.Syntax
+import Relude.Extra.Bifunctor
 import Taype.Common
+import Taype.Environment (GCtx (..), TCtx (..), lookupGCtx)
+import Taype.Name
+import Taype.Prelude
+import qualified Taype.Syntax as T
+
+----------------------------------------------------------------
+-- Naming
 
 retName :: Text -> Text
 retName x = "ret#" <> x
@@ -26,6 +43,168 @@ lIfName x = oblivAccent <> "if#" <> x
 
 lCaseName :: Text -> Text
 lCaseName x = leakyAccent <> "case#" <> x
+
+----------------------------------------------------------------
+-- Environment for translation
+
+data Env = Env
+  { -- Taype global context
+    gctx :: GCtx Name,
+    -- Taype typing context
+    tctx :: TCtx Name
+  }
+
+-- | The translation monad
+type TslM = FreshT (Reader Env)
+
+runTslM :: Env -> TslM a -> a
+runTslM env m = runReader (runFreshT m) env
+
+-- | Look up a taype definition in the global context.
+lookupGDef :: MonadReader Env m => Text -> m (Maybe (T.Def Name))
+lookupGDef x = lookupGCtx x <$> asks gctx
+
+-- | Look up a taype type and its label in the context.
+lookupTy :: MonadReader Env m => Name -> m (Maybe (T.Ty Name, Label))
+lookupTy x = do
+  TCtx tctx <- asks tctx
+  return $ lookup x tctx
+
+-- | Extend the taype typing context.
+extendCtx ::
+  MonadReader Env m => [(Name, T.Ty Name, Label)] -> m a -> m a
+extendCtx xs = local go
+  where
+    go Env {tctx = TCtx tctx, ..} =
+      Env {tctx = TCtx $ (xs <&> \(x, t, l) -> (x, (t, l))) <> tctx, ..}
+
+-- | Extend the taype typing context with one entry.
+extendCtx1 ::
+  MonadReader Env m => Name -> T.Ty Name -> Label -> m a -> m a
+extendCtx1 x t l = extendCtx [(x, t, l)]
+
+----------------------------------------------------------------
+-- Translation from taype to OIL
+
+-- | Translate a taype expression with its label to the corresponding OIL
+-- expression.
+--
+-- The taype expression is well-typed and in core taype ANF.
+--
+-- The resulting OIL expression should be typed by the corresponding translated
+-- OIL type, under the translated typing context. The types and context are
+-- translated according to 'toOilTy'.
+--
+-- The resulting OIL expression should also be behaviorally equivalent to the
+-- taype expression.
+toOilExpr :: Label -> T.Expr Name -> TslM (Expr Name)
+toOilExpr _ _ = return $ GV "<unimplemented>"
+
+-- | Translate a taype oblivious type to the OIL expression representing its
+-- size.
+--
+-- The taype type is obliviously kinded and in core taype ANF.
+--
+-- The resulting OIL expression should be typed by 'sizeTy' under the translated
+-- typing context, according to 'toOilTy'.
+--
+-- For a taype term typed by the given oblivious taype type, its translated OIL
+-- term (according to 'toOilExpr') is an oblivious array of the size indicated
+-- by the resulting OIL expression. In particular, if this taype term is closed,
+-- the computed OIL expression is exactly the integer for the size of the
+-- computed array.
+toOilSize :: T.Ty Name -> TslM (Expr Name)
+toOilSize _ = return $ GV "<unimplemented>"
+
+-- | Translate a taype type with its label to the corresponding OIL type.
+--
+-- The taype type is well-kinded and in core taype ANF.
+toOilTy :: Label -> T.Ty Name -> TslM (Ty b)
+toOilTy SafeL = toOilTy_
+toOilTy LeakyL = (toLeakyTy <$>) . toOilTy_
+
+-- | Translate a taype type to the corresponding plain OIL type.
+--
+-- The taype type is well-kinded and in core taype ANF. The resulting OIL type
+-- itself is not leaky, but function types may have leaky arguments.
+--
+-- If the taype type is obliviously kinded, then the result should be oblivious
+-- array.
+--
+-- Two equivalent taype type should be translated to the same OIL type.
+toOilTy_ :: T.Ty Name -> TslM (Ty b)
+toOilTy_ T.TBool = return $ tGV "Bool"
+toOilTy_ T.TInt = return TInt
+toOilTy_ T.GV {..} = return $ tGV ref
+toOilTy_ T.Prod {..} = do
+  left' <- toOilTy_ left
+  right' <- toOilTy_ right
+  return $ "*" @@ [left', right']
+toOilTy_ T.Pi {..} = do
+  dom <- toOilTy (mustLabel label) ty
+  (_, body) <- unbind1 bnd
+  cod <- toOilTy_ body
+  return Arrow {..}
+-- Oblivious types, including type level computation, are translated into
+-- oblivious array.
+toOilTy_ _ = return OArray
+
+-- | Translate an OIL type to its leaky counterpart.
+--
+-- Builtin types are translated to the leaky types in the 'prelude'.
+-- User-defined ADTs are translated to the corresponding leaky types according
+-- to our naming convention, i.e. the ADT names with the 'leakyAccent' prefix.
+-- The actual definitions of the ADT leaky counterparts are generated when
+-- translating ADT definitions.
+toLeakyTy :: Ty a -> Ty a
+toLeakyTy TInt = tGV $ leakyName "Int"
+toLeakyTy OArray = tGV $ leakyName aName
+toLeakyTy Arrow {..} = leakyName "->" @@ [dom, toLeakyTy cod]
+toLeakyTy TApp {..} = TApp {tctor = leakyName tctor, args = toLeakyTy <$> args}
+-- Local type variables do not appear in type translation.
+toLeakyTy _ = oops "Local type variables appear"
+
+-- | Translate taype definitions to the corresponding OIL definitions.
+toOilDefs :: GCtx Name -> T.Defs Name -> Defs b a
+toOilDefs gctx = foldMap go
+  where
+    go = secondF closedDef . runTslM Env {tctx = TCtx [], ..} . toOilDef
+
+-- | Translate a taype definition to the corresponding OIL definition.
+--
+-- The ADT definition is translated to multiple OIL definitions, so this
+-- function returns a list of OIL definitions.
+toOilDef :: T.NamedDef Name -> TslM [NamedDef Name Name]
+toOilDef (name, def) = case def of
+  T.FunDef {..} -> do
+    let l = mustLabel label
+    ty' <- toOilTy l ty
+    expr' <- toOilExpr l expr
+    return $
+      one
+        ( name,
+          FunDef
+            { binders = [],
+              tyBnd = abstract_ [] ty',
+              expr = expr'
+            }
+        )
+  T.OADTDef {..} -> do
+    (x, body) <- unbind1 bnd
+    body' <- extendCtx1 x ty SafeL $ toOilSize body
+    ty' <- toOilTy SafeL ty
+    return $
+      one
+        ( name,
+          FunDef
+            { binders = [],
+              tyBnd = abstract_ [] $ Arrow ty' sizeTy,
+              expr = Lam {bnd = abstract_ x body', ..}
+            }
+        )
+  T.ADTDef {..} -> do
+    return []
+  _ -> oops "Translating constructor or builtin definitions"
 
 ----------------------------------------------------------------
 -- Prelude

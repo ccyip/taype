@@ -17,6 +17,7 @@ where
 
 import qualified Oil.Syntax as Oil (cuteDefs)
 import qualified Oil.Translation as Oil (prelude)
+import Oil.Translation (toOilDefs)
 import Options.Applicative
 import Taype.Common
 import Taype.Cute
@@ -44,9 +45,11 @@ process options@Options {optFile = file, optCode = code, ..} = do
       srcDefs = closeDefs namedDefs
   when optPrintSource $ printTaypeDefs srcDefs
   gctx <- checkDefs options srcDefs
-  let defs = defsFromGCtx gctx names
+  let defs = defsFromGCtx (mustClosed "Global context" gctx) names
   when optPrintCore $ printTaypeDefs defs
-  printOilDefs Oil.prelude
+  let oilDefs = toOilDefs gctx defs
+  when optPrintPrelude $ printOilDefs Oil.prelude
+  printOilDefs oilDefs
   where
     printTaypeDefs defs =
       printDoc options $ cuteDefs options defs
@@ -77,9 +80,13 @@ opts = do
     switch $
       long "print-core" <> short 'c'
         <> help "Whether to print the generated core taype programs"
+  optPrintPrelude <-
+    switch $
+      long "print-prelude" <> short 'p'
+        <> help "Whether to print the OIL prelude"
   optNamePrefix <-
     strOption $
-      long "prefix" <> short 'p' <> metavar "PREFIX"
+      long "prefix" <> metavar "PREFIX"
         <> value "$"
         <> showDefault
         <> help "Prefix to the internal names"
