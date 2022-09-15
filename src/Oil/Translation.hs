@@ -289,6 +289,7 @@ prelude =
              ]
   ]
 
+-- | Build a leaky definition for binary operator, e.g., '+'.
 lBopDef :: Text -> Text -> NamedDef b a
 lBopDef name cod =
   funDef_
@@ -358,9 +359,6 @@ lBopDef name cod =
 
 ----------------------------------------------------------------
 -- Smart constructors
-
-ite_ :: a ~ Text => Expr a -> Expr a -> Expr a -> Expr a
-ite_ cond left right = case_ cond [("False", [], right), ("True", [], left)]
 
 l_ :: IsString a => Text -> a
 l_ = fromString . toString . leakyName

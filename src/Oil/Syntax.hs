@@ -36,6 +36,8 @@ module Oil.Syntax
     lam_,
     lams_,
     case_,
+    ite_,
+    tGV,
 
     -- * Array operations
     aName,
@@ -105,8 +107,6 @@ data Binding f a = Binding
 data Ty a
   = -- | Local type variable
     TV {name :: a}
-  | -- | Global type variable
-    TGV {ref :: Text}
   | -- | Integer type
     TInt
   | -- | Oblivious array
@@ -228,7 +228,6 @@ instance Applicative Ty where
 
 instance Monad Ty where
   TV {..} >>= f = f name
-  TGV {..} >>= _ = TGV {..}
   TInt >>= _ = TInt
   OArray >>= _ = OArray
   Arrow {..} >>= f = Arrow {dom = dom >>= f, cod = cod >>= f}
@@ -272,11 +271,11 @@ adtDef_ name binders ctors = (name, boundDef def GV close)
             mustNonEmpty "constructor list" $
               ctors <&> second (abstractBinder binders <$>)
         }
-    close "self" = TGV name
-    close x = TGV x
+    close "self" = tGV name
+    close x = tGV x
 
 funDef_ :: Text -> [Binder] -> Ty Text -> Expr Text -> NamedDef b a
-funDef_ name binders ty expr = (name, boundDef def close TGV)
+funDef_ name binders ty expr = (name, boundDef def close tGV)
   where
     def =
       FunDef
@@ -305,15 +304,22 @@ lams_ = flip $ foldr lam_
 instance Apply (Expr a) (Expr a) where
   fn @@ args = App {appKind = FunApp, ..}
 
-instance Apply (Ty a) Text where
-  tctor @@ args = TApp {..}
-
 case_ :: a ~ Text => Expr a -> [(Text, [BinderM a], Expr a)] -> Expr a
 case_ cond alts =
   Case
     { alts = mustNonEmpty "Alternative list" $ uncurry3 caseAlt_ <$> alts,
       ..
     }
+
+ite_ :: a ~ Text => Expr a -> Expr a -> Expr a -> Expr a
+ite_ cond left right = case_ cond [("False", [], right), ("True", [], left)]
+
+-- | Global type, i.e. type constructor without argument
+tGV :: Text -> Ty a
+tGV tctor = TApp {args = [], ..}
+
+instance Apply (Ty a) Text where
+  tctor @@ args = TApp {..}
 
 ----------------------------------------------------------------
 -- Pretty printer
@@ -359,7 +365,6 @@ instance Cute (Expr Text) where
 -- | Pretty printer for a type
 instance Cute (Ty Text) where
   cute TV {..} = cute name
-  cute TGV {..} = cute ref
   cute TInt = "Int"
   cute OArray = cute aName
   cute e@Arrow {..} = do
@@ -431,9 +436,9 @@ instance HasPLevel (Expr a) where
 instance HasPLevel (Ty a) where
   plevel = \case
     TV {} -> 0
-    TGV {} -> 0
     TInt {} -> 0
     OArray {} -> 0
     TApp {..} | isInfix tctor -> 20
+    TApp {args = []} -> 0
     TApp {} -> 10
     _ -> 90
