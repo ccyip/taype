@@ -23,6 +23,7 @@ module Taype.Common
     caseAlt_,
     mustClosed,
     mustNonEmpty,
+    mustLabel,
 
     -- * Common names
     oblivAccent,
@@ -128,6 +129,9 @@ mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a
 
 mustNonEmpty :: Text -> [a] -> NonEmpty a
 mustNonEmpty what xs = fromMaybe (oops (what <> " is empty")) $ nonEmpty xs
+
+mustLabel :: Maybe Label -> Label
+mustLabel = fromMaybe $ oops "Label not available"
 
 ----------------------------------------------------------------
 -- Common names

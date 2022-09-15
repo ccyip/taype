@@ -1342,9 +1342,6 @@ lets_ = flip $ foldr go
           ..
         }
 
-mustLabel :: Maybe Label -> Label
-mustLabel = fromMaybe $ oops "Label not available"
-
 maybeGV :: MonadReader Env m => Expr Name -> m (Maybe (NamedDef Name))
 maybeGV GV {..} = (ref,) <<$>> lookupGSig ref
 maybeGV Loc {..} = maybeGV expr
