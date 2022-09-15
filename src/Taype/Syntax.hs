@@ -47,7 +47,7 @@ module Taype.Syntax
 
     -- * Pretty printer
     cuteBinder,
-    cuteDef,
+    cuteDefs,
   )
 where
 
@@ -773,6 +773,12 @@ instance Cute (Expr Text) where
     return $ "!" <> doc
   cute Tape {..} = cuteApp_ "tape" [expr]
   cute Loc {..} = cute expr
+
+-- | Pretty printer for taype definitions
+cuteDefs :: Options -> Defs Text -> Doc
+cuteDefs options = foldMap go
+  where
+    go (name, def) = cuteDef options name def <> hardline <> hardline
 
 -- | Pretty printer for a definition
 cuteDef :: Options -> Text -> Def Text -> Doc

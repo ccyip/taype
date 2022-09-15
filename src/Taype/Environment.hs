@@ -23,6 +23,7 @@ module Taype.Environment
 
     -- * Contexts
     GCtx (..),
+    defsFromGCtx,
     TCtx (..),
     BCtx (..),
 
@@ -54,6 +55,7 @@ import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
 import Data.List (lookup)
 import qualified GHC.Exts as E
+import Relude.Extra.Tuple
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -114,6 +116,12 @@ instance IsList (GCtx a) where
   type Item (GCtx a) = NamedDef a
   fromList = GCtx . fromList
   toList = E.toList . unGCtx
+
+-- | Build a list of named definitions from the context.
+defsFromGCtx :: GCtx a -> [Text] -> Defs a
+defsFromGCtx (GCtx gctx) = fmapToSnd go
+  where
+    go name = fromMaybe (oops "Definition not in context") (gctx !? name)
 
 newtype TCtx a = TCtx {unTCtx :: [(a, (Ty a, Label))]}
   deriving stock (Functor, Foldable, Traversable)
@@ -236,12 +244,3 @@ instance Cute (TCtx Text) where
           <> if null tctx then "<empty>" else sepWith hardline docs
     where
       go (x, (t, l)) = cuteBinder x (Just l) (Just t)
-
--- | Pretty printer for taype definitions
-cuteDefs :: Options -> GCtx Text -> [Text] -> Doc
-cuteDefs options (GCtx gctx) =
-  foldMap $ \name -> go name <> hardline <> hardline
-  where
-    go name =
-      cuteDef options name $
-        fromMaybe (oops "definition not in context") (gctx !? name)

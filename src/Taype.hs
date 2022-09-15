@@ -41,14 +41,15 @@ process options@Options {optFile = file, optCode = code, ..} = do
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
   namedDefs <- parse tokens
   let names = fst <$> namedDefs
-      defs = closeDefs namedDefs
-  when optPrintSource $ printTaypeDefs (fromList defs) names
-  gctx <- checkDefs options defs
-  when optPrintCore $ printTaypeDefs gctx names
+      srcDefs = closeDefs namedDefs
+  when optPrintSource $ printTaypeDefs srcDefs
+  gctx <- checkDefs options srcDefs
+  let defs = defsFromGCtx gctx names
+  when optPrintCore $ printTaypeDefs defs
   printOilDefs Oil.prelude
   where
-    printTaypeDefs gctx defs =
-      printDoc options $ cuteDefs options gctx defs
+    printTaypeDefs defs =
+      printDoc options $ cuteDefs options defs
     printOilDefs defs =
       printDoc options $ Oil.cuteDefs options defs
 
