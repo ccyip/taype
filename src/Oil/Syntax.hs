@@ -319,8 +319,16 @@ case_ cond alts =
       ..
     }
 
-ite_ :: a ~ Text => Expr a -> Expr a -> Expr a -> Expr a
-ite_ cond left right = case_ cond [("False", [], right), ("True", [], left)]
+-- Do not reuse 'case_' to avoid the constraint on @a@.
+ite_ :: Eq a => Expr a -> Expr a -> Expr a -> Expr a
+ite_ cond left right =
+  Case
+    { alts =
+        [ CaseAlt {ctor = "False", binders = [], bnd = abstract_ [] right},
+          CaseAlt {ctor = "True", binders = [], bnd = abstract_ [] left}
+        ],
+      ..
+    }
 
 -- | Global type, i.e. type constructor without argument
 tGV :: Text -> Ty a
