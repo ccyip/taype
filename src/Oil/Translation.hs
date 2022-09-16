@@ -86,7 +86,7 @@ extendCtx1 ::
 extendCtx1 x t l = extendCtx [(x, t, l)]
 
 ----------------------------------------------------------------
--- Translation from taype to OIL
+-- Translating expressions and types
 
 -- | Translate a taype expression with its label to the corresponding OIL
 -- expression.
@@ -164,6 +164,40 @@ toLeakyTy Arrow {..} = leakyName "->" @@ [dom, toLeakyTy cod]
 toLeakyTy TApp {..} = TApp {tctor = leakyName tctor, args = toLeakyTy <$> args}
 -- Local type variables do not appear in type translation.
 toLeakyTy _ = oops "Local type variables appear"
+
+----------------------------------------------------------------
+-- Leaky structure instance resolution
+
+-- | Resolve the return instance of the leaky structure of an OIL type.
+--
+-- Given OIL type @T@, the return expression should have type:
+--
+-- @T -> <|T|>@
+--
+-- where @<|-|>@ is 'toLeakyTy'.
+retInst_ :: Ty a -> Expr b
+retInst_ _ = GV "<unimplemented>"
+
+-- | Resolve the return instance of the leaky structure of a taype type.
+retInst :: T.Ty Name -> Expr b
+retInst = retInst_ . toOilTy_
+
+-- | Resolve the leaky if instance of the leaky structure of an OIL type.
+--
+-- Given OIL type @T@, the return expression should have type:
+--
+-- @'OArray' -> <|T|> -> <|T|> -> <|T|>@
+--
+-- where @<|-|>@ is 'toLeakyTy'.
+lIfInst_ :: Ty a -> Expr b
+lIfInst_ _ = GV "<unimplemented>"
+
+-- | Resolve the leaky if instance of the leaky structure of a taype type.
+lIfInst :: T.Ty Name -> Expr b
+lIfInst = lIfInst_ . toOilTy_
+
+----------------------------------------------------------------
+-- Translating definitions
 
 -- | Translate taype definitions to the corresponding OIL definitions.
 toOilDefs :: GCtx Name -> T.Defs Name -> Defs b a
@@ -255,34 +289,6 @@ toOilDef (name, def) = case def of
     lCaseAlt ctor f ts =
       let xs = vars (l_ "x") $ length ts
        in (l_ ctor, toBinder <$> xs, V f @@ V <$> xs)
-
--- | Resolve the return instance of the leaky structure of an OIL type.
---
--- Given OIL type @T@, the return expression should have type:
---
--- @T -> <|T|>@
---
--- where @<|-|>@ is 'toLeakyTy'.
-retInst_ :: Ty a -> Expr b
-retInst_ _ = GV "<unimplemented>"
-
--- | Resolve the return instance of the leaky structure of a taype type.
-retInst :: T.Ty Name -> Expr b
-retInst = retInst_ . toOilTy_
-
--- | Resolve the leaky if instance of the leaky structure of an OIL type.
---
--- Given OIL type @T@, the return expression should have type:
---
--- @'OArray' -> <|T|> -> <|T|> -> <|T|>@
---
--- where @<|-|>@ is 'toLeakyTy'.
-lIfInst_ :: Ty a -> Expr b
-lIfInst_ _ = GV "<unimplemented>"
-
--- | Resolve the leaky if instance of the leaky structure of a taype type.
-lIfInst :: T.Ty Name -> Expr b
-lIfInst = lIfInst_ . toOilTy_
 
 ----------------------------------------------------------------
 -- Prelude
