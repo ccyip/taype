@@ -18,6 +18,7 @@ module Taype.Prelude
     firstM,
     secondM,
     findAndDel,
+    snoc,
   )
 where
 
@@ -41,3 +42,6 @@ findAndDel _ [] = Nothing
 findAndDel p (x : xs)
   | p x = Just (x, xs)
   | otherwise = second (x :) <$> findAndDel p xs
+
+snoc :: [a] -> a -> [a]
+snoc xs x = xs <> [x]

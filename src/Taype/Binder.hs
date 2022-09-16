@@ -13,6 +13,7 @@
 module Taype.Binder
   ( Binder,
     BinderM (..),
+    toBinder,
     fromBinder,
     isBinderName,
     binderNameEq,
@@ -35,11 +36,14 @@ data BinderM a = Named Int a | Anon
   deriving stock (Eq, Show)
 
 instance IsString a => IsString (BinderM a) where
-  fromString = Named (-1) . fromString
+  fromString = toBinder . fromString
 
 instance ToText a => ToText (BinderM a) where
   toText (Named _ a) = toText a
   toText Anon = "_"
+
+toBinder :: a -> BinderM a
+toBinder = Named (-1)
 
 fromBinder :: BinderM a -> a
 fromBinder (Named _ name) = name

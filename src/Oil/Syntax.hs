@@ -282,7 +282,7 @@ adtDef_ name binders ctors = (name, boundDef GV close def)
             mustNonEmpty "constructor list" $
               ctors <&> second (abstractBinder binders <$>)
         }
-    close "self" = tGV name
+    close "$self" = tGV name
     close x = tGV x
 
 funDef_ :: Text -> [Binder] -> Ty Text -> Expr Text -> NamedDef b a
@@ -294,7 +294,7 @@ funDef_ name binders ty expr = (name, boundDef close tGV def)
           tyBnd = abstractBinder binders ty,
           ..
         }
-    close "self" = GV name
+    close "$self" = GV name
     close x = GV x
 
 ar_ :: [Ty a] -> Ty a

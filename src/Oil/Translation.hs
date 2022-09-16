@@ -19,13 +19,15 @@
 -- taype identifiers to avoid name conflicts.
 module Oil.Translation
   ( prelude,
-    toOilDefs
+    toOilDefs,
   )
 where
 
 import Data.List (lookup)
+import GHC.List (zipWith3)
 import Oil.Syntax
 import Relude.Extra.Bifunctor
+import Taype.Binder
 import Taype.Common
 import Taype.Environment (GCtx (..), TCtx (..), lookupGCtx)
 import Taype.Name
@@ -119,9 +121,9 @@ toOilSize _ = return $ GV "<unimplemented>"
 -- | Translate a taype type with its label to the corresponding OIL type.
 --
 -- The taype type is well-kinded and in core taype ANF.
-toOilTy :: Label -> T.Ty Name -> TslM (Ty b)
+toOilTy :: Label -> T.Ty a -> Ty b
 toOilTy SafeL = toOilTy_
-toOilTy LeakyL = (toLeakyTy <$>) . toOilTy_
+toOilTy LeakyL = toLeakyTy . toOilTy_
 
 -- | Translate a taype type to the corresponding plain OIL type.
 --
@@ -132,22 +134,21 @@ toOilTy LeakyL = (toLeakyTy <$>) . toOilTy_
 -- array.
 --
 -- Two equivalent taype type should be translated to the same OIL type.
-toOilTy_ :: T.Ty Name -> TslM (Ty b)
-toOilTy_ T.TBool = return $ tGV "Bool"
-toOilTy_ T.TInt = return TInt
-toOilTy_ T.GV {..} = return $ tGV ref
-toOilTy_ T.Prod {..} = do
-  left' <- toOilTy_ left
-  right' <- toOilTy_ right
-  return $ "*" @@ [left', right']
-toOilTy_ T.Pi {..} = do
-  dom <- toOilTy (mustLabel label) ty
-  (_, body) <- unbind1 bnd
-  cod <- toOilTy_ body
-  return Arrow {..}
+toOilTy_ :: T.Ty a -> Ty b
+toOilTy_ T.TBool = tGV "Bool"
+toOilTy_ T.TInt = TInt
+toOilTy_ T.GV {..} = tGV ref
+toOilTy_ T.Prod {..} = "*" @@ [toOilTy_ left, toOilTy_ right]
+toOilTy_ T.Pi {..} =
+  let dom = toOilTy (mustLabel label) ty
+      -- A bit hacky here. The bound variable is instantiated arbitrarily
+      -- because we do not inspect it when translating types anyway. This is
+      -- convenient so we don't have to wrap the function in the 'TslM' monad.
+      cod = toOilTy_ $ instantiate_ T.VUnit bnd
+   in Arrow {..}
 -- Oblivious types, including type level computation, are translated into
 -- oblivious array.
-toOilTy_ _ = return OArray
+toOilTy_ _ = OArray
 
 -- | Translate an OIL type to its leaky counterpart.
 --
@@ -178,7 +179,7 @@ toOilDef :: T.NamedDef Name -> TslM [NamedDef Name Name]
 toOilDef (name, def) = case def of
   T.FunDef {..} -> do
     let l = mustLabel label
-    ty' <- toOilTy l ty
+        ty' = toOilTy l ty
     expr' <- toOilExpr l expr
     return $
       one
@@ -192,7 +193,7 @@ toOilDef (name, def) = case def of
   T.OADTDef {..} -> do
     (x, body) <- unbind1 bnd
     body' <- extendCtx1 x ty SafeL $ toOilSize body
-    ty' <- toOilTy SafeL ty
+    let ty' = toOilTy SafeL ty
     return $
       one
         ( name,
@@ -203,8 +204,85 @@ toOilDef (name, def) = case def of
             }
         )
   T.ADTDef {..} -> do
-    return []
+    let (ctorNames, paraTypess) = unzip $ toList ctors
+        sParaTypess = toOilTy SafeL <<$>> paraTypess
+        lParaTypess = toOilTy LeakyL <<$>> paraTypess
+    return
+      [ -- ADT
+        adtDef_ name [] $ zip ctorNames sParaTypess,
+        -- Leaky ADT
+        adtDef_ (l_ name) [] $
+          zipWith ((,) . l_) ctorNames lParaTypess
+            `snoc` (lif_ name, [OArray, "$self", "$self"]),
+        -- Return instance of the leaky type
+        funDef_ (ret_ name) [] (ar_ [TV name, l_ name]) $
+          lam_ "x" $
+            case_ "x" $ zipWith retAlt ctorNames sParaTypess,
+        -- Leaky case analysis
+        funDef_
+          (lcase_ name)
+          [l_ "r"]
+          ( ar_ $
+              [ar_ [OArray, l_ "r", l_ "r", l_ "r"], l_ name]
+                <> (lParaTypess <&> \ts -> ar_ $ ts <> [l_ "r"])
+                `snoc` l_ "r"
+          )
+          $ lCaseBody ctorNames lParaTypess
+      ]
   _ -> oops "Translating constructor or builtin definitions"
+  where
+    vars prefix n = (prefix <>) . show <$> [1 .. n]
+    retAlt ctor paraTypes =
+      let xs = vars "x" $ length paraTypes
+       in ( ctor,
+            toBinder <$> xs,
+            l_ ctor
+              @@ zipWith (\t x -> retInst_ t @@ [V x]) paraTypes xs
+          )
+    lCaseBody ctors tss =
+      let fs = vars (l_ "f") $ length tss
+       in lams_ ([lif_ "r", l_ "x"] <> (toBinder <$> fs)) $
+            case_ (l_ "x") $
+              zipWith3 lCaseAlt ctors fs tss
+                `snoc` ( lif_ name,
+                         [o_ "b", l_ "x1", l_ "x2"],
+                         lif_ "r"
+                           @@ [ o_ "b",
+                                "$self" @@ [lif_ "r", l_ "x1"] <> (V <$> fs),
+                                "$self" @@ [lif_ "r", l_ "x2"] <> (V <$> fs)
+                              ]
+                       )
+    lCaseAlt ctor f ts =
+      let xs = vars (l_ "x") $ length ts
+       in (l_ ctor, toBinder <$> xs, V f @@ V <$> xs)
+
+-- | Resolve the return instance of the leaky structure of an OIL type.
+--
+-- Given OIL type @T@, the return expression should have type:
+--
+-- @T -> <|T|>@
+--
+-- where @<|-|>@ is 'toLeakyTy'.
+retInst_ :: Ty a -> Expr b
+retInst_ _ = GV "<unimplemented>"
+
+-- | Resolve the return instance of the leaky structure of a taype type.
+retInst :: T.Ty Name -> Expr b
+retInst = retInst_ . toOilTy_
+
+-- | Resolve the leaky if instance of the leaky structure of an OIL type.
+--
+-- Given OIL type @T@, the return expression should have type:
+--
+-- @'OArray' -> <|T|> -> <|T|> -> <|T|>@
+--
+-- where @<|-|>@ is 'toLeakyTy'.
+lIfInst_ :: Ty a -> Expr b
+lIfInst_ _ = GV "<unimplemented>"
+
+-- | Resolve the leaky if instance of the leaky structure of a taype type.
+lIfInst :: T.Ty Name -> Expr b
+lIfInst = lIfInst_ . toOilTy_
 
 ----------------------------------------------------------------
 -- Prelude
@@ -223,7 +301,7 @@ prelude =
       (l_ aName)
       []
       [ (ret_ aName, [OArray]),
-        (lif_ aName, [OArray, "self", "self"])
+        (lif_ aName, [OArray, "$self", "$self"])
       ],
     -- Boolean
     adtDef_
@@ -235,7 +313,7 @@ prelude =
       []
       [ (l_ "False", []),
         (l_ "True", []),
-        (lif_ "Bool", [OArray, "self", "self"])
+        (lif_ "Bool", [OArray, "$self", "$self"])
       ],
     funDef_
       (ret_ "Bool")
@@ -273,8 +351,8 @@ prelude =
               [o_ "b", l_ "b1", l_ "b2"],
               lif_ "r"
                 @@ [ o_ "b",
-                     "self" @@ [lif_ "r", l_ "b1", l_ "ff", l_ "ft"],
-                     "self" @@ [lif_ "r", l_ "b2", l_ "ff", l_ "ft"]
+                     "$self" @@ [lif_ "r", l_ "b1", l_ "ff", l_ "ft"],
+                     "$self" @@ [lif_ "r", l_ "b2", l_ "ff", l_ "ft"]
                    ]
             )
           ],
@@ -290,7 +368,7 @@ prelude =
             ( lif_ "Bool",
               [o_ "b", l_ "b1", l_ "b2"],
               lif_ aName
-                @@ [o_ "b", "self" @@ [l_ "b1"], "self" @@ [l_ "b2"]]
+                @@ [o_ "b", "$self" @@ [l_ "b1"], "$self" @@ [l_ "b2"]]
             )
           ],
     -- Integer
@@ -299,7 +377,7 @@ prelude =
       []
       [ (r_ "Int", [OArray]),
         (ret_ "Int", [TInt]),
-        (lif_ "Int", [OArray, "self", "self"])
+        (lif_ "Int", [OArray, "$self", "$self"])
       ],
     funDef_
       (l_ $ s_ "Int")
@@ -313,7 +391,7 @@ prelude =
             ( lif_ "Int",
               [o_ "b", l_ "n1", l_ "n2"],
               lif_ aName
-                @@ [o_ "b", "self" @@ [l_ "n1"], "self" @@ [l_ "n2"]]
+                @@ [o_ "b", "$self" @@ [l_ "n1"], "$self" @@ [l_ "n2"]]
             )
           ],
     lBopDef "+" "Int",
@@ -372,8 +450,8 @@ prelude =
               [o_ "b", l_ "p1", l_ "p2"],
               lif_ "r"
                 @@ [ o_ "b",
-                     "self" @@ [lif_ "r", l_ "p1", l_ "f"],
-                     "self" @@ [lif_ "r", l_ "p2", l_ "f"]
+                     "$self" @@ [lif_ "r", l_ "p1", l_ "f"],
+                     "$self" @@ [lif_ "r", l_ "p2", l_ "f"]
                    ]
             )
           ],
@@ -413,8 +491,8 @@ prelude =
               [o_ "b", l_ "f1", l_ "f2"],
               lif_ "b"
                 @@ [ o_ "b",
-                     "self" @@ [lif_ "b", l_ "f1", "x"],
-                     "self" @@ [lif_ "b", l_ "f2", "x"]
+                     "$self" @@ [lif_ "b", l_ "f1", "x"],
+                     "$self" @@ [lif_ "b", l_ "f2", "x"]
                    ]
             )
           ],
@@ -432,8 +510,8 @@ prelude =
               V aMux
                 @@ [ "n",
                      o_ "b",
-                     "self" @@ ["n", l_ "a1"],
-                     "self" @@ ["n", l_ "a2"]
+                     "$self" @@ ["n", l_ "a1"],
+                     "$self" @@ ["n", l_ "a2"]
                    ]
             )
           ],
@@ -496,8 +574,8 @@ lBopDef name cod =
                   [o_ "b", l_ "n1", l_ "n2"],
                   lif_ cod
                     @@ [ o_ "b",
-                         "self" @@ [l_ "m", l_ "n1"],
-                         "self" @@ [l_ "m", l_ "n2"]
+                         "$self" @@ [l_ "m", l_ "n1"],
+                         "$self" @@ [l_ "m", l_ "n2"]
                        ]
                 )
               ]
@@ -520,8 +598,8 @@ lBopDef name cod =
                   [o_ "b", l_ "n1", l_ "n2"],
                   lif_ cod
                     @@ [ o_ "b",
-                         "self" @@ [l_ "m", l_ "n1"],
-                         "self" @@ [l_ "m", l_ "n2"]
+                         "$self" @@ [l_ "m", l_ "n1"],
+                         "$self" @@ [l_ "m", l_ "n2"]
                        ]
                 )
               ]
@@ -530,8 +608,8 @@ lBopDef name cod =
             [o_ "b", l_ "m1", l_ "m2"],
             lif_ cod
               @@ [ o_ "b",
-                   "self" @@ [l_ "m1", l_ "n"],
-                   "self" @@ [l_ "m2", l_ "n"]
+                   "$self" @@ [l_ "m1", l_ "n"],
+                   "$self" @@ [l_ "m2", l_ "n"]
                  ]
           )
         ]
