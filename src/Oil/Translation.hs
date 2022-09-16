@@ -24,6 +24,7 @@ module Oil.Translation
 where
 
 import Data.List (lookup)
+import Data.Maybe (fromJust)
 import GHC.List (zipWith3)
 import Oil.Syntax
 import Relude.Extra.Bifunctor
@@ -140,7 +141,7 @@ toOilTy_ T.TInt = TInt
 toOilTy_ T.GV {..} = tGV ref
 toOilTy_ T.Prod {..} = "*" @@ [toOilTy_ left, toOilTy_ right]
 toOilTy_ T.Pi {..} =
-  let dom = toOilTy (mustLabel label) ty
+  let dom = toOilTy (fromJust label) ty
       -- A bit hacky here. The bound variable is instantiated arbitrarily
       -- because we do not inspect it when translating types anyway. This is
       -- convenient so we don't have to wrap the function in the 'TslM' monad.
@@ -225,7 +226,7 @@ toOilDefs gctx = foldMap go
 toOilDef :: T.NamedDef Name -> TslM [NamedDef Name Name]
 toOilDef (name, def) = case def of
   T.FunDef {..} -> do
-    let l = mustLabel label
+    let l = fromJust label
         ty' = toOilTy l ty
     expr' <- toOilExpr l expr
     return $

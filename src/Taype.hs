@@ -45,7 +45,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
       srcDefs = closeDefs namedDefs
   when optPrintSource $ printTaypeDefs srcDefs
   gctx <- checkDefs options srcDefs
-  let defs = defsFromGCtx (mustClosed "Global context" gctx) names
+  let defs = defsFromGCtx (fromClosed gctx) names
   when optPrintCore $ printTaypeDefs defs
   let oilDefs = toOilDefs gctx defs
   when optPrintPrelude $ printOilDefs Oil.prelude

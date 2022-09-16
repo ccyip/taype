@@ -256,7 +256,7 @@ boundDef _ g ADTDef {..} =
 
 -- | Make sure a definition is closed, i.e. there is no free variable.
 --
--- This is similar to 'mustClosed', but don't bother defining a 'Bitraversable'
+-- This is similar to 'fromClosed', but don't bother defining a 'Bitraversable'
 -- instance and a @biclosed@ function corresponding to 'closed' in the bound
 -- library.
 closedDef :: Def b a -> Def d c
@@ -278,9 +278,7 @@ adtDef_ name binders ctors = (name, boundDef GV close def)
     def =
       ADTDef
         { binders = Just <$> binders,
-          ctors =
-            mustNonEmpty "constructor list" $
-              ctors <&> second (abstractBinder binders <$>)
+          ctors = fromList $ ctors <&> second (abstractBinder binders <$>)
         }
     close "$self" = tGV name
     close x = tGV x
@@ -318,7 +316,7 @@ instance Apply (Expr a) (Expr a) where
 case_ :: a ~ Text => Expr a -> [(Text, [BinderM a], Expr a)] -> Expr a
 case_ cond alts =
   Case
-    { alts = mustNonEmpty "Alternative list" $ uncurry3 caseAlt_ <$> alts,
+    { alts = fromList $ uncurry3 caseAlt_ <$> alts,
       ..
     }
 

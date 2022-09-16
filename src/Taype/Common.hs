@@ -21,9 +21,7 @@ module Taype.Common
     AppKind (..),
     CaseAlt (..),
     caseAlt_,
-    mustClosed,
-    mustNonEmpty,
-    mustLabel,
+    fromClosed,
 
     -- * Common names
     oblivAccent,
@@ -43,6 +41,7 @@ where
 import Algebra.Lattice
 import Bound
 import Data.Functor.Classes
+import Data.Maybe (fromJust)
 import Prettyprinter (Pretty)
 import qualified Prettyprinter as PP
 import Taype.Binder
@@ -125,14 +124,8 @@ caseAlt_ ctor binders body =
       ..
     }
 
-mustClosed :: Traversable f => Text -> f a -> f b
-mustClosed what a = fromMaybe (oops (what <> " is not closed")) $ closed a
-
-mustNonEmpty :: Text -> [a] -> NonEmpty a
-mustNonEmpty what xs = fromMaybe (oops (what <> " is empty")) $ nonEmpty xs
-
-mustLabel :: Maybe Label -> Label
-mustLabel = fromMaybe $ oops "Label not available"
+fromClosed :: Traversable f => f a -> f b
+fromClosed a = fromJust $ closed a
 
 ----------------------------------------------------------------
 -- Common names

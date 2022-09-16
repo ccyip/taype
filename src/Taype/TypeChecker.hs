@@ -71,6 +71,7 @@ import Algebra.PartialOrd
 import Bound
 import Control.Monad.Error.Class
 import Data.List (lookup, partition, zip4, zipWith3)
+import Data.Maybe (fromJust)
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -118,7 +119,7 @@ typing e@V {..} Nothing Nothing =
     _ -> oops $ "Local variable not in scope: " <> show name
 typing e@GV {..} Nothing Nothing =
   lookupGSig ref >>= \case
-    Just FunDef {..} -> return (ty, mustLabel label, e)
+    Just FunDef {..} -> return (ty, fromJust label, e)
     Just CtorDef {..} -> do
       checkArity CtorApp ref [] paraTypes
       return
@@ -166,7 +167,7 @@ typing Lam {mTy = Just binderTy, ..} Nothing ml = do
     )
 typing Lam {..} (Just t) ml = do
   (binderTy', binderLabel, _, tBnd') <- isPi t
-  let binderLabel' = mustLabel binderLabel
+  let binderLabel' = fromJust binderLabel
   -- If the binder label is given in the lambda term, it has to agree with the
   -- one in the pi-type.
   checkLabel label binderLabel'
@@ -264,7 +265,7 @@ typing App {..} Nothing ml =
     go [] t = return ([], t)
     go (arg : args') t = do
       (argTy', argLabel, _, bnd) <- isPi t
-      let argLabel' = mustLabel argLabel
+      let argLabel' = fromJust argLabel
       arg' <- check arg argTy' argLabel'
       -- Unfortunately, we have to kind the pi-type body again here even though
       -- it was in good form, because it may not be in core taype ANF anymore
@@ -755,7 +756,7 @@ depGen gen ctxs argss branchTs@(Prod {} :| _) = do
 depGen gen ctxs argss branchTs@(Pi {label, binder} :| _) = do
   res <- mapM isPi branchTs
   let (argTs, labels, _, bnds) = NE.unzip4 res
-      binderLabel = mustLabel label
+      binderLabel = fromJust label
   unless (all (label ==) labels) $
     err
       [ [ DD "All branches are functions,",
@@ -820,7 +821,7 @@ depMatch match ctxs argss Prod {..} = do
 depMatch match ctxs argss Pi {..} = do
   argTs <- depMatch match ctxs argss ty
   (x, body) <- unbind1 bnd
-  let binderLabel = mustLabel label
+  let binderLabel = fromJust label
       ctxs' =
         NE.zipWith
           (\argTy ctx -> (x, argTy, binderLabel, binder) : ctx)
@@ -1543,7 +1544,7 @@ checkDef FunDef {..} = do
         RetractionAttr -> SafeL
         SafeAttr -> SafeL
         LeakyAttr -> LeakyL
-  expr' <- withLabel l $ check expr ty (mustLabel label)
+  expr' <- withLabel l $ check expr ty (fromJust label)
   return FunDef {expr = expr', ..}
 checkDef OADTDef {..} = do
   (x, body) <- unbind1 bnd
