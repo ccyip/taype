@@ -175,8 +175,15 @@ toLeakyTy _ = oops "Local type variables appear"
 -- @T -> <|T|>@
 --
 -- where @<|-|>@ is 'toLeakyTy'.
+--
+-- The given OIL type is nonleaky. In addition, it is a concrete type, i.e. not
+-- a type variable.
 retInst_ :: Ty a -> Expr b
-retInst_ _ = GV "<unimplemented>"
+retInst_ TInt = GV (retName "Int")
+retInst_ OArray = GV (retName aName)
+retInst_ Arrow {..} = GV (retName "->") @@ [retInst_ cod]
+retInst_ TApp {..} = GV (retName tctor) @@ retInst_ <$> args
+retInst_ _ = oops "Cannot resolve return instance of type variable"
 
 -- | Resolve the return instance of the leaky structure of a taype type.
 retInst :: T.Ty Name -> Expr b
@@ -189,8 +196,14 @@ retInst = retInst_ . toOilTy_
 -- @'OArray' -> <|T|> -> <|T|> -> <|T|>@
 --
 -- where @<|-|>@ is 'toLeakyTy'.
+--
+-- The given OIL type is a concrete type, i.e. not a type variable.
 lIfInst_ :: Ty a -> Expr b
-lIfInst_ _ = GV "<unimplemented>"
+lIfInst_ TInt = GV (lIfName "Int")
+lIfInst_ OArray = GV (lIfName aName)
+lIfInst_ Arrow {} = GV (lIfName "->")
+lIfInst_ TApp {..} = GV (lIfName tctor)
+lIfInst_ _ = oops "Cannot resolve leaky if instance of type variable"
 
 -- | Resolve the leaky if instance of the leaky structure of a taype type.
 lIfInst :: T.Ty Name -> Expr b
