@@ -200,7 +200,7 @@ cuteLamDoc isRoot binderDocs bodyDoc =
     mkBindersDoc = backslash <> align (vsep binderDocs) <+> "->"
 
 cuteLetDoc :: [(Doc, Doc)] -> Doc -> Doc
-cuteLetDoc [] _ = oops "Let has no binding"
+cuteLetDoc [] bodyDoc = group $ align bodyDoc
 cuteLetDoc bindingDocs bodyDoc =
   group $
     align $

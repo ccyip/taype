@@ -58,7 +58,6 @@ import Taype.Binder
 import Taype.Common
 import Taype.Cute
 import Taype.Name
-import qualified Taype.NonEmpty as NE
 import Taype.Plate
 import Taype.Prelude
 import Prelude hiding (group)
@@ -89,13 +88,13 @@ data Expr a
       }
   | -- | Let binding
     Let
-      { bindings :: NonEmpty (Binding Expr a),
+      { bindings :: [Binding Expr a],
         bndMany :: Scope Int Expr a
       }
   | -- | Case analysis
     Case
       { cond :: Expr a,
-        alts :: NonEmpty (CaseAlt Expr a)
+        alts :: [CaseAlt Expr a]
       }
   deriving stock (Functor, Foldable, Traversable)
 
@@ -136,7 +135,7 @@ data Def b a
   | -- | Algebraic data type
     ADTDef
       { binders :: [Maybe Binder],
-        ctors :: NonEmpty (Text, [Scope Int Ty b])
+        ctors :: [(Text, [Scope Int Ty b])]
       }
   deriving stock (Functor, Foldable, Traversable)
 
@@ -278,7 +277,7 @@ adtDef_ name binders ctors = (name, boundDef GV close def)
     def =
       ADTDef
         { binders = Just <$> binders,
-          ctors = fromList $ ctors <&> second (abstractBinder binders <$>)
+          ctors = ctors <&> second (abstractBinder binders <$>)
         }
     close "$self" = tGV name
     close x = tGV x
@@ -316,7 +315,7 @@ instance Apply (Expr a) (Expr a) where
 case_ :: a ~ Text => Expr a -> [(Text, [BinderM a], Expr a)] -> Expr a
 case_ cond alts =
   Case
-    { alts = fromList $ uncurry3 caseAlt_ <$> alts,
+    { alts = uncurry3 caseAlt_ <$> alts,
       ..
     }
 
@@ -344,9 +343,9 @@ instance Cute (Expr Text) where
   cute App {..} = cuteApp fn args
   cute Let {..} = do
     let (binders, bnds) =
-          NE.unzip $ bindings <&> \Binding {..} -> (binder, bnd)
-    (xs, body) <- unbindManyNamesOrBinders (toList binders) bndMany
-    bindingDocs <- zipWithM (cuteBinding xs) xs (toList bnds)
+          unzip $ bindings <&> \Binding {..} -> (binder, bnd)
+    (xs, body) <- unbindManyNamesOrBinders binders bndMany
+    bindingDocs <- zipWithM (cuteBinding xs) xs bnds
     bodyDoc <- cute body
     return $ cuteLetDoc bindingDocs bodyDoc
     where
@@ -357,14 +356,15 @@ instance Cute (Expr Text) where
   cute
     Case
       { alts =
-          CaseAlt {ctor = "False", binders = [], bnd = rBnd}
-            :| [CaseAlt {ctor = "True", binders = [], bnd = lBnd}],
+          [ CaseAlt {ctor = "False", binders = [], bnd = rBnd},
+            CaseAlt {ctor = "True", binders = [], bnd = lBnd}
+            ],
         ..
       } = do
       (_, left) <- unbindManyNamesOrBinders [] lBnd
       (_, right) <- unbindManyNamesOrBinders [] rBnd
       cuteIte "" cond left right
-  cute Case {alts = CaseAlt {ctor = "(,)", ..} :| [], ..} = do
+  cute Case {alts = [CaseAlt {ctor = "(,)", ..}], ..} = do
     (xs, body) <- unbindManyNamesOrBinders binders bnd
     case xs of
       [xl, xr] -> cutePCase_ "" cond xl xr body
