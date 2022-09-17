@@ -82,8 +82,7 @@ data Expr a
       }
   | -- | Application
     App
-      { appKind :: AppKind,
-        fn :: Expr a,
+      { fn :: Expr a,
         args :: [Expr a]
       }
   | -- | Let binding
@@ -183,7 +182,7 @@ instance Monad Expr where
   GV {..} >>= _ = GV {..}
   ILit {..} >>= _ = ILit {..}
   Lam {..} >>= f = Lam {bnd = bnd >>>= f, ..}
-  App {..} >>= f = App {fn = fn >>= f, args = args <&> (>>= f), ..}
+  App {..} >>= f = App {fn = fn >>= f, args = args <&> (>>= f)}
   Let {..} >>= f =
     Let
       { bndMany = bndMany >>>= f,
@@ -200,7 +199,7 @@ instance PlateM (Expr Name) where
   plateM f App {..} = do
     fn' <- f fn
     args' <- mapM f args
-    return App {fn = fn', args = args', ..}
+    return App {fn = fn', args = args'}
   plateM f Let {..} = do
     (xs, body) <- unbindMany (length bindings) bndMany
     bindings' <- mapM (go xs) bindings
@@ -310,7 +309,7 @@ lams_ :: a ~ Text => [BinderM a] -> Expr a -> Expr a
 lams_ = flip $ foldr lam_
 
 instance Apply (Expr a) (Expr a) where
-  fn @@ args = App {appKind = FunApp, ..}
+  fn @@ args = App {..}
 
 case_ :: a ~ Text => Expr a -> [(Text, [BinderM a], Expr a)] -> Expr a
 case_ cond alts =

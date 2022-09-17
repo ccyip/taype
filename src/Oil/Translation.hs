@@ -394,9 +394,7 @@ toOilDef (name, def) = case def of
 --
 -- Because we do not type check these definitions, we need to be careful and
 -- make sure all definitions are well-typed and in the right form. Specifically,
--- the alternatives in case analysis are in the canonical order. We do not need
--- to make sure constructors are in application form though, as this will be
--- handled later.
+-- the alternatives in case analysis are in the canonical order.
 prelude :: Defs b a
 prelude =
   [ -- Array
