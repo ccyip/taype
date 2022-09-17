@@ -24,6 +24,7 @@ module Oil.Translation
   )
 where
 
+import Bound
 import Data.List (lookup)
 import Data.Maybe (fromJust)
 import GHC.List (zipWith3)
@@ -34,6 +35,7 @@ import Taype.Common
 import Taype.Environment (GCtx (..), TCtx (..), lookupGCtx)
 import Taype.Name
 import qualified Taype.NonEmpty as NE
+import Taype.Plate
 import Taype.Prelude
 import qualified Taype.Syntax as T
 
@@ -300,7 +302,10 @@ lIfInst = lIfInst_ . toOilTy_
 toOilDefs :: GCtx Name -> T.Defs Name -> Defs b a
 toOilDefs gctx = foldMap go
   where
-    go = secondF closedDef . runTslM Env {tctx = TCtx [], ..} . toOilDef
+    go =
+      secondF (closedDef . runFreshM . biplateM simpExpr)
+        . runTslM Env {tctx = TCtx [], ..}
+        . toOilDef
 
 -- | Translate a taype definition to the corresponding OIL definition.
 --
@@ -386,6 +391,62 @@ toOilDef (name, def) = case def of
     lCaseAlt ctor f ts =
       let xs = vars (l_ "x") $ length ts
        in (l_ ctor, toBinder <$> xs, V f @@ V <$> xs)
+
+----------------------------------------------------------------
+-- Simplification of OIL expressions
+
+-- | Simplify OIL expressions.
+--
+-- This function performs various simplifcation such as let flattening and
+-- application collapsing.
+simpExpr :: MonadFresh m => Expr Name -> m (Expr Name)
+simpExpr = transformM go
+  where
+    go App {args = [], ..} = return fn
+    go App {fn = App {..}, args = args'} =
+      return App {args = args <> args', ..}
+    go Let {..} = do
+      (xs, rhss, body) <- unbindLet bindings bndMany
+      (xs', rhss', body') <- goLet xs rhss body
+      case body' of
+        Let {bindings = bindingsN, bndMany = bndManyN} -> do
+          (ys, rhssN, bodyN) <- unbindLet bindingsN bndManyN
+          return $ let_ (xs' <> ys) (rhss' <> rhssN) bodyN
+        _ -> return $ let_ xs' rhss' body'
+    go e = return e
+    goLet [] [] body = return ([], [], body)
+    goLet (x : xs) ((binder, rhs) : rhss) body =
+      let res =
+            goLet
+              xs
+              (second (substitute x rhs) <$> rhss)
+              (substitute x rhs body)
+       in case rhs of
+            V {} -> res
+            GV {} -> res
+            Let {bindings = bindingsN, bndMany = bndManyN} -> do
+              (ys, rhssN, bodyN) <- unbindLet bindingsN bndManyN
+              (xs', rhss', body') <-
+                goLet (x : xs) ((binder, bodyN) : rhss) body
+              return (ys <> xs', rhssN <> rhss', body')
+            _ -> do
+              (xs', rhss', body') <- goLet xs rhss body
+              return (x : xs', (binder, rhs) : rhss', body')
+    goLet _ _ _ = oops "Names and bindings do not match"
+
+----------------------------------------------------------------
+-- Helper functions
+
+unbindLet ::
+  MonadFresh m =>
+  [Binding Expr Name] ->
+  Scope Int Expr Name ->
+  m ([Name], [(Maybe Binder, Expr Name)], Expr Name)
+unbindLet bindings bndMany = do
+  (xs, body) <- unbindMany (length bindings) bndMany
+  return (xs, go xs <$> bindings, body)
+  where
+    go xs Binding {..} = (binder, instantiateName xs bnd)
 
 ----------------------------------------------------------------
 -- Prelude
@@ -745,3 +806,13 @@ ret_ = fromString . toString . retName
 
 lcase_ :: IsString a => Text -> a
 lcase_ = fromString . toString . lCaseName
+
+let_ :: [Name] -> [(Maybe Binder, Expr Name)] -> Expr Name -> Expr Name
+let_ [] _ body = body
+let_ xs bindings body =
+  Let
+    { bindings = go <$> bindings,
+      bndMany = abstract_ xs body
+    }
+  where
+    go (binder, rhs) = Binding {bnd = abstract_ xs rhs, ..}

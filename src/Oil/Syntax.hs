@@ -235,6 +235,12 @@ instance Monad Ty where
 instance IsString a => IsString (Ty a) where
   fromString = return . fromString
 
+instance BiplateM (Def b Name) (Expr Name) where
+  biplateM f FunDef {..} = do
+    expr' <- f expr
+    return FunDef {expr = expr', ..}
+  biplateM _ def = return def
+
 -- | A specialized 'Bound' instance
 --
 -- Similar to '>>>=', but handle both variable classes (one for expressions and
