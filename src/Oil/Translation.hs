@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -32,6 +33,7 @@ import Taype.Binder
 import Taype.Common
 import Taype.Environment (GCtx (..), TCtx (..), lookupGCtx)
 import Taype.Name
+import qualified Taype.NonEmpty as NE
 import Taype.Prelude
 import qualified Taype.Syntax as T
 
@@ -64,14 +66,47 @@ runTslM :: Env -> TslM a -> a
 runTslM env m = runReader (runFreshT m) env
 
 -- | Look up a taype definition in the global context.
-lookupGDef :: MonadReader Env m => Text -> m (Maybe (T.Def Name))
-lookupGDef x = lookupGCtx x <$> asks gctx
+--
+-- Unlike the similar function in type checking, this function should always
+-- succeed.
+lookupGDef :: MonadReader Env m => Text -> m (T.Def Name)
+lookupGDef x = fromJust . lookupGCtx x <$> asks gctx
 
--- | Look up a taype type and its label in the context.
-lookupTy :: MonadReader Env m => Name -> m (Maybe (T.Ty Name, Label))
-lookupTy x = do
+-- | Look up a taype type and its label in the local context.
+--
+-- Unlike the Similar function in type checking, this function should always
+-- succeed.
+lookupLCtx :: MonadReader Env m => Name -> m (T.Ty Name, Label)
+lookupLCtx x = do
   TCtx tctx <- asks tctx
-  return $ lookup x tctx
+  return $ fromJust $ lookup x tctx
+
+-- | Look up a taype type and its label in both contexts.
+--
+-- The given taype expression should be a local or global variable.
+lookupTy :: MonadReader Env m => T.Expr Name -> m (T.Ty Name, Label)
+lookupTy T.V {..} = lookupLCtx name
+lookupTy T.GV {..} =
+  lookupGDef ref >>= \case
+    T.FunDef {..} -> return (ty, fromJust label)
+    _ -> oops "Not a function definition"
+lookupTy _ = oops "Not a variable"
+
+-- | Look up an ADT variable and its label.
+--
+-- The given taype expression should be a local or global variable.
+lookupADT ::
+  MonadReader Env m =>
+  T.Expr Name ->
+  m (NonEmpty (Text, [T.Expr Name]), Label)
+lookupADT x = do
+  (ty, l) <- lookupTy x
+  case ty of
+    T.GV {..} ->
+      lookupGDef ref >>= \case
+        T.ADTDef {..} -> return (ctors, l)
+        _ -> oops "Not an ADT"
+    _ -> oops "Not a global variable"
 
 -- | Extend the taype typing context.
 extendCtx ::
@@ -117,7 +152,55 @@ toOilExpr _ _ = return $ GV "<unimplemented>"
 -- the computed OIL expression is exactly the integer for the size of the
 -- computed array.
 toOilSize :: T.Ty Name -> TslM (Expr Name)
-toOilSize _ = return $ GV "<unimplemented>"
+toOilSize T.TUnit = return $ ILit 0
+-- Oblivious boolean is the same as oblivious integer in OIL.
+toOilSize T.OBool = return $ ILit 1
+toOilSize T.OInt = return $ ILit 1
+toOilSize T.OProd {..} = do
+  lSize <- toOilSize left
+  rSize <- toOilSize right
+  return $ GV "+" @@ [lSize, rSize]
+toOilSize T.OSum {..} = do
+  lSize <- toOilSize left
+  rSize <- toOilSize right
+  return $
+    GV "+"
+      @@ [ILit 1, GV "$max" @@ [lSize, rSize]]
+toOilSize T.App {appKind = Just TypeApp, fn = T.GV {..}, ..} =
+  return $ GV ref @@ toOilVar <$> args
+toOilSize T.Let {..} = do
+  rhs' <- toOilExpr SafeL rhs
+  (x, body) <- unbind1 bnd
+  body' <- extendCtx1 x (fromJust mTy) SafeL $ toOilSize body
+  return
+    Let
+      { bindings = [Binding {bnd = abstract_ [] rhs', ..}],
+        bndMany = abstract_ [x] body'
+      }
+toOilSize T.Ite {..} = do
+  left' <- toOilSize left
+  right' <- toOilSize right
+  return $ ite_ (toOilVar cond) left' right'
+toOilSize T.Case {..} = do
+  (ctors, _) <- lookupADT cond
+  alts' <- NE.zipWithM go alts ctors
+  return Case {cond = toOilVar cond, alts = toList alts'}
+  where
+    go CaseAlt {..} (_, paraTypes) = do
+      (xs, body) <- unbindMany (length paraTypes) bnd
+      let ctx = zipWith (\x t -> (x, t, SafeL)) xs paraTypes
+      body' <- extendCtx ctx $ toOilSize body
+      return CaseAlt {bnd = abstract_ xs body', ..}
+toOilSize _ = oops "Not an oblivious type"
+
+-- | Translate a taype variable, either local or global, to the corresponding
+-- OIL variable.
+--
+-- The given taype expression has to be a local or global variable.
+toOilVar :: T.Expr Name -> Expr Name
+toOilVar T.V {..} = V {..}
+toOilVar T.GV {..} = GV {..}
+toOilVar _ = oops "Not a variable"
 
 -- | Translate a taype type with its label to the corresponding OIL type.
 --
@@ -418,6 +501,13 @@ prelude =
     lBopDef "-" "Int",
     lBopDef "<=" "Bool",
     lBopDef "==" "Bool",
+    -- Helper functions
+    funDef_
+      "$max"
+      []
+      (ar_ [TInt, TInt, TInt])
+      $ lams_ ["m", "n"] $
+        ite_ ("<=" @@ ["m", "n"]) "n" "m",
     -- Product
     adtDef_
       "*"
