@@ -870,52 +870,17 @@ depType ::
   (a -> Ty Name) ->
   TcM a
 depType typeNoDep inferDep checkDep mt proj =
-  typeNoDep `catchError` \Err {errMsg = noDepMsg} ->
+  typeNoDep `catchError` \noDepErr ->
     case mt of
       Just t ->
-        checkDep t `catchError` \Err {errMsg = checkMsg} ->
+        checkDep t `catchError` \checkErr ->
           ( do
               a <- inferDep
               equate t (proj a)
               return a
           )
-            `catchError` \Err {errMsg = inferMsg} ->
-              err $
-                [ noDepMsgH,
-                  [DD noDepMsg],
-                  []
-                ]
-                  <> checkMsgHs t
-                  <> [ [DD checkMsg],
-                       [],
-                       inferMsgH,
-                       [DD inferMsg],
-                       [],
-                       gaveupMsg
-                     ]
-      _ ->
-        inferDep `catchError` \Err {errMsg = inferMsg} ->
-          err
-            [ noDepMsgH,
-              [DD noDepMsg],
-              [],
-              inferMsgH,
-              [DD inferMsg],
-              [],
-              gaveupMsg
-            ]
-  where
-    noDepMsgH =
-      [DD "Tried to type the expression without dependent types, but:"]
-    checkMsgHs t =
-      [ [ DH "Tried to check the expression against the dependent type",
-          DC t
-        ],
-        [DD "But"]
-      ]
-    inferMsgH =
-      [DD "Tried to infer a dependent type for the expression, but:"]
-    gaveupMsg = [DD "Gave up after all attemps"]
+            `catchError` \_ -> throwError checkErr
+      _ -> inferDep `catchError` \_ -> throwError noDepErr
 
 -- | Kind check a type bidirectionally.
 --
