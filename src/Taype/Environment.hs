@@ -240,7 +240,9 @@ instance Cute (TCtx Text) where
     docs <- mapM go tctx
     return $
       hang $
-        "Typing context" <> colon <> hardline
+        "Typing context"
+          <> colon
+          <> hardline
           <> if null tctx then "<empty>" else sepWith hardline docs
     where
       go (x, (t, l)) = cuteBinder x (Just l) (Just t)

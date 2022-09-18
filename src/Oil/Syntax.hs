@@ -424,20 +424,21 @@ instance Cute (NamedDef Text Text) where
       doc <- cuteLam True expr
       return $
         hang $
-          "fn" <+> pretty name <> tyVarsDoc xs
-            <> sep1_ name (colon <+> align (group tyDoc))
+          "fn"
+            <+> pretty name
+              <> tyVarsDoc xs
+              <> sep1_ name (colon <+> align (group tyDoc))
             <+> equals
-            <> doc
+              <> doc
     ADTDef {..} -> do
       xs <- mapM freshNameOrBinder binders
       ctorDocs <- mapM (cuteCtor xs) ctors
       return $
         hang $
-          "data" <+> adtName <> tyVarsDoc xs
-            <> sep1
-              ( equals
-                  <+> sepWith (line <> pipe <> space) ctorDocs
-              )
+          "data"
+            <+> adtName
+              <> tyVarsDoc xs
+              <> sep1 (equals <+> sepWith (line <> pipe <> space) ctorDocs)
       where
         cuteCtor xs (ctor, paraBnds) = do
           let paraTypes = paraBnds <&> instantiateName xs

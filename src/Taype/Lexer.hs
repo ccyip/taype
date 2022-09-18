@@ -225,6 +225,7 @@ printTokens file code tokens = mapM_ go positions
   where
     go (LocatedToken {..}, SourcePos {..}) =
       putTextLn $
-        showLocation file (unPos sourceLine) (unPos sourceColumn) <> ": "
+        showLocation file (unPos sourceLine) (unPos sourceColumn)
+          <> ": "
           <> show token
     (positions, _) = attachSourcePos offset tokens $ initPosState file code

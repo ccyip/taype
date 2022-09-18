@@ -68,8 +68,9 @@ renderFancyLocation :: FilePath -> Text -> Int -> Text
 renderFancyLocation file code offset
   | offset < 0 = showUnknownLocation file <> ":"
   | otherwise =
-    showLocation file li col <> ":\n"
-      <> maybe "" showOffender maybeOffender
+      showLocation file li col
+        <> ":\n"
+        <> maybe "" showOffender maybeOffender
   where
     (li, col, maybeOffender) = getLocation file code offset
     showOffender offender =
@@ -97,7 +98,10 @@ instance Cute Err where
   cute Err {..} = do
     Options {optFile = file, optCode = code} <- ask
     return $
-      "!!" <> pretty errCategory <> "!!" <> hardline
+      "!!!! "
+        <> pretty errCategory
+        <> " !!!!"
+        <> hardline
         <> pretty (renderFancyLocation file code errLoc)
         <> hardline
         <> hardline

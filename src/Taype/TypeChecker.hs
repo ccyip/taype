@@ -1144,18 +1144,18 @@ equate e e' = do
         equate right right'
     go Case {cond, alts} Case {cond = cond', alts = alts'}
       | length alts == length alts' = do
-        equate cond cond'
-        -- Since both case expressions are in core taype, the alternatives are
-        -- in canonical order.
-        NE.zipWithM_ goAlt alts alts'
+          equate cond cond'
+          -- Since both case expressions are in core taype, the alternatives are
+          -- in canonical order.
+          NE.zipWithM_ goAlt alts alts'
       where
         goAlt
           CaseAlt {ctor, binders, bnd}
           CaseAlt {ctor = ctor', binders = binders', bnd = bnd'}
             | ctor == ctor' && length binders == length binders' = do
-              let n = length binders
-              (_, body, body') <- unbindManyWith n bnd bnd'
-              equate body body'
+                let n = length binders
+                (_, body, body') <- unbindManyWith n bnd bnd'
+                equate body body'
         goAlt _ _ = errEquate
     go
       OIte {cond, left, right}
@@ -1233,8 +1233,8 @@ equate e e' = do
 
     equateApp_ App {fn, args} App {fn = fn', args = args'}
       | length args == length args' = do
-        equate fn fn'
-        zipWithM_ equate args args'
+          equate fn fn'
+          zipWithM_ equate args args'
     equateApp_ _ _ = errEquate
 
     errEquate =
@@ -1302,7 +1302,7 @@ whnf Case {..} = do
       case find (\CaseAlt {..} -> ctor == ref) alts of
         Just CaseAlt {ctor = _, ..}
           | length binders == length args ->
-            whnf $ instantiate_ args bnd
+              whnf $ instantiate_ args bnd
         _ -> return fb
 whnf PCase {..} = do
   nf <- whnf cond
@@ -1452,16 +1452,16 @@ joinAlts alts ctors =
           return r
         _ ->
           err $
-            [ DH "Some constructors are missing from this pattern matching" :
-              andList missing
+            [ DH "Some constructors are missing from this pattern matching"
+                : andList missing
               | not $ null missing
             ]
-              <> [ DH "This pattern matching has some duplicate constructors" :
-                   andList dups
+              <> [ DH "This pattern matching has some duplicate constructors"
+                     : andList dups
                    | not $ null dups
                  ]
-              <> [ DH "Some constructors do not belong to this ADT" :
-                   andList unknowns
+              <> [ DH "Some constructors do not belong to this ADT"
+                     : andList unknowns
                    | not $ null unknowns
                  ]
   where
@@ -1550,7 +1550,8 @@ checkDef OADTDef {..} = do
   (x, body) <- unbind1 bnd
   body' <-
     withLabel SafeL $
-      extendCtx1 x ty SafeL binder $ checkKind body OblivK
+      extendCtx1 x ty SafeL binder $
+        checkKind body OblivK
   return OADTDef {bnd = abstract_ x body', ..}
 -- 'ADTDef' and 'CtorDef' have been checked in pre-checker, and 'BuiltinDef'
 -- does not need to be checked.
@@ -1680,9 +1681,11 @@ extendGCtx1 gctx name def =
     Just def' -> do
       Options {optFile = file, optCode = code} <- ask
       err_ (getDefLoc def) $
-        "Definition" <+> dquotes (pretty name) <+> "has already been defined at"
-          <> hardline
-          <> pretty (renderFancyLocation file code (getDefLoc def'))
+        "Definition"
+          <+> dquotes (pretty name)
+          <+> "has already been defined at"
+            <> hardline
+            <> pretty (renderFancyLocation file code (getDefLoc def'))
     _ -> return $ insertGCtx name def gctx
 
 extendGCtx ::
@@ -1828,7 +1831,9 @@ displayMsg dss = do
   curDoc <- cutie $ DC cur
   tctxDoc <- cutie tctx
   return $
-    doc <> hardline <> hardline
+    doc
+      <> hardline
+      <> hardline
       <> hang ("When checking expression" <> colon <> sep1 curDoc)
       <> hardline
       <> hardline

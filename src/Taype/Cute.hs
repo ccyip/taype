@@ -205,8 +205,7 @@ cuteLetDoc bindingDocs bodyDoc =
   group $
     align $
       "let"
-        <+> align (sepWith hardline (mkBindingDoc <$> bindingDocs))
-        <> line'
+        <+> align (sepWith hardline (mkBindingDoc <$> bindingDocs)) <> line'
         <+> "in"
         <+> align bodyDoc
   where
@@ -239,11 +238,12 @@ cuteInfix super infixT left right = do
 cuteIteDoc :: Text -> Doc -> Doc -> Doc -> Doc
 cuteIteDoc accent condDoc leftDoc rightDoc =
   group $
-    pretty accent <> "if" <+> condDoc
-      <> line
-      <> hang ("then" <> sep1 leftDoc)
-      <> line
-      <> hang ("else" <> sep1 rightDoc)
+    pretty accent <> "if"
+      <+> condDoc
+        <> line
+        <> hang ("then" <> sep1 leftDoc)
+        <> line
+        <> hang ("else" <> sep1 rightDoc)
 
 cuteIte :: Cute e => Text -> e -> e -> e -> CuteM Doc
 cuteIte accent cond left right = do
@@ -265,13 +265,15 @@ cutePair accent left right = do
 cuteCaseDoc :: Foldable t => Text -> Bool -> Doc -> t Doc -> Doc
 cuteCaseDoc accent usePipe condDoc altDocs =
   align $
-    pretty accent <> "case" <+> condDoc <+> "of"
-      <> ( if usePipe
-             then foldMap (\altDoc -> hardline <> pipe <+> altDoc) altDocs
-             else foldMap (hardline <>) altDocs
-         )
-      <> hardline
-      <> "end"
+    pretty accent <> "case"
+      <+> condDoc
+      <+> "of"
+        <> ( if usePipe
+               then foldMap (\altDoc -> hardline <> pipe <+> altDoc) altDocs
+               else foldMap (hardline <>) altDocs
+           )
+        <> hardline
+        <> "end"
 
 cuteCase ::
   (Traversable t, Monad f, Cute (f Text)) =>

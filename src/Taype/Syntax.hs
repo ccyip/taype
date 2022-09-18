@@ -788,15 +788,15 @@ cuteDef options name = \case
     where
       funDoc =
         hang $
-          "fn" <+> go (cuteBinder name label (Just ty)) <+> equals
-            <> go (cuteLam True expr)
+          "fn"
+            <+> go (cuteBinder name label (Just ty))
+            <+> equals <> go (cuteLam True expr)
   ADTDef {..} ->
     hang $
-      "data" <+> pretty name
-        <> sep1
-          ( equals
-              <+> sepWith (line <> pipe <> space) (cuteCtor <$> ctors)
-          )
+      "data"
+        <+> pretty name
+          <> sep1
+            (equals <+> sepWith (line <> pipe <> space) (cuteCtor <$> ctors))
     where
       cuteCtor (ctor, paraTypes) = go $ cuteApp_ (pretty ctor) paraTypes
   OADTDef {..} ->

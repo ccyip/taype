@@ -16,8 +16,8 @@ module Taype
 where
 
 import qualified Oil.Syntax as Oil (cuteDefs)
-import qualified Oil.Translation as Oil (prelude)
 import Oil.Translation (toOilDefs)
+import qualified Oil.Translation as Oil (prelude)
 import Options.Applicative
 import Taype.Common
 import Taype.Cute
@@ -70,7 +70,8 @@ opts = do
       metavar "FILE" <> help "Taype source file"
   optInternalNames <-
     switch $
-      long "internal-names" <> short 'i'
+      long "internal-names"
+        <> short 'i'
         <> help "Whether to print the internal names for variables"
   optNoFlattenLets <-
     switch $
@@ -78,29 +79,35 @@ opts = do
         <> help "Do not flatten let bindings"
   optPrintCore <-
     switch $
-      long "print-core" <> short 'c'
+      long "print-core"
+        <> short 'c'
         <> help "Whether to print the generated core taype programs"
   optPrintPrelude <-
     switch $
-      long "print-prelude" <> short 'p'
+      long "print-prelude"
+        <> short 'p'
         <> help "Whether to print the OIL prelude"
   optNamePrefix <-
     strOption $
-      long "prefix" <> metavar "PREFIX"
+      long "prefix"
+        <> metavar "PREFIX"
         <> value "$"
         <> showDefault
         <> help "Prefix to the internal names"
   optPrintLabels <-
     switch $
-      long "print-labels" <> short 'l'
+      long "print-labels"
+        <> short 'l'
         <> help "Whether to print the leakage labels"
   optPrintTokens <-
     switch $
-      long "print-tokens" <> short 't'
+      long "print-tokens"
+        <> short 't'
         <> help "Whether to print tokens (for internal debugging)"
   optPrintSource <-
     switch $
-      long "print-source" <> short 's'
+      long "print-source"
+        <> short 's'
         <> help "Whether to print the source code (for internal debugging)"
   optNoReadableOil <-
     switch $
@@ -109,6 +116,7 @@ opts = do
   optWidth <-
     optional $
       option auto $
-        long "width" <> short 'w'
+        long "width"
+          <> short 'w'
           <> help "Window width (for debugging pretty printer)"
   return Options {optCode = "", ..}

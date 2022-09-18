@@ -156,12 +156,13 @@ toOilExpr l T.Lam {..} = do
     LeakyL -> GV (leakyName "lam") @@ [e]
 toOilExpr _ T.App {appKind = Just BuiltinApp, fn = T.GV {..}, ..}
   | ref == retractionName "Bool" || ref == retractionName "Int" =
-    return $ GV ref @@ toOilVar <$> args
+      return $ GV ref @@ toOilVar <$> args
 toOilExpr l T.App {fn = T.GV {..}, ..}
   | appKind == Just BuiltinApp || appKind == Just CtorApp =
-    return $
-      mayLeakyGV l ref
-        @@ toOilVar <$> args
+      return $
+        mayLeakyGV l ref
+          @@ toOilVar
+          <$> args
 toOilExpr SafeL T.App {appKind = Just FunApp, ..} =
   return $ toOilVar fn @@ toOilVar <$> args
 toOilExpr LeakyL T.App {appKind = Just FunApp, ..} = do
@@ -206,10 +207,11 @@ toOilExpr l T.Case {..} = do
       SafeL -> case' cond' alts'
       LeakyL ->
         GV (lCaseName adtName)
-          @@ [ lIfInst $ fromJust mTy,
-               cond'
-             ]
-            <> (alts' <&> \(_, xs, body) -> lams' xs body)
+          @@ ( [ lIfInst $ fromJust mTy,
+                 cond'
+               ]
+                 <> (alts' <&> \(_, xs, body) -> lams' xs body)
+             )
   where
     go condLabel CaseAlt {..} paraTypes = do
       (xs, body) <- unbindMany (length paraTypes) bnd
@@ -221,11 +223,11 @@ toOilExpr _ T.OIte {..} = do
   (ty, _) <- lookupTy left
   return $
     lIfInst ty
-      @@ toOilVar <$> [cond, left, right]
+      @@ (toOilVar <$> [cond, left, right])
 toOilExpr l T.Pair {..} =
   return $
     mayLeakyGV l "(,)"
-      @@ toOilVar <$> [left, right]
+      @@ (toOilVar <$> [left, right])
 toOilExpr l T.PCase {..} = do
   (condTy, condLabel) <- lookupTy cond
   let (leftTy, rightTy) =
@@ -255,7 +257,7 @@ toOilExpr l T.PCase {..} = do
 toOilExpr _ T.OPair {..} =
   return $
     GV aConcat
-      @@ toOilVar <$> [left, right]
+      @@ (toOilVar <$> [left, right])
 toOilExpr l T.OPCase {..} = do
   (ty, _) <- lookupTy cond
   let (leftTy, rightTy) =
@@ -544,7 +546,8 @@ toOilDef (name, def) = case def of
         -- Return instance of the leaky type
         funDef_ (ret_ name) [] (ar_ [TV name, l_ name]) $
           lam_ "x" $
-            case_ "x" $ zipWith retAlt ctorNames sParaTypess,
+            case_ "x" $
+              zipWith retAlt ctorNames sParaTypess,
         -- Leaky case analysis
         funDef_
           (lcase_ name)
@@ -655,18 +658,23 @@ prelude =
       (ret_ "Bool")
       []
       (ar_ ["Bool", l_ "Bool"])
-      $ lam_ "b" $ ite_ "b" (l_ "True") (l_ "False"),
+      $ lam_
+        "b"
+        (ite_ "b" (l_ "True") (l_ "False")),
     funDef_
       (s_ "Bool")
       []
       (ar_ ["Bool", OArray])
-      $ lam_ "b" $
-        ite_ "b" (s_ "Int" @@ [ILit 1]) (s_ "Int" @@ [ILit 0]),
+      $ lam_
+        "b"
+        (ite_ "b" (s_ "Int" @@ [ILit 1]) (s_ "Int" @@ [ILit 0])),
     funDef_
       (r_ "Bool")
       []
       (ar_ [OArray, l_ "Bool"])
-      $ lam_ (o_ "b") $ lif_ "Bool" @@ [o_ "b", l_ "True", l_ "False"],
+      $ lam_
+        (o_ "b")
+        (lif_ "Bool" @@ [o_ "b", l_ "True", l_ "False"]),
     funDef_
       (lcase_ "Bool")
       [l_ "r"]
@@ -678,35 +686,39 @@ prelude =
             l_ "r"
           ]
       )
-      $ lams_ [lif_ "r", l_ "b", l_ "ff", l_ "ft"] $
-        case_
-          (l_ "b")
-          [ (l_ "False", [], l_ "ff"),
-            (l_ "True", [], l_ "ft"),
-            ( lif_ "Bool",
-              [o_ "b", l_ "b1", l_ "b2"],
-              lif_ "r"
-                @@ [ o_ "b",
-                     "$self" @@ [lif_ "r", l_ "b1", l_ "ff", l_ "ft"],
-                     "$self" @@ [lif_ "r", l_ "b2", l_ "ff", l_ "ft"]
-                   ]
-            )
-          ],
+      $ lams_
+        [lif_ "r", l_ "b", l_ "ff", l_ "ft"]
+        ( case_
+            (l_ "b")
+            [ (l_ "False", [], l_ "ff"),
+              (l_ "True", [], l_ "ft"),
+              ( lif_ "Bool",
+                [o_ "b", l_ "b1", l_ "b2"],
+                lif_ "r"
+                  @@ [ o_ "b",
+                       "$self" @@ [lif_ "r", l_ "b1", l_ "ff", l_ "ft"],
+                       "$self" @@ [lif_ "r", l_ "b2", l_ "ff", l_ "ft"]
+                     ]
+              )
+            ]
+        ),
     funDef_
       (l_ $ s_ "Bool")
       []
       (ar_ [l_ "Bool", l_ aName])
-      $ lam_ (l_ "b") $
-        case_
-          (l_ "b")
-          [ (l_ "False", [], ret_ aName @@ [s_ "Bool" @@ ["False"]]),
-            (l_ "True", [], ret_ aName @@ [s_ "Bool" @@ ["True"]]),
-            ( lif_ "Bool",
-              [o_ "b", l_ "b1", l_ "b2"],
-              lif_ aName
-                @@ [o_ "b", "$self" @@ [l_ "b1"], "$self" @@ [l_ "b2"]]
-            )
-          ],
+      $ lam_
+        (l_ "b")
+        ( case_
+            (l_ "b")
+            [ (l_ "False", [], ret_ aName @@ [s_ "Bool" @@ ["False"]]),
+              (l_ "True", [], ret_ aName @@ [s_ "Bool" @@ ["True"]]),
+              ( lif_ "Bool",
+                [o_ "b", l_ "b1", l_ "b2"],
+                lif_ aName
+                  @@ [o_ "b", "$self" @@ [l_ "b1"], "$self" @@ [l_ "b2"]]
+              )
+            ]
+        ),
     -- Integer
     adtDef_
       (l_ "Int")
@@ -719,17 +731,19 @@ prelude =
       (l_ $ s_ "Int")
       []
       (ar_ [l_ "Int", l_ aName])
-      $ lam_ (l_ "n") $
-        case_
-          (l_ "n")
-          [ (r_ "Int", [o_ "n"], ret_ aName @@ [o_ "n"]),
-            (ret_ "Int", ["n"], ret_ aName @@ [s_ "Int" @@ ["n"]]),
-            ( lif_ "Int",
-              [o_ "b", l_ "n1", l_ "n2"],
-              lif_ aName
-                @@ [o_ "b", "$self" @@ [l_ "n1"], "$self" @@ [l_ "n2"]]
-            )
-          ],
+      $ lam_
+        (l_ "n")
+        ( case_
+            (l_ "n")
+            [ (r_ "Int", [o_ "n"], ret_ aName @@ [o_ "n"]),
+              (ret_ "Int", ["n"], ret_ aName @@ [s_ "Int" @@ ["n"]]),
+              ( lif_ "Int",
+                [o_ "b", l_ "n1", l_ "n2"],
+                lif_ aName
+                  @@ [o_ "b", "$self" @@ [l_ "n1"], "$self" @@ [l_ "n2"]]
+              )
+            ]
+        ),
     lBopDef "+" "Int",
     lBopDef "-" "Int",
     lBopDef "<=" "Bool",
@@ -739,8 +753,9 @@ prelude =
       "$max"
       []
       (ar_ [TInt, TInt, TInt])
-      $ lams_ ["m", "n"] $
-        ite_ ("<=" @@ ["m", "n"]) "n" "m",
+      $ lams_
+        ["m", "n"]
+        (ite_ ("<=" @@ ["m", "n"]) "n" "m"),
     -- Product
     adtDef_
       "*"
@@ -767,14 +782,16 @@ prelude =
             l_ "*" @@ [l_ "a", l_ "b"]
           ]
       )
-      $ lams_ [ret_ "a", ret_ "b", "p"] $
-        case_
-          "p"
-          [ ( "(,)",
-              ["x", "y"],
-              l_ "(,)" @@ [ret_ "a" @@ ["x"], ret_ "b" @@ ["y"]]
-            )
-          ],
+      $ lams_
+        [ret_ "a", ret_ "b", "p"]
+        ( case_
+            "p"
+            [ ( "(,)",
+                ["x", "y"],
+                l_ "(,)" @@ [ret_ "a" @@ ["x"], ret_ "b" @@ ["y"]]
+              )
+            ]
+        ),
     funDef_
       (lcase_ "*")
       [l_ "a", l_ "b", l_ "r"]
@@ -785,19 +802,21 @@ prelude =
             l_ "r"
           ]
       )
-      $ lams_ [lif_ "r", l_ "p", l_ "f"] $
-        case_
-          (l_ "p")
-          [ (l_ "(,)", [l_ "x", l_ "y"], l_ "f" @@ [l_ "x", l_ "y"]),
-            ( lif_ "*",
-              [o_ "b", l_ "p1", l_ "p2"],
-              lif_ "r"
-                @@ [ o_ "b",
-                     "$self" @@ [lif_ "r", l_ "p1", l_ "f"],
-                     "$self" @@ [lif_ "r", l_ "p2", l_ "f"]
-                   ]
-            )
-          ],
+      $ lams_
+        [lif_ "r", l_ "p", l_ "f"]
+        ( case_
+            (l_ "p")
+            [ (l_ "(,)", [l_ "x", l_ "y"], l_ "f" @@ [l_ "x", l_ "y"]),
+              ( lif_ "*",
+                [o_ "b", l_ "p1", l_ "p2"],
+                lif_ "r"
+                  @@ [ o_ "b",
+                       "$self" @@ [lif_ "r", l_ "p1", l_ "f"],
+                       "$self" @@ [lif_ "r", l_ "p2", l_ "f"]
+                     ]
+              )
+            ]
+        ),
     -- Function type
     adtDef_
       (l_ "->")
@@ -814,8 +833,9 @@ prelude =
       (ret_ "->")
       ["a", "b", l_ "b"]
       (ar_ [ar_ ["b", l_ "b"], ar_ ["a", "b"], l_ "->" @@ ["a", l_ "b"]])
-      $ lams_ [ret_ "b", "f"] $
-        l_ "lam" @@ [lam_ "x" $ ret_ "b" @@ ["f" @@ ["x"]]],
+      $ lams_
+        [ret_ "b", "f"]
+        (l_ "lam" @@ [lam_ "x" $ ret_ "b" @@ ["f" @@ ["x"]]]),
     funDef_
       (l_ "ap")
       ["a", l_ "b"]
@@ -826,67 +846,75 @@ prelude =
             l_ "b"
           ]
       )
-      $ lams_ [lif_ "b", l_ "f", "x"] $
-        case_
-          (l_ "f")
-          [ (l_ "lam", ["f"], "f" @@ ["x"]),
-            ( lif_ "->",
-              [o_ "b", l_ "f1", l_ "f2"],
-              lif_ "b"
-                @@ [ o_ "b",
-                     "$self" @@ [lif_ "b", l_ "f1", "x"],
-                     "$self" @@ [lif_ "b", l_ "f2", "x"]
-                   ]
-            )
-          ],
+      $ lams_
+        [lif_ "b", l_ "f", "x"]
+        ( case_
+            (l_ "f")
+            [ (l_ "lam", ["f"], "f" @@ ["x"]),
+              ( lif_ "->",
+                [o_ "b", l_ "f1", l_ "f2"],
+                lif_ "b"
+                  @@ [ o_ "b",
+                       "$self" @@ [lif_ "b", l_ "f1", "x"],
+                       "$self" @@ [lif_ "b", l_ "f2", "x"]
+                     ]
+              )
+            ]
+        ),
     -- Tape
     funDef_
       (l_ "tape")
       []
       (ar_ [sizeTy, l_ aName, OArray])
-      $ lams_ ["n", l_ "a"] $
-        case_
-          (l_ "a")
-          [ (ret_ aName, [o_ "a"], o_ "a"),
-            ( lif_ aName,
-              [o_ "b", l_ "a1", l_ "a2"],
-              V aMux
-                @@ [ "n",
-                     o_ "b",
-                     "$self" @@ ["n", l_ "a1"],
-                     "$self" @@ ["n", l_ "a2"]
-                   ]
-            )
-          ],
+      $ lams_
+        ["n", l_ "a"]
+        ( case_
+            (l_ "a")
+            [ (ret_ aName, [o_ "a"], o_ "a"),
+              ( lif_ aName,
+                [o_ "b", l_ "a1", l_ "a2"],
+                V aMux
+                  @@ [ "n",
+                       o_ "b",
+                       "$self" @@ ["n", l_ "a1"],
+                       "$self" @@ ["n", l_ "a2"]
+                     ]
+              )
+            ]
+        ),
     -- Oblivious injection
     funDef_
       (o_ "inl")
       []
       (ar_ [sizeTy, sizeTy, OArray, OArray])
-      $ lams_ ["m", "n", o_ "a"] $
-        V aConcat
-          @@ [ s_ "Bool" @@ ["True"],
-               ite_
-                 ("<=" @@ ["n", "m"])
-                 (o_ "a")
-                 ( V aConcat
-                     @@ [o_ "a", V aNew @@ ["-" @@ ["n", "m"]]]
-                 )
-             ],
+      $ lams_
+        ["m", "n", o_ "a"]
+        ( V aConcat
+            @@ [ s_ "Bool" @@ ["True"],
+                 ite_
+                   ("<=" @@ ["n", "m"])
+                   (o_ "a")
+                   ( V aConcat
+                       @@ [o_ "a", V aNew @@ ["-" @@ ["n", "m"]]]
+                   )
+               ]
+        ),
     funDef_
       (o_ "inr")
       []
       (ar_ [sizeTy, sizeTy, OArray, OArray])
-      $ lams_ ["m", "n", o_ "a"] $
-        V aConcat
-          @@ [ s_ "Bool" @@ ["False"],
-               ite_
-                 ("<=" @@ ["m", "n"])
-                 (o_ "a")
-                 ( V aConcat
-                     @@ [o_ "a", V aNew @@ ["-" @@ ["m", "n"]]]
-                 )
-             ]
+      $ lams_
+        ["m", "n", o_ "a"]
+        ( V aConcat
+            @@ [ s_ "Bool" @@ ["False"],
+                 ite_
+                   ("<=" @@ ["m", "n"])
+                   (o_ "a")
+                   ( V aConcat
+                       @@ [o_ "a", V aNew @@ ["-" @@ ["m", "n"]]]
+                   )
+               ]
+        )
   ]
 
 -- | Build a leaky definition for binary operator, e.g., '+'.
@@ -896,66 +924,68 @@ lBopDef name cod =
     (l_ name)
     []
     (ar_ [l_ "Int", l_ "Int", l_ cod])
-    $ lams_ [l_ "m", l_ "n"] $
-      case_
-        (l_ "m")
-        [ ( r_ "Int",
-            [o_ "m"],
-            case_
-              (l_ "n")
-              [ ( r_ "Int",
-                  [o_ "n"],
-                  r_ cod
-                    @@ [o_ name @@ [o_ "m", o_ "n"]]
-                ),
-                ( ret_ "Int",
-                  ["n"],
-                  r_ cod
-                    @@ [o_ name @@ [o_ "m", s_ "Int" @@ ["n"]]]
-                ),
-                ( lif_ "Int",
-                  [o_ "b", l_ "n1", l_ "n2"],
-                  lif_ cod
-                    @@ [ o_ "b",
-                         "$self" @@ [l_ "m", l_ "n1"],
-                         "$self" @@ [l_ "m", l_ "n2"]
-                       ]
-                )
-              ]
-          ),
-          ( ret_ "Int",
-            ["m"],
-            case_
-              (l_ "n")
-              [ ( r_ "Int",
-                  [o_ "n"],
-                  r_ cod
-                    @@ [o_ name @@ [s_ "Int" @@ ["m"], o_ "n"]]
-                ),
-                ( ret_ "Int",
-                  ["n"],
-                  ret_ cod
-                    @@ [V name @@ ["m", "n"]]
-                ),
-                ( lif_ "Int",
-                  [o_ "b", l_ "n1", l_ "n2"],
-                  lif_ cod
-                    @@ [ o_ "b",
-                         "$self" @@ [l_ "m", l_ "n1"],
-                         "$self" @@ [l_ "m", l_ "n2"]
-                       ]
-                )
-              ]
-          ),
-          ( lif_ "Int",
-            [o_ "b", l_ "m1", l_ "m2"],
-            lif_ cod
-              @@ [ o_ "b",
-                   "$self" @@ [l_ "m1", l_ "n"],
-                   "$self" @@ [l_ "m2", l_ "n"]
-                 ]
-          )
-        ]
+    $ lams_
+      [l_ "m", l_ "n"]
+      ( case_
+          (l_ "m")
+          [ ( r_ "Int",
+              [o_ "m"],
+              case_
+                (l_ "n")
+                [ ( r_ "Int",
+                    [o_ "n"],
+                    r_ cod
+                      @@ [o_ name @@ [o_ "m", o_ "n"]]
+                  ),
+                  ( ret_ "Int",
+                    ["n"],
+                    r_ cod
+                      @@ [o_ name @@ [o_ "m", s_ "Int" @@ ["n"]]]
+                  ),
+                  ( lif_ "Int",
+                    [o_ "b", l_ "n1", l_ "n2"],
+                    lif_ cod
+                      @@ [ o_ "b",
+                           "$self" @@ [l_ "m", l_ "n1"],
+                           "$self" @@ [l_ "m", l_ "n2"]
+                         ]
+                  )
+                ]
+            ),
+            ( ret_ "Int",
+              ["m"],
+              case_
+                (l_ "n")
+                [ ( r_ "Int",
+                    [o_ "n"],
+                    r_ cod
+                      @@ [o_ name @@ [s_ "Int" @@ ["m"], o_ "n"]]
+                  ),
+                  ( ret_ "Int",
+                    ["n"],
+                    ret_ cod
+                      @@ [V name @@ ["m", "n"]]
+                  ),
+                  ( lif_ "Int",
+                    [o_ "b", l_ "n1", l_ "n2"],
+                    lif_ cod
+                      @@ [ o_ "b",
+                           "$self" @@ [l_ "m", l_ "n1"],
+                           "$self" @@ [l_ "m", l_ "n2"]
+                         ]
+                  )
+                ]
+            ),
+            ( lif_ "Int",
+              [o_ "b", l_ "m1", l_ "m2"],
+              lif_ cod
+                @@ [ o_ "b",
+                     "$self" @@ [l_ "m1", l_ "n"],
+                     "$self" @@ [l_ "m2", l_ "n"]
+                   ]
+            )
+          ]
+      )
 
 ----------------------------------------------------------------
 -- Smart constructors
