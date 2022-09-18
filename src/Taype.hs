@@ -47,7 +47,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   gctx <- checkDefs options srcDefs
   let defs = defsFromGCtx (fromClosed gctx) names
   when optPrintCore $ printTaypeDefs defs
-  let oilDefs = toOilDefs gctx defs
+  let oilDefs = toOilDefs options gctx defs
   when optPrintPrelude $ printOilDefs Oil.prelude
   printOilDefs oilDefs
   where
@@ -102,6 +102,10 @@ opts = do
     switch $
       long "print-source" <> short 's'
         <> help "Whether to print the source code (for internal debugging)"
+  optNoReadableOil <-
+    switch $
+      long "no-readable-oil"
+        <> help "Do not make the generated OIL programs more readable"
   optWidth <-
     optional $
       option auto $

@@ -61,6 +61,7 @@ data Options = Options
     optPrintLabels :: Bool,
     optPrintTokens :: Bool,
     optPrintSource :: Bool,
+    optNoReadableOil :: Bool,
     optWidth :: Maybe Int
   }
   deriving stock (Eq, Show)

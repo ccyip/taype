@@ -494,13 +494,15 @@ lIfInst = lIfInst_ . toOilTy_
 -- Translating definitions
 
 -- | Translate taype definitions to the corresponding OIL definitions.
-toOilDefs :: GCtx Name -> T.Defs Name -> Defs b a
-toOilDefs gctx = foldMap go
+toOilDefs :: Options -> GCtx Name -> T.Defs Name -> Defs b a
+toOilDefs Options {..} gctx = foldMap go
   where
     go =
-      secondF (closedDef . runFreshM . biplateM simpExpr)
+      secondF (closedDef . runFreshM . biplateM simp)
         . runTslM Env {tctx = TCtx [], ..}
         . toOilDef
+    simp =
+      (if optNoReadableOil then return else readableExpr) <=< simpExpr
 
 -- | Translate a taype definition to the corresponding OIL definition.
 --
@@ -627,6 +629,26 @@ simpExpr = transformM go
             _ -> do
               (xs', rhss', body') <- goLet xs rhss body
               return (x : xs', (binder, rhs) : rhss', body')
+    goLet _ _ _ = oops "Names and bindings do not match"
+
+-- | Make the generated OIL programs more readable.
+--
+-- This function subsitutes all let bindings that do not have a named binder.
+readableExpr :: MonadFresh m => Expr Name -> m (Expr Name)
+readableExpr = transformM go
+  where
+    go Let {..} = do
+      (xs, rhss, body) <- unbindLet bindings bndMany
+      (xs', rhss', body') <- goLet xs rhss body
+      return $ let' xs' rhss' body'
+    go e = return e
+    goLet [] [] body = return ([], [], body)
+    goLet (x : xs) ((Nothing, rhs) : rhss) body = do
+      goLet xs (second (substitute x rhs) <$> rhss) $
+        substitute x rhs body
+    goLet (x : xs) (rhs : rhss) body = do
+      (xs', rhss', body') <- goLet xs rhss body
+      return (x : xs', rhs : rhss', body')
     goLet _ _ _ = oops "Names and bindings do not match"
 
 ----------------------------------------------------------------
