@@ -1742,10 +1742,10 @@ instance Cutie (Expr Text)
 instance Cutie (TCtx Text)
 
 instance Cutie (Expr Name) where
-  cutie = cutie <=< mapM renderName
+  cutie = cutie <=< mapM renderName <=< readableExpr
 
 instance Cutie (TCtx Int) where
-  cutie = cutie <=< mapM renderName
+  cutie = cutie <=< mapM renderName <=< biplateM readableExpr
 
 instance Cutie D where
   cutie (DD doc) = return doc
@@ -1832,6 +1832,16 @@ errArity appKind ref actual expected =
               \are required to be fully applied"
           ]
         ]
+
+-- | Make the taype expressions more readable.
+--
+-- This is only used for error reporting, as the resulting expression is not in
+-- core taype ANF.
+readableExpr :: MonadFresh m => Expr Name -> m (Expr Name)
+readableExpr = transformM go
+  where
+    go Let {binder = Nothing, ..} = return $ instantiate_ rhs bnd
+    go e = return e
 
 andList :: [Text] -> [D]
 andList [] = []

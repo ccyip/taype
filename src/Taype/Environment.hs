@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -60,6 +61,7 @@ import Taype.Binder
 import Taype.Common
 import Taype.Cute
 import Taype.Name
+import Taype.Plate
 import Taype.Prelude
 import Taype.Syntax
 
@@ -125,6 +127,9 @@ defsFromGCtx (GCtx gctx) = fmapToSnd go
 
 newtype TCtx a = TCtx {unTCtx :: [(a, (Ty a, Label))]}
   deriving stock (Functor, Foldable, Traversable)
+
+instance BiplateM (TCtx Name) (Ty Name) where
+  biplateM f (TCtx tctx) = TCtx <$> forM tctx (secondM $ firstM f)
 
 newtype BCtx a = BCtx {unBCtx :: [(a, Binder)]}
   deriving stock (Functor, Foldable, Traversable)
