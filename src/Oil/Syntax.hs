@@ -21,7 +21,6 @@
 module Oil.Syntax
   ( -- * Syntax
     Expr (..),
-    Binding (..),
     Ty (..),
     sizeTy,
     Def (..),
@@ -42,6 +41,7 @@ module Oil.Syntax
     lam',
     lams',
     let',
+    lets',
     case',
 
     -- * Array operations
@@ -91,20 +91,15 @@ data Expr a
       }
   | -- | Let binding
     Let
-      { bindings :: [Binding Expr a],
-        bndMany :: Scope Int Expr a
+      { binder :: Maybe Binder,
+        rhs :: Expr a,
+        bnd :: Scope () Expr a
       }
   | -- | Case analysis
     Case
       { cond :: Expr a,
         alts :: [CaseAlt Expr a]
       }
-  deriving stock (Functor, Foldable, Traversable)
-
-data Binding f a = Binding
-  { binder :: Maybe Binder,
-    bnd :: Scope Int f a
-  }
   deriving stock (Functor, Foldable, Traversable)
 
 data Ty a
@@ -189,8 +184,8 @@ instance Monad Expr where
   App {..} >>= f = App {fn = fn >>= f, args = args <&> (>>= f)}
   Let {..} >>= f =
     Let
-      { bndMany = bndMany >>>= f,
-        bindings = bindings <&> (>>>= f),
+      { rhs = rhs >>= f,
+        bnd = bnd >>>= f,
         ..
       }
   Case {..} >>= f = Case {cond = cond >>= f, alts = alts <&> (>>>= f)}
@@ -205,14 +200,10 @@ instance PlateM (Expr Name) where
     args' <- mapM f args
     return App {fn = fn', args = args'}
   plateM f Let {..} = do
-    (xs, body) <- unbindMany (length bindings) bndMany
-    bindings' <- mapM (go xs) bindings
+    rhs' <- f rhs
+    (x, body) <- unbind1 bnd
     body' <- f body
-    return Let {bindings = bindings', bndMany = abstract_ xs body'}
-    where
-      go xs Binding {..} = do
-        rhs <- f $ instantiateName xs bnd
-        return Binding {bnd = abstract_ xs rhs, ..}
+    return Let {rhs = rhs', bnd = abstract_ x body', ..}
   plateM f Case {..} = do
     cond' <- f cond
     alts' <- mapM (biplateM f) alts
@@ -221,9 +212,6 @@ instance PlateM (Expr Name) where
 
 instance IsString a => IsString (Expr a) where
   fromString = return . fromString
-
-instance Bound Binding where
-  Binding {..} >>>= f = Binding {bnd = bnd >>>= f, ..}
 
 instance Applicative Ty where
   pure = TV
@@ -356,23 +344,22 @@ lam' x binder body =
       ..
     }
 
-lams' :: [Name] -> [Maybe Binder] -> Expr Name -> Expr Name
-lams' xs binders body = foldr (uncurry lam') body (zip xs binders)
+lams' :: [(Name, Maybe Binder)] -> Expr Name -> Expr Name
+lams' = flip $ foldr $ uncurry lam'
 
-let' :: [Name] -> [(Maybe Binder, Expr Name)] -> Expr Name -> Expr Name
-let' [] _ body = body
-let' xs bindings body =
-  Let
-    { bindings = go <$> bindings,
-      bndMany = abstract_ xs body
-    }
-  where
-    go (binder, rhs) = Binding {bnd = abstract_ xs rhs, ..}
+let' :: Name -> Maybe Binder -> Expr Name -> Expr Name -> Expr Name
+let' x binder rhs body =
+  Let {bnd = abstract_ x body, ..}
 
-case' :: Expr Name -> [(Text, [Name], [Maybe Binder], Expr Name)] -> Expr Name
+lets' :: [(Name, Maybe Binder, Expr Name)] -> Expr Name -> Expr Name
+lets' = flip $ foldr $ uncurry3 let'
+
+case' :: Expr Name -> [(Text, [(Name, Maybe Binder)], Expr Name)] -> Expr Name
 case' cond alts = Case {alts = go <$> alts, ..}
   where
-    go (ctor, xs, binders, body) = CaseAlt {bnd = abstract_ xs body, ..}
+    go (ctor, namedBinders, body) =
+      let (xs, binders) = unzip namedBinders
+       in CaseAlt {bnd = abstract_ xs body, ..}
 
 ----------------------------------------------------------------
 -- Pretty printer
@@ -386,18 +373,17 @@ instance Cute (Expr Text) where
     | isInfix ref = cuteInfix e ref left right
   cute App {fn = GV "(,)", args = [left, right]} = cutePair "" left right
   cute App {..} = cuteApp fn args
-  cute Let {..} = do
-    let (binders, bnds) =
-          unzip $ bindings <&> \Binding {..} -> (binder, bnd)
-    (xs, body) <- unbindManyNamesOrBinders binders bndMany
-    bindingDocs <- zipWithM (cuteBinding xs) xs bnds
-    bodyDoc <- cute body
+  cute e@Let {} = do
+    (bindingDocs, bodyDoc) <- go e
     return $ cuteLetDoc bindingDocs bodyDoc
     where
-      cuteBinding xs x bnd = do
+      go Let {..} = do
+        (x, body) <- unbind1NameOrBinder binder bnd
         binderDoc <- cute x
-        rhsDoc <- cute $ instantiateName xs bnd
-        return (binderDoc, rhsDoc)
+        rhsDoc <- cute rhs
+        (bindingDocs, bodyDoc) <- go body
+        return ((binderDoc, rhsDoc) : bindingDocs, bodyDoc)
+      go expr = ([],) <$> cute expr
   cute
     Case
       { alts =

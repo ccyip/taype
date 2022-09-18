@@ -24,7 +24,6 @@ module Oil.Translation
   )
 where
 
-import Bound
 import Data.List (lookup)
 import Data.Maybe (fromJust)
 import GHC.List (zipWith3)
@@ -182,7 +181,7 @@ toOilExpr l T.Let {..} = do
   rhs' <- toOilExpr rhsLabel rhs
   (x, body) <- unbind1 bnd
   body' <- extendCtx1 x ty rhsLabel $ toOilExpr l body
-  return $ let' [x] [(binder, rhs')] body'
+  return $ let' x binder rhs' body'
 toOilExpr l T.Ite {..} = do
   (_, condLabel) <- lookupTy cond
   left' <- toOilExpr l left
@@ -210,15 +209,13 @@ toOilExpr l T.Case {..} = do
           @@ [ lIfInst $ fromJust mTy,
                cond'
              ]
-            <> (toArgs <$> alts')
+            <> (alts' <&> \(_, xs, body) -> lams' xs body)
   where
     go condLabel CaseAlt {..} paraTypes = do
       (xs, body) <- unbindMany (length paraTypes) bnd
       let ctx = zipWith (\x t -> (x, t, condLabel)) xs paraTypes
       body' <- extendCtx ctx $ toOilExpr l body
-      return (ctor, xs, binders, body')
-    toArgs (_, xs, binders, body') =
-      lams' xs binders body'
+      return (ctor, zip xs binders, body')
 toOilExpr _ T.OIte {..} = do
   -- The right branch should have the same type.
   (ty, _) <- lookupTy left
@@ -248,12 +245,12 @@ toOilExpr l T.PCase {..} = do
       SafeL ->
         case'
           cond'
-          [("(,)", [xl, xr], [lBinder, rBinder], body')]
+          [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
       LeakyL ->
         GV (lCaseName "*")
           @@ [ lIfInst $ fromJust mTy,
                cond',
-               lams' [xl, xr] [lBinder, rBinder] body'
+               lams' [(xl, lBinder), (xr, rBinder)] body'
              ]
 toOilExpr _ T.OPair {..} =
   return $
@@ -276,10 +273,9 @@ toOilExpr l T.OPCase {..} = do
       $ toOilExpr l body
   let cond' = toOilVar cond
   return $
-    let'
-      [xl, xr]
-      [ (lBinder, GV aSlice @@ [cond', ILit 0, leftSize]),
-        (rBinder, GV aSlice @@ [cond', leftSize, rightSize])
+    lets'
+      [ (xl, lBinder, GV aSlice @@ [cond', ILit 0, leftSize]),
+        (xr, rBinder, GV aSlice @@ [cond', leftSize, rightSize])
       ]
       body'
 toOilExpr _ T.OInj {..} = do
@@ -310,13 +306,11 @@ toOilExpr l T.OCase {..} = do
   return $
     lIfInst (fromJust mTy)
       @@ [ GV aSlice @@ [cond', ILit 0, tagSize],
-           let'
-             [xl]
-             [(lBinder, GV aSlice @@ [cond', tagSize, leftSize])]
+           lets'
+             [(xl, lBinder, GV aSlice @@ [cond', tagSize, leftSize])]
              lBody',
-           let'
-             [xr]
-             [(rBinder, GV aSlice @@ [cond', tagSize, rightSize])]
+           lets'
+             [(xr, rBinder, GV aSlice @@ [cond', tagSize, rightSize])]
              rBody'
          ]
 toOilExpr _ T.Mux {..} = do
@@ -373,7 +367,7 @@ toOilSize T.Let {..} = do
   rhs' <- toOilExpr SafeL rhs
   (x, body) <- unbind1 bnd
   body' <- extendCtx1 x (fromJust mTy) SafeL $ toOilSize body
-  return $ let' [x] [(binder, rhs')] body'
+  return $ let' x binder rhs' body'
 toOilSize T.Ite {..} = do
   left' <- toOilSize left
   right' <- toOilSize right
@@ -387,7 +381,7 @@ toOilSize T.Case {..} = do
       (xs, body) <- unbindMany (length paraTypes) bnd
       let ctx = zipWith (\x t -> (x, t, SafeL)) xs paraTypes
       body' <- extendCtx ctx $ toOilSize body
-      return (ctor, xs, binders, body')
+      return (ctor, zip xs binders, body')
 toOilSize _ = oops "Not an oblivious type"
 
 -- | Translate a taype variable, either local or global, to the corresponding
@@ -601,35 +595,16 @@ simpExpr = transformM go
   where
     go App {args = [], ..} = return fn
     go App {fn = App {..}, args = args'} =
-      return App {args = args <> args', ..}
-    go Let {..} = do
-      (xs, rhss, body) <- unbindLet bindings bndMany
-      (xs', rhss', body') <- goLet xs rhss body
-      case body' of
-        Let {bindings = bindingsN, bndMany = bndManyN} -> do
-          (ys, rhssN, bodyN) <- unbindLet bindingsN bndManyN
-          return $ let' (xs' <> ys) (rhss' <> rhssN) bodyN
-        _ -> return $ let' xs' rhss' body'
+      return $ fn @@ args <> args'
+    go e@Let {..} = case rhs of
+      V {..} -> return $ instantiateName name bnd
+      GV {..} -> return $ instantiate_ GV {..} bnd
+      Let {binder = binderN, rhs = rhsN, bnd = bndN} -> do
+        (x, bodyN) <- unbind1 bndN
+        body' <- go Let {rhs = bodyN, ..}
+        return $ let' x binderN rhsN body'
+      _ -> return e
     go e = return e
-    goLet [] [] body = return ([], [], body)
-    goLet (x : xs) ((binder, rhs) : rhss) body =
-      let res =
-            goLet
-              xs
-              (second (substitute x rhs) <$> rhss)
-              (substitute x rhs body)
-       in case rhs of
-            V {} -> res
-            GV {} -> res
-            Let {bindings = bindingsN, bndMany = bndManyN} -> do
-              (ys, rhssN, bodyN) <- unbindLet bindingsN bndManyN
-              (xs', rhss', body') <-
-                goLet (x : xs) ((binder, bodyN) : rhss) body
-              return (ys <> xs', rhssN <> rhss', body')
-            _ -> do
-              (xs', rhss', body') <- goLet xs rhss body
-              return (x : xs', (binder, rhs) : rhss', body')
-    goLet _ _ _ = oops "Names and bindings do not match"
 
 -- | Make the generated OIL programs more readable.
 --
@@ -637,33 +612,11 @@ simpExpr = transformM go
 readableExpr :: MonadFresh m => Expr Name -> m (Expr Name)
 readableExpr = transformM go
   where
-    go Let {..} = do
-      (xs, rhss, body) <- unbindLet bindings bndMany
-      (xs', rhss', body') <- goLet xs rhss body
-      return $ let' xs' rhss' body'
+    go Let {binder = Nothing, ..} = return $ instantiate_ rhs bnd
     go e = return e
-    goLet [] [] body = return ([], [], body)
-    goLet (x : xs) ((Nothing, rhs) : rhss) body = do
-      goLet xs (second (substitute x rhs) <$> rhss) $
-        substitute x rhs body
-    goLet (x : xs) (rhs : rhss) body = do
-      (xs', rhss', body') <- goLet xs rhss body
-      return (x : xs', rhs : rhss', body')
-    goLet _ _ _ = oops "Names and bindings do not match"
 
 ----------------------------------------------------------------
 -- Helper functions
-
-unbindLet ::
-  MonadFresh m =>
-  [Binding Expr Name] ->
-  Scope Int Expr Name ->
-  m ([Name], [(Maybe Binder, Expr Name)], Expr Name)
-unbindLet bindings bndMany = do
-  (xs, body) <- unbindMany (length bindings) bndMany
-  return (xs, go xs <$> bindings, body)
-  where
-    go xs Binding {..} = (binder, instantiateName xs bnd)
 
 mayLeakyGV :: Label -> Text -> Expr a
 mayLeakyGV SafeL x = GV x
