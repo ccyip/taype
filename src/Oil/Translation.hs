@@ -41,13 +41,13 @@ import qualified Taype.Syntax as T
 -- Naming
 
 retName :: Text -> Text
-retName x = "ret#" <> x
+retName x = leakyName "ret#" <> x
 
 lIfName :: Text -> Text
-lIfName x = oblivAccent <> "if#" <> x
+lIfName x = leakyName "if#" <> x
 
 lCaseName :: Text -> Text
-lCaseName x = leakyAccent <> "case#" <> x
+lCaseName x = leakyName "case#" <> x
 
 ----------------------------------------------------------------
 -- Environment for translation
@@ -154,9 +154,6 @@ toOilExpr l T.Lam {..} = do
   return $ case l of
     SafeL -> e
     LeakyL -> GV (leakyName "lam") @@ [e]
-toOilExpr _ T.App {appKind = Just BuiltinApp, fn = T.GV {..}, ..}
-  | ref == retractionName "Bool" || ref == retractionName "Int" =
-      return $ GV ref @@ toOilVar <$> args
 toOilExpr l T.App {fn = T.GV {..}, ..}
   | appKind == Just BuiltinApp || appKind == Just CtorApp =
       return $ mayLeakyGV l ref @@ toOilVar <$> args
@@ -991,7 +988,7 @@ s_ :: IsString a => Text -> a
 s_ = fromString . toString . sectionName
 
 r_ :: IsString a => Text -> a
-r_ = fromString . toString . retractionName
+r_ = fromString . toString . leakyName . retractionName
 
 lif_ :: IsString a => Text -> a
 lif_ = fromString . toString . lIfName
