@@ -39,6 +39,10 @@ module Oil.Syntax
     case_,
     ite_,
     tGV,
+    lam',
+    lams',
+    let',
+    case',
 
     -- * Array operations
     aName,
@@ -341,6 +345,34 @@ tGV tctor = TApp {args = [], ..}
 
 instance Apply (Ty a) Text where
   tctor @@ args = TApp {..}
+
+----------------------------------------------------------------
+-- Smart constructors that work with 'Name's
+
+lam' :: Name -> Maybe Binder -> Expr Name -> Expr Name
+lam' x binder body =
+  Lam
+    { bnd = abstract_ x body,
+      ..
+    }
+
+lams' :: [(Name, Maybe Binder)] -> Expr Name -> Expr Name
+lams' = flip $ foldr $ uncurry lam'
+
+let' :: [Name] -> [(Maybe Binder, Expr Name)] -> Expr Name -> Expr Name
+let' [] _ body = body
+let' xs bindings body =
+  Let
+    { bindings = go <$> bindings,
+      bndMany = abstract_ xs body
+    }
+  where
+    go (binder, rhs) = Binding {bnd = abstract_ xs rhs, ..}
+
+case' :: Expr Name -> [(Text, [Name], [Maybe Binder], Expr Name)] -> Expr Name
+case' cond alts = Case {alts = go <$> alts, ..}
+  where
+    go (ctor, xs, binders, body) = CaseAlt {bnd = abstract_ xs body, ..}
 
 ----------------------------------------------------------------
 -- Pretty printer

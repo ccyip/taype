@@ -806,13 +806,3 @@ ret_ = fromString . toString . retName
 
 lcase_ :: IsString a => Text -> a
 lcase_ = fromString . toString . lCaseName
-
-let_ :: [Name] -> [(Maybe Binder, Expr Name)] -> Expr Name -> Expr Name
-let_ [] _ body = body
-let_ xs bindings body =
-  Let
-    { bindings = go <$> bindings,
-      bndMany = abstract_ xs body
-    }
-  where
-    go (binder, rhs) = Binding {bnd = abstract_ xs rhs, ..}
