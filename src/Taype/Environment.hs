@@ -216,13 +216,13 @@ preludeGCtx =
     fromList $
       builtin
         <$> [ ("+", [TInt, TInt], TInt, JoinStrategy),
-              ("~+", [OInt, OInt], OInt, SafeStrategy),
+              (oblivName "+", [OInt, OInt], OInt, SafeStrategy),
               ("-", [TInt, TInt], TInt, JoinStrategy),
-              ("~-", [OInt, OInt], OInt, SafeStrategy),
+              (oblivName "-", [OInt, OInt], OInt, SafeStrategy),
               ("==", [TInt, TInt], TBool, JoinStrategy),
-              ("~=", [OInt, OInt], OBool, SafeStrategy),
+              (oblivName "==", [OInt, OInt], OBool, SafeStrategy),
               ("<=", [TInt, TInt], TBool, JoinStrategy),
-              ("~<=", [OInt, OInt], OBool, SafeStrategy),
+              (oblivName "<=", [OInt, OInt], OBool, SafeStrategy),
               (sectionName "Bool", [TBool], OBool, JoinStrategy),
               (retractionName "Bool", [OBool], TBool, LeakyStrategy),
               (sectionName "Int", [TInt], OInt, JoinStrategy),
