@@ -47,7 +47,6 @@ import qualified Prettyprinter as PP
 import Taype.Binder
 import Taype.Name
 import Taype.Plate
-import Taype.Prelude
 import Text.Show
 
 -- | Command line options

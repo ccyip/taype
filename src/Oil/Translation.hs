@@ -34,7 +34,6 @@ import Taype.Binder
 import Taype.Common
 import Taype.Environment (GCtx (..), TCtx (..), lookupGCtx)
 import Taype.Name
-import qualified Taype.NonEmpty as NE
 import Taype.Plate
 import Taype.Prelude
 import qualified Taype.Syntax as T
@@ -97,16 +96,19 @@ lookupTy _ = oops "Not a variable"
 -- | Look up an ADT variable and its label.
 --
 -- The given taype expression should be a local or global variable.
+--
+-- This function does not return the constructor list as it is not used at
+-- callsites.
 lookupADT ::
   MonadReader Env m =>
   T.Expr Name ->
-  m (NonEmpty (Text, [T.Expr Name]), Label)
+  m (Text, [[T.Expr Name]], Label)
 lookupADT x = do
   (ty, l) <- lookupTy x
   case ty of
     T.GV {..} ->
       lookupGDef ref >>= \case
-        T.ADTDef {..} -> return (ctors, l)
+        T.ADTDef {..} -> return (ref, toList $ snd <$> ctors, l)
         _ -> oops "Not an ADT"
     _ -> oops "Not a global variable"
 
@@ -138,7 +140,204 @@ extendCtx1 x t l = extendCtx [(x, t, l)]
 -- The resulting OIL expression should also be behaviorally equivalent to the
 -- taype expression.
 toOilExpr :: Label -> T.Expr Name -> TslM (Expr Name)
-toOilExpr _ _ = return $ GV "<unimplemented>"
+toOilExpr _ T.V {..} = return V {..}
+toOilExpr _ T.GV {..} = return GV {..}
+-- Unit value is an empty oblivious array.
+toOilExpr _ T.VUnit = return $ GV aNew @@ [ILit 0]
+toOilExpr _ T.BLit {..} = return $ if bLit then GV "True" else GV "False"
+toOilExpr _ T.ILit {..} = return ILit {..}
+toOilExpr l T.Lam {..} = do
+  let binderLabel = fromJust label
+      binderTy = fromJust mTy
+  (x, body) <- unbind1 bnd
+  body' <- extendCtx1 x binderTy binderLabel $ toOilExpr l body
+  let e = lam' x binder body'
+  return $ case l of
+    SafeL -> e
+    LeakyL -> GV (leakyName "lam") @@ [e]
+toOilExpr _ T.App {appKind = Just BuiltinApp, fn = T.GV {..}, ..}
+  | ref == retractionName "Bool" || ref == retractionName "Int" =
+    return $ GV ref @@ toOilVar <$> args
+toOilExpr l T.App {fn = T.GV {..}, ..}
+  | appKind == Just BuiltinApp || appKind == Just CtorApp =
+    return $
+      mayLeakyGV l ref
+        @@ toOilVar <$> args
+toOilExpr SafeL T.App {appKind = Just FunApp, ..} =
+  return $ toOilVar fn @@ toOilVar <$> args
+toOilExpr LeakyL T.App {appKind = Just FunApp, ..} = do
+  (ty, _) <- lookupTy fn
+  go ty args $ toOilVar fn
+  where
+    go T.Pi {..} (arg : args') fn' = do
+      (_, body) <- unbind1 bnd
+      go body args' $
+        GV (leakyName "ap")
+          @@ [lIfInst body, fn', toOilVar arg]
+    go _ [] fn' = return fn'
+    go _ _ _ = oops "The arguments do not match the taype function type"
+toOilExpr l T.Let {..} = do
+  let rhsLabel = fromJust label
+      ty = fromJust mTy
+  rhs' <- toOilExpr rhsLabel rhs
+  (x, body) <- unbind1 bnd
+  body' <- extendCtx1 x ty rhsLabel $ toOilExpr l body
+  return $ let' [x] [(binder, rhs')] body'
+toOilExpr l T.Ite {..} = do
+  (_, condLabel) <- lookupTy cond
+  left' <- toOilExpr l left
+  right' <- toOilExpr l right
+  let cond' = toOilVar cond
+  return $
+    case condLabel of
+      SafeL -> ite_ cond' left' right'
+      LeakyL ->
+        GV (lCaseName "Bool")
+          @@ [ lIfInst $ fromJust mTy,
+               cond',
+               right',
+               left'
+             ]
+toOilExpr l T.Case {..} = do
+  (adtName, paraTypess, condLabel) <- lookupADT cond
+  alts' <- zipWithM (go condLabel) (toList alts) paraTypess
+  let cond' = toOilVar cond
+  return $
+    case condLabel of
+      SafeL -> case' cond' alts'
+      LeakyL ->
+        GV (lCaseName adtName)
+          @@ [ lIfInst $ fromJust mTy,
+               cond'
+             ]
+            <> (toArgs <$> alts')
+  where
+    go condLabel CaseAlt {..} paraTypes = do
+      (xs, body) <- unbindMany (length paraTypes) bnd
+      let ctx = zipWith (\x t -> (x, t, condLabel)) xs paraTypes
+      body' <- extendCtx ctx $ toOilExpr l body
+      return (ctor, xs, binders, body')
+    toArgs (_, xs, binders, body') =
+      lams' xs binders body'
+toOilExpr _ T.OIte {..} = do
+  -- The right branch should have the same type.
+  (ty, _) <- lookupTy left
+  return $
+    lIfInst ty
+      @@ toOilVar <$> [cond, left, right]
+toOilExpr l T.Pair {..} =
+  return $
+    mayLeakyGV l "(,)"
+      @@ toOilVar <$> [left, right]
+toOilExpr l T.PCase {..} = do
+  (condTy, condLabel) <- lookupTy cond
+  let (leftTy, rightTy) =
+        case condTy of
+          T.Prod {..} -> (left, right)
+          _ -> oops "Not a product"
+  ((xl, xr), body) <- unbind2 bnd2
+  body' <-
+    extendCtx
+      [ (xl, leftTy, condLabel),
+        (xr, rightTy, condLabel)
+      ]
+      $ toOilExpr l body
+  let cond' = toOilVar cond
+  return $
+    case condLabel of
+      SafeL ->
+        case'
+          cond'
+          [("(,)", [xl, xr], [lBinder, rBinder], body')]
+      LeakyL ->
+        GV (lCaseName "*")
+          @@ [ lIfInst $ fromJust mTy,
+               cond',
+               lams' [xl, xr] [lBinder, rBinder] body'
+             ]
+toOilExpr _ T.OPair {..} =
+  return $
+    GV aConcat
+      @@ toOilVar <$> [left, right]
+toOilExpr l T.OPCase {..} = do
+  (ty, _) <- lookupTy cond
+  let (leftTy, rightTy) =
+        case ty of
+          T.OProd {..} -> (left, right)
+          _ -> oops "Not an oblivious product"
+  leftSize <- toOilSize leftTy
+  rightSize <- toOilSize rightTy
+  ((xl, xr), body) <- unbind2 bnd2
+  body' <-
+    extendCtx
+      [ (xl, leftTy, SafeL),
+        (xr, rightTy, SafeL)
+      ]
+      $ toOilExpr l body
+  let cond' = toOilVar cond
+  return $
+    let'
+      [xl, xr]
+      [ (lBinder, GV aSlice @@ [cond', ILit 0, leftSize]),
+        (rBinder, GV aSlice @@ [cond', leftSize, rightSize])
+      ]
+      body'
+toOilExpr _ T.OInj {..} = do
+  let (leftTy, rightTy) =
+        case fromJust mTy of
+          T.OSum {..} -> (left, right)
+          _ -> oops "Not an oblivious sum"
+  leftSize <- toOilSize leftTy
+  rightSize <- toOilSize rightTy
+  let inj' = toOilVar inj
+  return $
+    GV (oblivName $ if tag then "inl" else "inr")
+      @@ [leftSize, rightSize, inj']
+toOilExpr l T.OCase {..} = do
+  (ty, _) <- lookupTy cond
+  let (leftTy, rightTy) =
+        case ty of
+          T.OSum {..} -> (left, right)
+          _ -> oops "Not an oblivious sum"
+  leftSize <- toOilSize leftTy
+  rightSize <- toOilSize rightTy
+  tagSize <- toOilSize T.OBool
+  (xl, lBody) <- unbind1 lBnd
+  (xr, rBody) <- unbind1 rBnd
+  lBody' <- extendCtx1 xl leftTy SafeL $ toOilExpr l lBody
+  rBody' <- extendCtx1 xr rightTy SafeL $ toOilExpr l rBody
+  let cond' = toOilVar cond
+  return $
+    lIfInst (fromJust mTy)
+      @@ [ GV aSlice @@ [cond', ILit 0, tagSize],
+           let'
+             [xl]
+             [(lBinder, GV aSlice @@ [cond', tagSize, leftSize])]
+             lBody',
+           let'
+             [xr]
+             [(rBinder, GV aSlice @@ [cond', tagSize, rightSize])]
+             rBody'
+         ]
+toOilExpr _ T.Mux {..} = do
+  -- The right branch should have the same type.
+  (ty, _) <- lookupTy left
+  size <- toOilSize ty
+  return $
+    GV aMux
+      @@ (size : (toOilVar <$> [cond, left, right]))
+toOilExpr _ T.Promote {..} = do
+  (ty, _) <- lookupTy expr
+  return $
+    retInst ty
+      @@ [toOilVar expr]
+toOilExpr _ T.Tape {..} = do
+  (ty, _) <- lookupTy expr
+  size <- toOilSize ty
+  return $
+    GV (leakyName "tape")
+      @@ [size, toOilVar expr]
+toOilExpr _ _ = oops "Not a term in core taype ANF"
 
 -- | Translate a taype oblivious type to the OIL expression representing its
 -- size.
@@ -174,25 +373,21 @@ toOilSize T.Let {..} = do
   rhs' <- toOilExpr SafeL rhs
   (x, body) <- unbind1 bnd
   body' <- extendCtx1 x (fromJust mTy) SafeL $ toOilSize body
-  return
-    Let
-      { bindings = [Binding {bnd = abstract_ [] rhs', ..}],
-        bndMany = abstract_ [x] body'
-      }
+  return $ let' [x] [(binder, rhs')] body'
 toOilSize T.Ite {..} = do
   left' <- toOilSize left
   right' <- toOilSize right
   return $ ite_ (toOilVar cond) left' right'
 toOilSize T.Case {..} = do
-  (ctors, _) <- lookupADT cond
-  alts' <- NE.zipWithM go alts ctors
-  return Case {cond = toOilVar cond, alts = toList alts'}
+  (_, paraTypess, _) <- lookupADT cond
+  alts' <- zipWithM go (toList alts) paraTypess
+  return $ case' (toOilVar cond) alts'
   where
-    go CaseAlt {..} (_, paraTypes) = do
+    go CaseAlt {..} paraTypes = do
       (xs, body) <- unbindMany (length paraTypes) bnd
       let ctx = zipWith (\x t -> (x, t, SafeL)) xs paraTypes
       body' <- extendCtx ctx $ toOilSize body
-      return CaseAlt {bnd = abstract_ xs body', ..}
+      return (ctor, xs, binders, body')
 toOilSize _ = oops "Not an oblivious type"
 
 -- | Translate a taype variable, either local or global, to the corresponding
@@ -336,7 +531,7 @@ toOilDef (name, def) = case def of
           FunDef
             { binders = [],
               tyBnd = abstract_ [] $ Arrow ty' sizeTy,
-              expr = Lam {bnd = abstract_ x body', ..}
+              expr = lam' x binder body'
             }
         )
   T.ADTDef {..} -> do
@@ -411,8 +606,8 @@ simpExpr = transformM go
       case body' of
         Let {bindings = bindingsN, bndMany = bndManyN} -> do
           (ys, rhssN, bodyN) <- unbindLet bindingsN bndManyN
-          return $ let_ (xs' <> ys) (rhss' <> rhssN) bodyN
-        _ -> return $ let_ xs' rhss' body'
+          return $ let' (xs' <> ys) (rhss' <> rhssN) bodyN
+        _ -> return $ let' xs' rhss' body'
     go e = return e
     goLet [] [] body = return ([], [], body)
     goLet (x : xs) ((binder, rhs) : rhss) body =
@@ -447,6 +642,10 @@ unbindLet bindings bndMany = do
   return (xs, go xs <$> bindings, body)
   where
     go xs Binding {..} = (binder, instantiateName xs bnd)
+
+mayLeakyGV :: Label -> Text -> Expr a
+mayLeakyGV SafeL x = GV x
+mayLeakyGV LeakyL x = GV $ leakyName x
 
 ----------------------------------------------------------------
 -- Prelude

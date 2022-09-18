@@ -356,8 +356,8 @@ lam' x binder body =
       ..
     }
 
-lams' :: [(Name, Maybe Binder)] -> Expr Name -> Expr Name
-lams' = flip $ foldr $ uncurry lam'
+lams' :: [Name] -> [Maybe Binder] -> Expr Name -> Expr Name
+lams' xs binders body = foldr (uncurry lam') body (zip xs binders)
 
 let' :: [Name] -> [(Maybe Binder, Expr Name)] -> Expr Name -> Expr Name
 let' [] _ body = body
