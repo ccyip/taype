@@ -76,7 +76,7 @@ data Env = Env
     gsctx :: GCtx Name,
     -- | Global definition context
     --
-    -- We reuse the same 'GCtx' data as in 'gtctx', but only use the definition
+    -- We reuse the same 'GCtx' data as in 'gsctx', but only use the definition
     -- part.
     gdctx :: GCtx Name,
     -- | Local typing context

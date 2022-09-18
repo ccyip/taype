@@ -236,7 +236,7 @@ instance BiplateM (Def b Name) (Expr Name) where
 -- | A specialized 'Bound' instance
 --
 -- Similar to '>>>=', but handle both variable classes (one for expressions and
--- one for types). Perhaps we should introduce a 'Bibound' class.
+-- one for types). Perhaps we should introduce a @Bibound@ class.
 boundDef :: (a -> Expr c) -> (b -> Ty d) -> Def b a -> Def d c
 boundDef f g FunDef {..} =
   FunDef
