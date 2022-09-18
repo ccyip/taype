@@ -1717,7 +1717,7 @@ flattenLets = transformBiM go
   where
     go e@Let {..} = case rhs of
       V {..} -> return $ instantiateName name bnd
-      GV {..} -> return $ instantiate_ (GV ref) bnd
+      GV {..} -> return $ instantiate_ GV {..} bnd
       Let
         { mTy = mTyN,
           label = labelN,
