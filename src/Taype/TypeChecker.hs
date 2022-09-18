@@ -235,7 +235,7 @@ typing App {..} Nothing ml =
       -- Promote the resulting expression.
       e' <-
         mayPromote l' resType minLabel $
-          lets_
+          lets'
             bindings
             App
               { fn = GV f,
@@ -253,7 +253,7 @@ typing App {..} Nothing ml =
       return
         ( t',
           l',
-          lets_
+          lets'
             ((x, fnTy', l', fn') : bindings)
             App
               { fn = V x,
@@ -328,7 +328,7 @@ typing Ite {..} mt ml = do
       gen (leftTy' :| [rightTy']) = do
         x <- fresh
         return $
-          lets_
+          lets'
             [(x, TBool, SafeL, cond')]
             Ite {cond = V x, left = leftTy', right = rightTy', mTy = Nothing}
       gen _ = depOops
@@ -348,7 +348,7 @@ typing Ite {..} mt ml = do
   return
     ( t',
       l',
-      lets_
+      lets'
         [(x, TBool, condLabel, cond')]
         Ite
           { mTy = Just t',
@@ -369,7 +369,7 @@ typing Pair {..} mt ml = do
   return
     ( Prod {left = leftTy', right = rightTy'},
       l',
-      lets_
+      lets'
         [ (xl, leftTy', l', left''),
           (xr, rightTy', l', right'')
         ]
@@ -417,7 +417,7 @@ typing PCase {..} mt ml = do
       gen (bodyTy' :| []) = do
         x <- fresh
         return $
-          lets_
+          lets'
             [(x, condTy', SafeL, cond')]
             PCase
               { cond = V x,
@@ -444,7 +444,7 @@ typing PCase {..} mt ml = do
   return
     ( t',
       l',
-      lets_
+      lets'
         [(x, Prod {left = leftTy', right = rightTy'}, condLabel, cond')]
         PCase
           { mTy = Just t',
@@ -498,7 +498,7 @@ typing Case {..} mt ml = do
         let tyAlts = NE.zipWith3 mkCaseAlt ctorNames argss bodyTs
         x <- fresh
         return $
-          lets_
+          lets'
             [(x, condTy', SafeL, cond')]
             Case {cond = V x, alts = tyAlts, mTy = Nothing}
 
@@ -527,7 +527,7 @@ typing Case {..} mt ml = do
   return
     ( t',
       l',
-      lets_
+      lets'
         [(x, GV ref, condLabel, cond')]
         Case
           { mTy = Just t',
@@ -554,7 +554,7 @@ typing Mux {..} mt Nothing = do
   return
     ( t',
       SafeL,
-      lets_
+      lets'
         [ (x, OBool, SafeL, cond'),
           (xl, t', SafeL, left'),
           (xr, t', SafeL, right')
@@ -571,7 +571,7 @@ typing OIte {..} mt Nothing = do
   return
     ( t',
       LeakyL,
-      lets_
+      lets'
         [ (x, OBool, SafeL, cond'),
           (xl, t', LeakyL, left'),
           (xr, t', LeakyL, right')
@@ -589,7 +589,7 @@ typing OPair {..} mt Nothing = do
   return
     ( OProd {left = leftTy', right = rightTy'},
       SafeL,
-      lets_
+      lets'
         [ (xl, leftTy', SafeL, left'),
           (xr, rightTy', SafeL, right')
         ]
@@ -609,7 +609,7 @@ typing OPCase {..} mt ml = do
   return
     ( bodyTy',
       bodyLabel,
-      lets_
+      lets'
         [(x, OProd {left = leftTy', right = rightTy'}, SafeL, cond')]
         OPCase
           { cond = V x,
@@ -628,7 +628,7 @@ typing OInj {mTy = Just t, ..} Nothing Nothing = do
   return
     ( t',
       SafeL,
-      lets_
+      lets'
         [(x, injTy', SafeL, inj')]
         OInj {mTy = Just t', inj = V x, ..}
     )
@@ -647,7 +647,7 @@ typing OInj {..} (Just t') Nothing = do
   return
     ( t',
       SafeL,
-      lets_
+      lets'
         [(x, injTy', SafeL, inj')]
         -- The type annotation in oblivious injection is always in an oblivious
         -- sum form for convenience.
@@ -670,7 +670,7 @@ typing OCase {..} mt Nothing = do
   return
     ( bodyTy',
       LeakyL,
-      lets_
+      lets'
         [(x, OSum {left = left', right = right'}, SafeL, cond')]
         OCase
           { mTy = Just bodyTy',
@@ -687,7 +687,7 @@ typing Tape {..} mt Nothing = do
   return
     ( t',
       SafeL,
-      lets_
+      lets'
         [(x, t', LeakyL, e')]
         Tape {expr = V x}
     )
@@ -973,7 +973,7 @@ kinding App {..} Nothing = do
   x <- fresh
   return
     ( OblivK,
-      lets_
+      lets'
         [(x, ty, SafeL, arg')]
         App {fn = GV ref, args = [V x], appKind = Just TypeApp}
     )
@@ -1000,7 +1000,7 @@ kinding Ite {..} Nothing = do
   x <- fresh
   return
     ( OblivK,
-      lets_
+      lets'
         [(x, TBool, SafeL, cond')]
         Ite {cond = V x, left = left', right = right', ..}
     )
@@ -1014,7 +1014,7 @@ kinding PCase {..} Nothing = do
   x <- fresh
   return
     ( OblivK,
-      lets_
+      lets'
         [(x, Prod {left = left', right = right'}, SafeL, cond')]
         PCase {cond = V x, bnd2 = abstract_ (xl, xr) body', ..}
     )
@@ -1026,7 +1026,7 @@ kinding Case {..} Nothing = do
   x <- fresh
   return
     ( OblivK,
-      lets_
+      lets'
         [(x, GV ref, SafeL, cond')]
         Case {cond = V x, alts = alts', ..}
     )
@@ -1331,8 +1331,8 @@ whnf_ e = do
 
 -- | Build a series of let bindings, given the bindings and body. If the list of
 -- bindings is empty, simply return the body.
-lets_ :: [(Name, Ty Name, Label, Expr Name)] -> Expr Name -> Expr Name
-lets_ = flip $ foldr go
+lets' :: [(Name, Ty Name, Label, Expr Name)] -> Expr Name -> Expr Name
+lets' = flip $ foldr go
   where
     go (x, t, l, rhs) body =
       Let
@@ -1422,7 +1422,7 @@ isCaseCond cond condTy =
 mayPromote :: Label -> Ty Name -> Label -> Expr Name -> TcM (Expr Name)
 mayPromote l' t l e | l < l' = do
   x <- fresh
-  return $ lets_ [(x, t, l, e)] $ Promote (V x)
+  return $ lets' [(x, t, l, e)] $ Promote (V x)
 mayPromote l' _ l e = checkLabel (Just l) l' >> return e
 
 -- | Join the pattern matching alternatives and the corresponding ADT's
