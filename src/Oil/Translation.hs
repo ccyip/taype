@@ -159,10 +159,7 @@ toOilExpr _ T.App {appKind = Just BuiltinApp, fn = T.GV {..}, ..}
       return $ GV ref @@ toOilVar <$> args
 toOilExpr l T.App {fn = T.GV {..}, ..}
   | appKind == Just BuiltinApp || appKind == Just CtorApp =
-      return $
-        mayLeakyGV l ref
-          @@ toOilVar
-          <$> args
+      return $ mayLeakyGV l ref @@ toOilVar <$> args
 toOilExpr SafeL T.App {appKind = Just FunApp, ..} =
   return $ toOilVar fn @@ toOilVar <$> args
 toOilExpr LeakyL T.App {appKind = Just FunApp, ..} = do
@@ -192,6 +189,9 @@ toOilExpr l T.Ite {..} = do
     case condLabel of
       SafeL -> ite_ cond' left' right'
       LeakyL ->
+        -- Recall that the first branch of Boolean case analysis corresponds to
+        -- @False@ while the second one to @True@, unlike the if-then-else
+        -- construct.
         GV (lCaseName "Bool")
           @@ [ lIfInst $ fromJust mTy,
                cond',
@@ -221,13 +221,9 @@ toOilExpr l T.Case {..} = do
 toOilExpr _ T.OIte {..} = do
   -- The right branch should have the same type.
   (ty, _) <- lookupTy left
-  return $
-    lIfInst ty
-      @@ (toOilVar <$> [cond, left, right])
+  return $ lIfInst ty @@ (toOilVar <$> [cond, left, right])
 toOilExpr l T.Pair {..} =
-  return $
-    mayLeakyGV l "(,)"
-      @@ (toOilVar <$> [left, right])
+  return $ mayLeakyGV l "(,)" @@ (toOilVar <$> [left, right])
 toOilExpr l T.PCase {..} = do
   (condTy, condLabel) <- lookupTy cond
   let (leftTy, rightTy) =
@@ -255,9 +251,7 @@ toOilExpr l T.PCase {..} = do
                lams' [(xl, lBinder), (xr, rBinder)] body'
              ]
 toOilExpr _ T.OPair {..} =
-  return $
-    GV aConcat
-      @@ (toOilVar <$> [left, right])
+  return $ GV aConcat @@ (toOilVar <$> [left, right])
 toOilExpr l T.OPCase {..} = do
   (ty, _) <- lookupTy cond
   let (leftTy, rightTy) =
@@ -319,20 +313,14 @@ toOilExpr _ T.Mux {..} = do
   -- The right branch should have the same type.
   (ty, _) <- lookupTy left
   size <- toOilSize ty
-  return $
-    GV aMux
-      @@ (size : (toOilVar <$> [cond, left, right]))
+  return $ GV aMux @@ (size : (toOilVar <$> [cond, left, right]))
 toOilExpr _ T.Promote {..} = do
   (ty, _) <- lookupTy expr
-  return $
-    retInst ty
-      @@ [toOilVar expr]
+  return $ retInst ty @@ [toOilVar expr]
 toOilExpr _ T.Tape {..} = do
   (ty, _) <- lookupTy expr
   size <- toOilSize ty
-  return $
-    GV (leakyName "tape")
-      @@ [size, toOilVar expr]
+  return $ GV (leakyName "tape") @@ [size, toOilVar expr]
 toOilExpr _ _ = oops "Not a term in core taype ANF"
 
 -- | Translate a taype oblivious type to the OIL expression representing its
@@ -360,9 +348,7 @@ toOilSize T.OProd {..} = do
 toOilSize T.OSum {..} = do
   lSize <- toOilSize left
   rSize <- toOilSize right
-  return $
-    GV "+"
-      @@ [ILit 1, GV "$max" @@ [lSize, rSize]]
+  return $ GV "+" @@ [ILit 1, GV "$max" @@ [lSize, rSize]]
 toOilSize T.App {appKind = Just TypeApp, fn = T.GV {..}, ..} =
   return $ GV ref @@ toOilVar <$> args
 toOilSize T.Let {..} = do
@@ -643,6 +629,9 @@ prelude =
         (lif_ aName, [OArray, "$self", "$self"])
       ],
     -- Boolean
+    --
+    -- It is defined similarly to that in Haskell: the first constructor is
+    -- @False@ and the second one is @True@.
     adtDef_
       "Bool"
       []
@@ -675,6 +664,8 @@ prelude =
       $ lam_
         (o_ "b")
         (lif_ "Bool" @@ [o_ "b", l_ "True", l_ "False"]),
+    -- The first branch of Boolean case analysis corresponds to @False@ while
+    -- the second one to @True@.
     funDef_
       (lcase_ "Bool")
       [l_ "r"]
