@@ -1276,14 +1276,14 @@ tryUnfoldApp _ = return Nothing
 -- core taype too.
 whnf :: Expr Name -> TcM (Expr Name)
 whnf App {args = [], ..} = whnf fn
-whnf e@App {args = arg : args, ..} = do
+whnf App {args = args@(arg : _), ..} = do
   nf <- whnf fn
   case nf of
     Lam {..} ->
       whnf App {fn = instantiate_ arg bnd, ..}
-    App {fn = nf', args = args'} ->
-      return App {fn = nf', args = args' <> args, ..}
-    _ -> return e {fn = nf}
+    App {fn = nfN, args = argsN} ->
+      return App {fn = nfN, args = argsN <> args, ..}
+    _ -> return App {fn = nf, ..}
 whnf Let {..} = whnf $ instantiate_ rhs bnd
 whnf Ite {..} = do
   nf <- whnf cond
