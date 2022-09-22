@@ -49,7 +49,7 @@ import Bound
 import Data.List (findIndex)
 import Taype.Prelude
 
--- | Names are integers
+-- | Names are integers.
 type Name = Int
 
 ----------------------------------------------------------------
