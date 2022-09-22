@@ -725,13 +725,13 @@ instance Cute (Expr Text) where
         return ((binderDoc, rhsDoc) : bindingDocs, bodyDoc)
       go Loc {..} = go expr
       go expr = ([],) <$> cute expr
-  cute TUnit = "Unit"
+  cute TUnit = "unit"
   cute VUnit = "()"
-  cute TBool = "Bool"
-  cute OBool = cute $ oblivName "Bool"
+  cute TBool = "bool"
+  cute OBool = cute $ oblivName "bool"
   cute BLit {..} = if bLit then "True" else "False"
-  cute TInt = "Int"
-  cute OInt = cute $ oblivName "Int"
+  cute TInt = "int"
+  cute OInt = cute $ oblivName "int"
   cute ILit {..} = cute iLit
   cute Ite {..} = cuteIte "" cond left right
   cute Case {..} = cuteCase "" True cond alts

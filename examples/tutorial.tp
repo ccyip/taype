@@ -6,13 +6,17 @@
 
 -- Here is a standard list definition with integer payload. We do not support
 -- type polymorphism at the moment.
-data List = Nil | Cons Int List
+--
+-- The ADT name should start with a lower-case letter, and constructors should
+-- start with a upper-case letter.
+data list = Nil | Cons int list
 
 -- We can write a simple lookup function over list. We need to provide the type
 -- signatures for the function definitions. Most language constructs are similar
 -- to the ones found in standard functional languages, with slightly different
--- syntax.
-fn lookup : Int -> List -> Bool = \ x xs ->
+-- syntax. The function name should start with a lower-case letter, possibly
+-- prefixed by "`" for oblivious functions.
+fn lookup : int -> list -> bool = \ x xs ->
   case xs of
   | Nil -> False
   | Cons y xs' -> if x == y then True else lookup x xs'
@@ -21,40 +25,40 @@ fn lookup : Int -> List -> Bool = \ x xs ->
 -- Here is an insertion function that inserts the new element to the right place
 -- of a sorted list. For simplicity, the lookup function we just defined does
 -- not take advantage of the sorted list.
-fn insert : Int -> List -> List = \ x xs ->
+fn insert : int -> list -> list = \ x xs ->
   case xs of
   | Nil -> Cons x Nil
   | Cons y xs' -> if x <= y then Cons x xs else Cons y (insert x xs')
   end
 
 -- Now let's implement a corresponding oblivious list. By convention, we prefix
--- the oblivious type with "`". All builtin oblivious operations are also
--- prefixed by "`".
-obliv `List (k : Int) =
+-- the oblivious type with "`". The name after the prefix should start with a
+-- lower-case letter. All builtin oblivious operations are also prefixed by "`".
+obliv `list (k : int) =
   if k == 0
-  then Unit
-  else Unit `+ `Int `* `List (k-1)
+  then unit
+  else unit `+ `int `* `list (k-1)
 
 -- We need to define the corresponding section and retraction functions. We also
 -- add "attributes" before the functions to indicate their roles. We will use
--- builtin section and retraction functions "s_Int" and "r_Int".
+-- builtin section and retraction functions "s_int" and "r_int".
 #[section]
-fn s_List : (k : Int) -> List -> `List k = \ k xs ->
+fn s_list : (k : int) -> list -> `list k = \ k xs ->
   if k == 0
   then ()
   else tape (case xs of
              | Nil -> `inl ()
-             | Cons x xs' -> `inr `(tape (s_Int x), s_List (k-1) xs')
+             | Cons x xs' -> `inr `(tape (s_int x), s_list (k-1) xs')
              end)
 
 #[retraction]
-fn r_List : (k : Int) -> `List k -> List = \ k ->
+fn r_list : (k : int) -> `list k -> list = \ k ->
   if k == 0
   then \ _ -> Nil
   else \ xs -> `case xs of
                | `inl _ -> Nil
                | `inr p -> `case p of
-                           `(x, xs') -> Cons (r_Int x) (r_List (k-1) xs')
+                           `(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
                            end
                end
 
@@ -63,9 +67,9 @@ fn r_List : (k : Int) -> `List k -> List = \ k ->
 -- attribute indicates that these functions and their arguments are free of
 -- potential leakage.
 #[safe]
-fn `lookup : (k : Int) -> `Int -> `List k -> `Bool = \ k x xs ->
-  tape (s_Bool (lookup (r_Int x) (r_List k xs)))
+fn `lookup : (k : int) -> `int -> `list k -> `bool = \ k x xs ->
+  tape (s_bool (lookup (r_int x) (r_list k xs)))
 
 #[safe]
-fn `insert : (k : Int) -> `Int -> `List k -> `List (k+1) = \ k x xs ->
-  s_List (k+1) (insert (r_Int x) (r_List k xs))
+fn `insert : (k : int) -> `int -> `list k -> `list (k+1) = \ k x xs ->
+  s_list (k+1) (insert (r_int x) (r_list k xs))

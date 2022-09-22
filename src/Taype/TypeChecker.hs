@@ -70,8 +70,10 @@ import Algebra.Lattice
 import Algebra.PartialOrd
 import Bound
 import Control.Monad.Error.Class
+import Data.Char
 import Data.List (lookup, partition, zip4, zipWith3)
 import Data.Maybe (fromJust)
+import qualified Data.Text as T
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -1526,6 +1528,7 @@ checkDef def = return def
 -- types are well-kinded and in core taype ANF.
 preCheckDefs :: Defs Name -> DcM (GCtx Name)
 preCheckDefs allDefs = do
+  mapM_ preCheckName allDefs
   options <- ask
   -- First we check if any pattern matchings have conflicting pattern varaibles.
   lift $
@@ -1566,6 +1569,28 @@ preCheckDefs allDefs = do
       def' <- lift $ runTcM (initEnv options gctx mempty) $ preCheckDef def
       gctx' <- extendGCtx1 gctx name def'
       go gctx' defs
+
+-- | Check the definition names.
+preCheckName :: NamedDef Name -> DcM ()
+preCheckName (name, def) = case def of
+  FunDef {..} -> lowerCaseWithOblivAccent loc "Function"
+  ADTDef {..} -> do
+    unless (isLower $ T.head name) $
+      err_ loc "ADT name should start with a lower case letter"
+    forM_ ctors $ \(ctor, _) ->
+      unless (isUpper $ T.head ctor) $
+        err_ loc "Constructor name should start with a upper case letter"
+  OADTDef {..} -> lowerCaseWithOblivAccent loc "OADT"
+  _ -> pass
+  where
+    lowerCaseWithOblivAccent loc what = do
+      let name' = fromMaybe name $ T.stripPrefix oblivAccent name
+      unless (isLower $ T.head name') $
+        err_ loc $
+          what
+            <+> "name should start with a lower case letter, possibly with a"
+            <+> dquotes (pretty oblivAccent)
+            <+> "prefix"
 
 -- | Pre-check a global definition signature.
 preCheckDef :: Def Name -> TcM (Def Name)

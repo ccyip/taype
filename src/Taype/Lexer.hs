@@ -96,6 +96,14 @@ pToken =
       Arrow <$ symbol "->",
       choice ((Infix <$>) . symbol <$> infixes <> oblivInfixes) <?> "infix",
       choice
+        [ TUnit <$ symbol "unit",
+          TBool <$ symbol "bool",
+          OBool <$ symbol (oblivName "bool"),
+          TInt <$ symbol "int",
+          OInt <$ symbol (oblivName "int")
+        ]
+        <?> "built-in type",
+      choice
         [ Data <$ symbol "data",
           Obliv <$ symbol "obliv",
           Fn <$ symbol "fn",
@@ -115,14 +123,6 @@ pToken =
           Tape <$ symbol "tape"
         ]
         <?> "keyword",
-      choice
-        [ TUnit <$ symbol "Unit",
-          TBool <$ symbol "Bool",
-          OBool <$ symbol (oblivName "Bool"),
-          TInt <$ symbol "Int",
-          OInt <$ symbol (oblivName "Int")
-        ]
-        <?> "built-in type",
       choice
         [ BLit True <$ symbol "True",
           BLit False <$ symbol "False",
@@ -180,11 +180,11 @@ reserved =
     oblivName "inl",
     oblivName "inr",
     "tape",
-    "Unit",
-    "Bool",
-    oblivName "Bool",
-    "Int",
-    oblivName "Int",
+    "unit",
+    "bool",
+    oblivName "bool",
+    "int",
+    oblivName "int",
     "True",
     "False"
   ]

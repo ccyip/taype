@@ -1,3 +1,4 @@
+- `AppKind` can be deprecated?
 - Unsafe retraction for decryption
   + need to handle retraction and leaky if
   + add a flag to the translation environment

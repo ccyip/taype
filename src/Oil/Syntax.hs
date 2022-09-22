@@ -405,7 +405,7 @@ instance Cute (Expr Text) where
 -- | Pretty printer for a type
 instance Cute (Ty Text) where
   cute TV {..} = cute name
-  cute TInt = "Int"
+  cute TInt = "int"
   cute OArray = cute aName
   cute e@Arrow {..} = do
     domDoc <- cuteSub e dom

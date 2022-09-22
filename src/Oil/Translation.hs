@@ -189,7 +189,7 @@ toOilExpr l T.Ite {..} = do
         -- Recall that the first branch of Boolean case analysis corresponds to
         -- @False@ while the second one to @True@, unlike the if-then-else
         -- construct.
-        GV (lCaseName "Bool")
+        GV (lCaseName "bool")
           @@ [ lIfInst $ fromJust mTy,
                cond',
                right',
@@ -395,7 +395,7 @@ toOilTy LeakyL = toLeakyTy . toOilTy_
 --
 -- Two equivalent taype type should be translated to the same OIL type.
 toOilTy_ :: T.Ty a -> Ty b
-toOilTy_ T.TBool = tGV "Bool"
+toOilTy_ T.TBool = tGV "bool"
 toOilTy_ T.TInt = TInt
 toOilTy_ T.GV {..} = tGV ref
 toOilTy_ T.Prod {..} = "*" @@ [toOilTy_ left, toOilTy_ right]
@@ -418,7 +418,7 @@ toOilTy_ _ = OArray
 -- The actual definitions of the ADT leaky counterparts are generated when
 -- translating ADT definitions.
 toLeakyTy :: Ty a -> Ty a
-toLeakyTy TInt = tGV $ leakyName "Int"
+toLeakyTy TInt = tGV $ leakyName "int"
 toLeakyTy OArray = tGV $ leakyName aName
 toLeakyTy Arrow {..} = leakyName "->" @@ [dom, toLeakyTy cod]
 toLeakyTy TApp {..} = TApp {tctor = leakyName tctor, args = toLeakyTy <$> args}
@@ -439,7 +439,7 @@ toLeakyTy _ = oops "Local type variables appear"
 -- The given OIL type is nonleaky. In addition, it is a concrete type, i.e. not
 -- a type variable.
 retInst_ :: Ty a -> Expr b
-retInst_ TInt = GV (retName "Int")
+retInst_ TInt = GV (retName "int")
 retInst_ OArray = GV (retName aName)
 retInst_ Arrow {..} = GV (retName "->") @@ [retInst_ cod]
 retInst_ TApp {..} = GV (retName tctor) @@ retInst_ <$> args
@@ -459,7 +459,7 @@ retInst = retInst_ . toOilTy_
 --
 -- The given OIL type is a concrete type, i.e. not a type variable.
 lIfInst_ :: Ty a -> Expr b
-lIfInst_ TInt = GV (lIfName "Int")
+lIfInst_ TInt = GV (lIfName "int")
 lIfInst_ OArray = GV (lIfName aName)
 lIfInst_ Arrow {} = GV (lIfName "->")
 lIfInst_ TApp {..} = GV (lIfName tctor)
@@ -630,45 +630,45 @@ prelude =
     -- It is defined similarly to that in Haskell: the first constructor is
     -- @False@ and the second one is @True@.
     adtDef_
-      "Bool"
+      "bool"
       []
       [("False", []), ("True", [])],
     adtDef_
-      (l_ "Bool")
+      (l_ "bool")
       []
       [ (l_ "False", []),
         (l_ "True", []),
-        (lif_ "Bool", [OArray, "$self", "$self"])
+        (lif_ "bool", [OArray, "$self", "$self"])
       ],
     funDef_
-      (ret_ "Bool")
+      (ret_ "bool")
       []
-      (ar_ ["Bool", l_ "Bool"])
+      (ar_ ["bool", l_ "bool"])
       $ lam_
         "b"
         (ite_ "b" (l_ "True") (l_ "False")),
     funDef_
-      (s_ "Bool")
+      (s_ "bool")
       []
-      (ar_ ["Bool", OArray])
+      (ar_ ["bool", OArray])
       $ lam_
         "b"
-        (ite_ "b" (s_ "Int" @@ [ILit 1]) (s_ "Int" @@ [ILit 0])),
+        (ite_ "b" (s_ "int" @@ [ILit 1]) (s_ "int" @@ [ILit 0])),
     funDef_
-      (r_ "Bool")
+      (r_ "bool")
       []
-      (ar_ [OArray, l_ "Bool"])
+      (ar_ [OArray, l_ "bool"])
       $ lam_
         (o_ "b")
-        (lif_ "Bool" @@ [o_ "b", l_ "True", l_ "False"]),
+        (lif_ "bool" @@ [o_ "b", l_ "True", l_ "False"]),
     -- The first branch of Boolean case analysis corresponds to @False@ while
     -- the second one to @True@.
     funDef_
-      (lcase_ "Bool")
+      (lcase_ "bool")
       [l_ "r"]
       ( ar_
           [ ar_ [OArray, l_ "r", l_ "r", l_ "r"],
-            l_ "Bool",
+            l_ "bool",
             l_ "r",
             l_ "r",
             l_ "r"
@@ -680,7 +680,7 @@ prelude =
             (l_ "b")
             [ (l_ "False", [], l_ "ff"),
               (l_ "True", [], l_ "ft"),
-              ( lif_ "Bool",
+              ( lif_ "bool",
                 [o_ "b", l_ "b1", l_ "b2"],
                 lif_ "r"
                   @@ [ o_ "b",
@@ -691,16 +691,16 @@ prelude =
             ]
         ),
     funDef_
-      (l_ $ s_ "Bool")
+      (l_ $ s_ "bool")
       []
-      (ar_ [l_ "Bool", l_ aName])
+      (ar_ [l_ "bool", l_ aName])
       $ lam_
         (l_ "b")
         ( case_
             (l_ "b")
-            [ (l_ "False", [], ret_ aName @@ [s_ "Bool" @@ ["False"]]),
-              (l_ "True", [], ret_ aName @@ [s_ "Bool" @@ ["True"]]),
-              ( lif_ "Bool",
+            [ (l_ "False", [], ret_ aName @@ [s_ "bool" @@ ["False"]]),
+              (l_ "True", [], ret_ aName @@ [s_ "bool" @@ ["True"]]),
+              ( lif_ "bool",
                 [o_ "b", l_ "b1", l_ "b2"],
                 lif_ aName
                   @@ [o_ "b", "$self" @@ [l_ "b1"], "$self" @@ [l_ "b2"]]
@@ -709,33 +709,33 @@ prelude =
         ),
     -- Integer
     adtDef_
-      (l_ "Int")
+      (l_ "int")
       []
-      [ (r_ "Int", [OArray]),
-        (ret_ "Int", [TInt]),
-        (lif_ "Int", [OArray, "$self", "$self"])
+      [ (r_ "int", [OArray]),
+        (ret_ "int", [TInt]),
+        (lif_ "int", [OArray, "$self", "$self"])
       ],
     funDef_
-      (l_ $ s_ "Int")
+      (l_ $ s_ "int")
       []
-      (ar_ [l_ "Int", l_ aName])
+      (ar_ [l_ "int", l_ aName])
       $ lam_
         (l_ "n")
         ( case_
             (l_ "n")
-            [ (r_ "Int", [o_ "n"], ret_ aName @@ [o_ "n"]),
-              (ret_ "Int", ["n"], ret_ aName @@ [s_ "Int" @@ ["n"]]),
-              ( lif_ "Int",
+            [ (r_ "int", [o_ "n"], ret_ aName @@ [o_ "n"]),
+              (ret_ "int", ["n"], ret_ aName @@ [s_ "int" @@ ["n"]]),
+              ( lif_ "int",
                 [o_ "b", l_ "n1", l_ "n2"],
                 lif_ aName
                   @@ [o_ "b", "$self" @@ [l_ "n1"], "$self" @@ [l_ "n2"]]
               )
             ]
         ),
-    lBopDef "+" "Int",
-    lBopDef "-" "Int",
-    lBopDef "<=" "Bool",
-    lBopDef "==" "Bool",
+    lBopDef "+" "int",
+    lBopDef "-" "int",
+    lBopDef "<=" "bool",
+    lBopDef "==" "bool",
     -- Helper functions
     funDef_
       "$max"
@@ -878,7 +878,7 @@ prelude =
       $ lams_
         ["m", "n", o_ "a"]
         ( V aConcat
-            @@ [ s_ "Bool" @@ ["True"],
+            @@ [ s_ "bool" @@ ["True"],
                  ite_
                    ("<=" @@ ["n", "m"])
                    (o_ "a")
@@ -894,7 +894,7 @@ prelude =
       $ lams_
         ["m", "n", o_ "a"]
         ( V aConcat
-            @@ [ s_ "Bool" @@ ["False"],
+            @@ [ s_ "bool" @@ ["False"],
                  ite_
                    ("<=" @@ ["m", "n"])
                    (o_ "a")
@@ -911,26 +911,26 @@ lBopDef name cod =
   funDef_
     (l_ name)
     []
-    (ar_ [l_ "Int", l_ "Int", l_ cod])
+    (ar_ [l_ "int", l_ "int", l_ cod])
     $ lams_
       [l_ "m", l_ "n"]
       ( case_
           (l_ "m")
-          [ ( r_ "Int",
+          [ ( r_ "int",
               [o_ "m"],
               case_
                 (l_ "n")
-                [ ( r_ "Int",
+                [ ( r_ "int",
                     [o_ "n"],
                     r_ cod
                       @@ [o_ name @@ [o_ "m", o_ "n"]]
                   ),
-                  ( ret_ "Int",
+                  ( ret_ "int",
                     ["n"],
                     r_ cod
-                      @@ [o_ name @@ [o_ "m", s_ "Int" @@ ["n"]]]
+                      @@ [o_ name @@ [o_ "m", s_ "int" @@ ["n"]]]
                   ),
-                  ( lif_ "Int",
+                  ( lif_ "int",
                     [o_ "b", l_ "n1", l_ "n2"],
                     lif_ cod
                       @@ [ o_ "b",
@@ -940,21 +940,21 @@ lBopDef name cod =
                   )
                 ]
             ),
-            ( ret_ "Int",
+            ( ret_ "int",
               ["m"],
               case_
                 (l_ "n")
-                [ ( r_ "Int",
+                [ ( r_ "int",
                     [o_ "n"],
                     r_ cod
-                      @@ [o_ name @@ [s_ "Int" @@ ["m"], o_ "n"]]
+                      @@ [o_ name @@ [s_ "int" @@ ["m"], o_ "n"]]
                   ),
-                  ( ret_ "Int",
+                  ( ret_ "int",
                     ["n"],
                     ret_ cod
                       @@ [V name @@ ["m", "n"]]
                   ),
-                  ( lif_ "Int",
+                  ( lif_ "int",
                     [o_ "b", l_ "n1", l_ "n2"],
                     lif_ cod
                       @@ [ o_ "b",
@@ -964,7 +964,7 @@ lBopDef name cod =
                   )
                 ]
             ),
-            ( lif_ "Int",
+            ( lif_ "int",
               [o_ "b", l_ "m1", l_ "m2"],
               lif_ cod
                 @@ [ o_ "b",

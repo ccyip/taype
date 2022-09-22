@@ -528,12 +528,12 @@ renderToken = \case
   L.LParen -> squotes lparen
   L.LOParen -> dquotes $ pretty oblivAccent <> lparen
   L.RParen -> squotes rparen
-  L.TUnit -> "Unit"
-  L.TBool -> "Bool"
-  L.OBool -> pretty $ oblivName "Bool"
+  L.TUnit -> "unit"
+  L.TBool -> "bool"
+  L.OBool -> pretty $ oblivName "bool"
   L.BLit _ -> "boolean literal"
-  L.TInt -> "Int"
-  L.OInt -> pretty $ oblivName "Int"
+  L.TInt -> "int"
+  L.OInt -> pretty $ oblivName "int"
   L.ILit _ -> "integer literal"
   L.Data -> "data"
   L.Obliv -> "obliv"
