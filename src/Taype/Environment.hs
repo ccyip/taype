@@ -199,10 +199,10 @@ extendCtx1 ::
 extendCtx1 x t l mb = extendCtx [(x, t, l, mb)]
 
 withLabel :: MonadReader Env m => Label -> m a -> m a
-withLabel l = local (\Env {..} -> Env {label = l, ..})
+withLabel l = local $ \Env {..} -> Env {label = l, ..}
 
 withLoc :: MonadReader Env m => Int -> m a -> m a
-withLoc l = local (\Env {..} -> Env {loc = l, ..})
+withLoc l = local $ \Env {..} -> Env {loc = l, ..}
 
 mayWithLoc :: MonadReader Env m => Maybe Int -> m a -> m a
 mayWithLoc (Just l) = withLoc l
