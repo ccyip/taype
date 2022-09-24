@@ -227,6 +227,16 @@ instance Monad Ty where
 instance IsString a => IsString (Ty a) where
   fromString = return . fromString
 
+instance PlateM (Ty Name) where
+  plateM f Arrow {..} = do
+    dom' <- f dom
+    cod' <- f cod
+    return Arrow {dom = dom', cod = cod'}
+  plateM f TApp {..} = do
+    args' <- mapM f args
+    return TApp {args = args', ..}
+  plateM _ t = return t
+
 instance BiplateM (Def b Name) (Expr Name) where
   biplateM f FunDef {..} = do
     expr' <- f expr
