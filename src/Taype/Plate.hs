@@ -16,9 +16,11 @@ module Taype.Plate
     BiplateM (..),
     transformM,
     transformBiM,
+    universeM,
   )
 where
 
+import Control.Monad.Writer
 import Taype.Name
 
 class PlateM on where
@@ -38,3 +40,8 @@ transformBiM ::
   from ->
   m from
 transformBiM f = biplateM (transformM f)
+
+universeM :: (MonadFresh m, PlateM on) => on -> m [on]
+universeM = (snd <$>) . runWriterT . transformM go
+  where
+    go x = writer (x, [x])
