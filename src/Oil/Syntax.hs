@@ -470,9 +470,8 @@ cuteLam isRoot e = do
   where
     go Lam {..} = do
       (x, body) <- unbind1NameOrBinder binder bnd
-      binderDoc <- cute x
       (binderDocs, bodyDoc) <- go body
-      return (binderDoc : binderDocs, bodyDoc)
+      return (pretty x : binderDocs, bodyDoc)
     go expr = ([],) <$> cute expr
 
 instance HasPLevel (Expr a) where
