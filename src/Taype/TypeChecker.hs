@@ -1410,8 +1410,9 @@ joinAlts ::
 joinAlts alts ctors =
   let (result, missing, rest) = foldr go ([], [], toList alts) ctors
       (dups, unknowns) =
-        partition (isJust . (`lookup` toList ctors)) $
-          rest <&> \CaseAlt {..} -> ctor
+        partition
+          (isJust . (`lookup` toList ctors))
+          [ctor | CaseAlt {..} <- rest]
    in case nonEmpty result of
         Just r | null missing && null rest -> do
           forM_ r $ \(ctor, paraTypes, binders, _) ->
