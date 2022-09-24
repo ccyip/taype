@@ -19,7 +19,16 @@
 -- lookup table. The generated names contain characters that are illegal in the
 -- taype identifiers to avoid name conflicts.
 module Oil.Translation
-  ( prelude,
+  ( -- * Naming
+    retPrefix,
+    lIfPrefix,
+    lCasePrefix,
+    retName,
+    lIfName,
+    lCaseName,
+
+    -- * Translation
+    prelude,
     toOilDefs,
   )
 where
@@ -40,14 +49,23 @@ import qualified Taype.Syntax as T
 ----------------------------------------------------------------
 -- Naming
 
+retPrefix :: Text
+retPrefix = leakyName "ret#"
+
+lIfPrefix :: Text
+lIfPrefix = leakyName "if#"
+
+lCasePrefix :: Text
+lCasePrefix = leakyName "case#"
+
 retName :: Text -> Text
-retName x = leakyName "ret#" <> x
+retName = (retPrefix <>)
 
 lIfName :: Text -> Text
-lIfName x = leakyName "if#" <> x
+lIfName = (lIfPrefix <>)
 
 lCaseName :: Text -> Text
-lCaseName x = leakyName "case#" <> x
+lCaseName = (lCasePrefix <>)
 
 ----------------------------------------------------------------
 -- Environment for translation
@@ -153,7 +171,7 @@ toOilExpr l T.Lam {..} = do
   let e = lam' x binder body'
   return $ case l of
     SafeL -> e
-    LeakyL -> GV (leakyName "lam") @@ [e]
+    LeakyL -> GV (leakyName "Lam") @@ [e]
 toOilExpr l T.App {fn = T.GV {..}, ..}
   | appKind == Just BuiltinApp || appKind == Just CtorApp =
       return $ mayLeakyGV l ref @@ toOilVar <$> args
@@ -207,7 +225,7 @@ toOilExpr l T.Case {..} = do
           @@ ( [ lIfInst $ fromJust mTy,
                  cond'
                ]
-                 <> (alts' <&> \(_, xs, body) -> lams' xs body)
+                 <> [lams' xs body | (_, xs, body) <- alts']
              )
   where
     go condLabel CaseAlt {..} paraTypes = do
@@ -809,7 +827,7 @@ prelude =
     adtDef_
       (l_ "->")
       ["a", l_ "b"]
-      [ (l_ "lam", [ar_ ["a", l_ "b"]]),
+      [ (l_ "Lam", [ar_ ["a", l_ "b"]]),
         ( lif_ "->",
           [ OArray,
             l_ "->" @@ ["a", l_ "b"],
@@ -823,7 +841,7 @@ prelude =
       (ar_ [ar_ ["b", l_ "b"], ar_ ["a", "b"], l_ "->" @@ ["a", l_ "b"]])
       $ lams_
         [ret_ "b", "f"]
-        (l_ "lam" @@ [lam_ "x" $ ret_ "b" @@ ["f" @@ ["x"]]]),
+        (l_ "Lam" @@ [lam_ "x" $ ret_ "b" @@ ["f" @@ ["x"]]]),
     funDef_
       (l_ "ap")
       ["a", l_ "b"]
@@ -838,7 +856,7 @@ prelude =
         [lif_ "b", l_ "f", "x"]
         ( case_
             (l_ "f")
-            [ (l_ "lam", ["f"], "f" @@ ["x"]),
+            [ (l_ "Lam", ["f"], "f" @@ ["x"]),
               ( lif_ "->",
                 [o_ "b", l_ "f1", l_ "f2"],
                 lif_ "b"
