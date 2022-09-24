@@ -708,7 +708,7 @@ instance Cute (Expr Text) where
     (x, body) <- unbind1NameOrBinder binder bnd
     binderDoc <- cuteTypeBinder e x label ty binder
     bodyDoc <- cute body
-    return $ binderDoc <+> "->" <> line <> bodyDoc
+    return $ group binderDoc <+> "->" <> line <> bodyDoc
   cute e@Lam {} = cuteLam False e
   cute e@App {fn = GV {..}, args = [left, right]}
     | isInfix ref = cuteInfix e ref left right
