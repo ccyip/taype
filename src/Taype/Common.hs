@@ -28,7 +28,9 @@ module Taype.Common
     oblivName,
     leakyAccent,
     leakyName,
+    sectionPrefix,
     sectionName,
+    retractionPrefix,
     retractionName,
     infixes,
     oblivInfixes,
@@ -58,6 +60,7 @@ data Options = Options
     optNamePrefix :: Text,
     optPrintCore :: Bool,
     optPrintPrelude :: Bool,
+    optPrintOil :: Bool,
     optPrintLabels :: Bool,
     optPrintTokens :: Bool,
     optPrintSource :: Bool,
@@ -145,12 +148,18 @@ leakyName :: Text -> Text
 leakyName = (leakyAccent <>)
 
 -- | Section name
+sectionPrefix :: Text
+sectionPrefix = "s_"
+
 sectionName :: Text -> Text
-sectionName = ("s_" <>)
+sectionName = (sectionPrefix <>)
 
 -- | Retraction name
+retractionPrefix :: Text
+retractionPrefix = "r_"
+
 retractionName :: Text -> Text
-retractionName = ("r_" <>)
+retractionName = (retractionPrefix <>)
 
 -- | The infix operators
 infixes :: [Text]

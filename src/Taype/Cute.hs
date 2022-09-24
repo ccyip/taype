@@ -1,5 +1,6 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -39,8 +40,10 @@ module Taype.Cute
     unbind1NameOrBinder,
     unbind2NamesOrBinders,
     unbindManyNamesOrBinders,
+    withNamePrefix,
 
     -- * Common routines for pretty printing expressions
+    cuteLamDoc_,
     cuteLamDoc,
     cuteLetDoc,
     cuteAppDoc,
@@ -175,14 +178,18 @@ unbindManyNamesOrBinders ::
   Monad f => [Maybe Binder] -> Scope Int f Text -> CuteM ([Text], f Text)
 unbindManyNamesOrBinders = unbindBy . mapM freshNameOrBinder
 
+withNamePrefix :: MonadReader Options m => Text -> m a -> m a
+withNamePrefix prefix =
+  local $ \Options {..} -> Options {optNamePrefix = prefix, ..}
+
 ----------------------------------------------------------------
 --  Common routines for pretty printing expressions
 
-cuteLamDoc :: Bool -> [Doc] -> Doc -> Doc
-cuteLamDoc True [] bodyDoc = sep1 bodyDoc
-cuteLamDoc False [] _ = oops "Lambda has no binder"
+cuteLamDoc_ :: Doc -> Bool -> [Doc] -> Doc -> Doc
+cuteLamDoc_ _ True [] bodyDoc = sep1 bodyDoc
+cuteLamDoc_ _ False [] _ = oops "Lambda has no binder"
 -- Quite hacky here
-cuteLamDoc isRoot binderDocs bodyDoc =
+cuteLamDoc_ kw isRoot binderDocs bodyDoc =
   if isRoot
     then
       group
@@ -197,7 +204,10 @@ cuteLamDoc isRoot binderDocs bodyDoc =
           )
     else hang $ group mkBindersDoc <> sep1 bodyDoc
   where
-    mkBindersDoc = backslash <> align (vsep binderDocs) <+> "->"
+    mkBindersDoc = kw <> align (vsep binderDocs) <+> "->"
+
+cuteLamDoc :: Bool -> [Doc] -> Doc -> Doc
+cuteLamDoc = cuteLamDoc_ backslash
 
 cuteLetDoc :: [(Doc, Doc)] -> Doc -> Doc
 cuteLetDoc [] bodyDoc = group $ align bodyDoc
