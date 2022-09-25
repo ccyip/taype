@@ -194,27 +194,20 @@ toOCamlTy TApp {..} = do
 --
 -- This function returns the translated definition and extra definitions
 -- associated with it.
-toOCamlDef :: OCamlDefKind -> NamedDef Text Text -> CuteM (Maybe (Doc, [Doc]))
-toOCamlDef _ (name, FunDef {})
-  | isJust (isBuiltinExprName name) =
-      return Nothing
-toOCamlDef _ (name, ADTDef {})
-  | isJust (isBuiltinTyName name) =
-      return Nothing
+toOCamlDef :: OCamlDefKind -> NamedDef Text Text -> CuteM (Doc, [Doc])
 toOCamlDef k (name, FunDef {..}) = do
   xs <- withTyNamePrefix $ toValidTyVar <<$>> mapM freshNameOrBinder binders
   tyDoc <- toOCamlTy $ instantiateName xs tyBnd
   doc <- toOCamlLam True expr
-  return $
-    Just
-      ( hang $
-          kw
-            <+> pretty (toValidName name)
-              <> sep1 (colon <+> align (group tyDoc))
-            <+> equals
-              <> doc,
-        []
-      )
+  return
+    ( hang $
+        kw
+          <+> pretty (toValidName name)
+            <> sep1 (colon <+> align (group tyDoc))
+          <+> equals
+            <> doc,
+      []
+    )
   where
     kw = case k of
       NonRecDef -> "let"
@@ -224,19 +217,18 @@ toOCamlDef k (name, ADTDef {..}) = do
   xs <- withTyNamePrefix $ toValidTyVar <<$>> mapM freshNameOrBinder binders
   argsDoc <- toOCamlTyArgs $ TV <$> xs
   ctorDocs <- mapM (toOCamlCtor xs) ctors
-  return $
-    Just
-      ( hang $
-          kw
-            <+> argsDoc
-              <> pretty (toValidTyName name)
-              <> sep1 (equals <+> sepWith (line <> pipe <> space) ctorDocs),
-        -- Because OCaml doesn't treat constructors as functions, we define a
-        -- wrapper function for return or leaky if constructor.
-        ctorWrapper (leakyAccent <> retractionPrefix) 1
-          <> ctorWrapper retPrefix 1
-          <> ctorWrapper lIfPrefix 3
-      )
+  return
+    ( hang $
+        kw
+          <+> argsDoc
+            <> pretty (toValidTyName name)
+            <> sep1 (equals <+> sepWith (line <> pipe <> space) ctorDocs),
+      -- Because OCaml doesn't treat constructors as functions, we define a
+      -- wrapper function for return or leaky if constructor.
+      ctorWrapper (leakyAccent <> retractionPrefix) 1
+        <> ctorWrapper retPrefix 1
+        <> ctorWrapper lIfPrefix 3
+    )
   where
     kw = case k of
       AndDef -> "and"
@@ -276,27 +268,27 @@ toOCamlDef k (name, ADTDef {..}) = do
 
 -- | Translate a set of (mutually) recursively defined definitions.
 toOCamlSCCDef :: SCC (NamedDef Text Text) -> CuteM [Doc]
-toOCamlSCCDef (AcyclicSCC def) =
-  toOCamlDef NonRecDef def <&> \case
-    Just (doc, docs) -> doc : docs
-    _ -> []
+toOCamlSCCDef (AcyclicSCC def) = do
+  (doc, docs) <- toOCamlDef NonRecDef def
+  return $ doc : docs
 toOCamlSCCDef (CyclicSCC []) = return []
 toOCamlSCCDef (CyclicSCC (def : defs)) = do
-  toOCamlDef RecDef def >>= \case
-    Just (fstDoc, fstDocs) -> do
-      res <- mapM (toOCamlDef AndDef) defs
-      let (restDocs, restDocss) = unzip $ catMaybes res
-      return $ fstDoc : restDocs <> fstDocs <> concat restDocss
-    _ -> return []
+  (fstDoc, fstDocs) <- toOCamlDef RecDef def
+  res <- mapM (toOCamlDef AndDef) defs
+  let (restDocs, restDocss) = unzip res
+  return $ fstDoc : restDocs <> fstDocs <> concat restDocss
 
 -- | Translate all given OIL definitions into OCaml.
 toOCamlDefs :: (forall b a. Defs b a) -> CuteM Doc
 toOCamlDefs defs = do
-  let edges = mkDepGraph defs
+  let defs' = [ def | def <- defs, isNothing $ isBuiltin def ]
+      edges = mkDepGraph defs'
       sccs = stronglyConnComp edges
   foldMapM ((foldMap end <$>) . toOCamlSCCDef) $ sortSCCs edges sccs
   where
     end doc = doc <> hardline <> hardline
+    isBuiltin (name, FunDef {}) = isBuiltinExprName name
+    isBuiltin (name, ADTDef {}) = isBuiltinTyName name
 
 -- | Translate all given OIL definitions and OIL prelude into OCaml.
 toOCaml :: Options -> (forall b a. Defs b a) -> Doc
