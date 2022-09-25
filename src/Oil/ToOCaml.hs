@@ -187,6 +187,37 @@ toOCamlTy TApp {..} = do
 ----------------------------------------------------------------
 -- Translate definitions
 
+-- | Translate all given OIL definitions and OIL prelude into OCaml.
+toOCaml :: Options -> (forall b a. Defs b a) -> Doc
+toOCaml options defs =
+  runCuteM options $ withExprNamePrefix $ toOCamlDefs $ prelude <> defs
+
+data OCamlDefKind = NonRecDef | RecDef | AndDef
+
+-- | Translate all given OIL definitions into OCaml.
+toOCamlDefs :: (forall b a. Defs b a) -> CuteM Doc
+toOCamlDefs defs = do
+  let defs' = [ def | def <- defs, isNothing $ isBuiltin def ]
+      edges = mkDepGraph defs'
+      sccs = stronglyConnComp edges
+  foldMapM ((foldMap end <$>) . toOCamlSCCDef) $ sortSCCs edges sccs
+  where
+    end doc = doc <> hardline <> hardline
+    isBuiltin (name, FunDef {}) = isBuiltinExprName name
+    isBuiltin (name, ADTDef {}) = isBuiltinTyName name
+
+-- | Translate a set of (mutually) recursively defined definitions.
+toOCamlSCCDef :: SCC (NamedDef Text Text) -> CuteM [Doc]
+toOCamlSCCDef (AcyclicSCC def) = do
+  (doc, docs) <- toOCamlDef NonRecDef def
+  return $ doc : docs
+toOCamlSCCDef (CyclicSCC []) = return []
+toOCamlSCCDef (CyclicSCC (def : defs)) = do
+  (fstDoc, fstDocs) <- toOCamlDef RecDef def
+  res <- mapM (toOCamlDef AndDef) defs
+  let (restDocs, restDocss) = unzip res
+  return $ fstDoc : restDocs <> fstDocs <> concat restDocss
+
 -- | Translate an OIL definition to OCaml definition.
 --
 -- The first argument indicates whether the definition is (mutually) recursively
@@ -265,37 +296,6 @@ toOCamlDef k (name, ADTDef {..}) = do
             | (ctor, _) <- ctors,
               T.isPrefixOf prefix ctor
           ]
-
--- | Translate a set of (mutually) recursively defined definitions.
-toOCamlSCCDef :: SCC (NamedDef Text Text) -> CuteM [Doc]
-toOCamlSCCDef (AcyclicSCC def) = do
-  (doc, docs) <- toOCamlDef NonRecDef def
-  return $ doc : docs
-toOCamlSCCDef (CyclicSCC []) = return []
-toOCamlSCCDef (CyclicSCC (def : defs)) = do
-  (fstDoc, fstDocs) <- toOCamlDef RecDef def
-  res <- mapM (toOCamlDef AndDef) defs
-  let (restDocs, restDocss) = unzip res
-  return $ fstDoc : restDocs <> fstDocs <> concat restDocss
-
--- | Translate all given OIL definitions into OCaml.
-toOCamlDefs :: (forall b a. Defs b a) -> CuteM Doc
-toOCamlDefs defs = do
-  let defs' = [ def | def <- defs, isNothing $ isBuiltin def ]
-      edges = mkDepGraph defs'
-      sccs = stronglyConnComp edges
-  foldMapM ((foldMap end <$>) . toOCamlSCCDef) $ sortSCCs edges sccs
-  where
-    end doc = doc <> hardline <> hardline
-    isBuiltin (name, FunDef {}) = isBuiltinExprName name
-    isBuiltin (name, ADTDef {}) = isBuiltinTyName name
-
--- | Translate all given OIL definitions and OIL prelude into OCaml.
-toOCaml :: Options -> (forall b a. Defs b a) -> Doc
-toOCaml options defs =
-  runCuteM options $ withExprNamePrefix $ toOCamlDefs $ prelude <> defs
-
-data OCamlDefKind = NonRecDef | RecDef | AndDef
 
 ----------------------------------------------------------------
 -- Naming related functions
