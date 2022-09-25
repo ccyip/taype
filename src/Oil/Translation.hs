@@ -82,7 +82,9 @@ data Env = Env
   { -- Taype global context
     gctx :: GCtx Name,
     -- Taype typing context
-    tctx :: TCtx Name
+    tctx :: TCtx Name,
+    -- The current label
+    label :: Label
   }
 
 -- | The translation monad
@@ -150,6 +152,12 @@ extendCtx1 ::
   MonadReader Env m => Name -> T.Ty Name -> Label -> m a -> m a
 extendCtx1 x t l = extendCtx [(x, t, l)]
 
+withLabel :: MonadReader Env m => Label -> m a -> m a
+withLabel l = local $ \Env {..} -> Env {label = l, ..}
+
+getLabel :: MonadReader Env m => m Label
+getLabel = asks label
+
 ----------------------------------------------------------------
 -- Translating expressions and types
 
@@ -164,30 +172,33 @@ extendCtx1 x t l = extendCtx [(x, t, l)]
 --
 -- The resulting OIL expression should also be behaviorally equivalent to the
 -- taype expression.
-toOilExpr :: Label -> T.Expr Name -> TslM (Expr Name)
-toOilExpr _ T.V {..} = return V {..}
-toOilExpr _ T.GV {..} = return GV {..}
+toOilExpr :: T.Expr Name -> TslM (Expr Name)
+toOilExpr T.V {..} = return V {..}
+toOilExpr T.GV {..} = return GV {..}
 -- Unit value is an empty oblivious array.
-toOilExpr _ T.VUnit = return $ GV aNew @@ [ILit 0]
-toOilExpr _ T.BLit {..} = return $ if bLit then GV "True" else GV "False"
-toOilExpr _ T.ILit {..} = return ILit {..}
-toOilExpr l T.Lam {..} = do
+toOilExpr T.VUnit = return $ GV aNew @@ [ILit 0]
+toOilExpr T.BLit {..} = return $ if bLit then GV "True" else GV "False"
+toOilExpr T.ILit {..} = return ILit {..}
+toOilExpr T.Lam {..} = do
   let binderLabel = fromJust label
       binderTy = fromJust mTy
   (x, body) <- unbind1 bnd
-  body' <- extendCtx1 x binderTy binderLabel $ toOilExpr l body
+  body' <- extendCtx1 x binderTy binderLabel $ toOilExpr body
+  l <- getLabel
   let e = lam' x binder body'
   return $ case l of
     SafeL -> e
     LeakyL -> GV (leakyName "Lam") @@ [e]
-toOilExpr l T.App {fn = T.GV {..}, ..}
-  | appKind == Just BuiltinApp || appKind == Just CtorApp =
-      return $ mayLeakyGV l ref @@ toOilVar <$> args
-toOilExpr SafeL T.App {appKind = Just FunApp, ..} =
-  return $ toOilVar fn @@ toOilVar <$> args
-toOilExpr LeakyL T.App {appKind = Just FunApp, ..} = do
-  (ty, _) <- lookupTy fn
-  go ty args $ toOilVar fn
+toOilExpr T.App {fn = T.GV {..}, ..}
+  | appKind == Just BuiltinApp || appKind == Just CtorApp = do
+      ref' <- toMayLeakyGV ref
+      return $ ref' @@ toOilVar <$> args
+toOilExpr T.App {appKind = Just FunApp, ..} =
+  getLabel >>= \case
+    SafeL -> return $ toOilVar fn @@ toOilVar <$> args
+    LeakyL -> do
+      (ty, _) <- lookupTy fn
+      go ty args $ toOilVar fn
   where
     go T.Pi {..} (arg : args') fn' = do
       (_, body) <- unbind1 bnd
@@ -196,17 +207,17 @@ toOilExpr LeakyL T.App {appKind = Just FunApp, ..} = do
           @@ [lIfInst body, fn', toOilVar arg]
     go _ [] fn' = return fn'
     go _ _ _ = oops "The arguments do not match the taype function type"
-toOilExpr l T.Let {..} = do
+toOilExpr T.Let {..} = do
   let rhsLabel = fromJust label
       ty = fromJust mTy
-  rhs' <- toOilExpr rhsLabel rhs
+  rhs' <- withLabel rhsLabel $ toOilExpr rhs
   (x, body) <- unbind1 bnd
-  body' <- extendCtx1 x ty rhsLabel $ toOilExpr l body
+  body' <- extendCtx1 x ty rhsLabel $ toOilExpr body
   return $ let' x binder rhs' body'
-toOilExpr l T.Ite {..} = do
+toOilExpr T.Ite {..} = do
   (_, condLabel) <- lookupTy cond
-  left' <- toOilExpr l left
-  right' <- toOilExpr l right
+  left' <- toOilExpr left
+  right' <- toOilExpr right
   let cond' = toOilVar cond
   return $
     case condLabel of
@@ -221,7 +232,7 @@ toOilExpr l T.Ite {..} = do
                right',
                left'
              ]
-toOilExpr l T.Case {..} = do
+toOilExpr T.Case {..} = do
   (adtName, paraTypess, condLabel) <- lookupADT cond
   alts' <- zipWithM (go condLabel) (toList alts) paraTypess
   let cond' = toOilVar cond
@@ -239,15 +250,16 @@ toOilExpr l T.Case {..} = do
     go condLabel CaseAlt {..} paraTypes = do
       (xs, body) <- unbindMany (length paraTypes) bnd
       let ctx = zipWith (\x t -> (x, t, condLabel)) xs paraTypes
-      body' <- extendCtx ctx $ toOilExpr l body
+      body' <- extendCtx ctx $ toOilExpr body
       return (ctor, zip xs binders, body')
-toOilExpr _ T.OIte {..} = do
+toOilExpr T.OIte {..} = do
   -- The right branch should have the same type.
   (ty, _) <- lookupTy left
   return $ lIfInst ty @@ (toOilVar <$> [cond, left, right])
-toOilExpr l T.Pair {..} =
-  return $ mayLeakyGV l "(,)" @@ (toOilVar <$> [left, right])
-toOilExpr l T.PCase {..} = do
+toOilExpr T.Pair {..} = do
+  ref <- toMayLeakyGV "(,)"
+  return $ ref @@ (toOilVar <$> [left, right])
+toOilExpr T.PCase {..} = do
   (condTy, condLabel) <- lookupTy cond
   let (leftTy, rightTy) =
         case condTy of
@@ -259,7 +271,7 @@ toOilExpr l T.PCase {..} = do
       [ (xl, leftTy, condLabel),
         (xr, rightTy, condLabel)
       ]
-      $ toOilExpr l body
+      $ toOilExpr body
   let cond' = toOilVar cond
   return $
     case condLabel of
@@ -273,9 +285,9 @@ toOilExpr l T.PCase {..} = do
                cond',
                lams' [(xl, lBinder), (xr, rBinder)] body'
              ]
-toOilExpr _ T.OPair {..} =
+toOilExpr T.OPair {..} =
   return $ GV aConcat @@ (toOilVar <$> [left, right])
-toOilExpr l T.OPCase {..} = do
+toOilExpr T.OPCase {..} = do
   (ty, _) <- lookupTy cond
   let (leftTy, rightTy) =
         case ty of
@@ -289,7 +301,7 @@ toOilExpr l T.OPCase {..} = do
       [ (xl, leftTy, SafeL),
         (xr, rightTy, SafeL)
       ]
-      $ toOilExpr l body
+      $ toOilExpr body
   let cond' = toOilVar cond
   return $
     lets'
@@ -297,7 +309,7 @@ toOilExpr l T.OPCase {..} = do
         (xr, rBinder, GV aSlice @@ [cond', leftSize, rightSize])
       ]
       body'
-toOilExpr _ T.OInj {..} = do
+toOilExpr T.OInj {..} = do
   let (leftTy, rightTy) =
         case fromJust mTy of
           T.OSum {..} -> (left, right)
@@ -308,7 +320,7 @@ toOilExpr _ T.OInj {..} = do
   return $
     GV (oblivName $ if tag then "inl" else "inr")
       @@ [leftSize, rightSize, inj']
-toOilExpr l T.OCase {..} = do
+toOilExpr T.OCase {..} = do
   (ty, _) <- lookupTy cond
   let (leftTy, rightTy) =
         case ty of
@@ -319,8 +331,8 @@ toOilExpr l T.OCase {..} = do
   tagSize <- toOilSize T.OBool
   (xl, lBody) <- unbind1 lBnd
   (xr, rBody) <- unbind1 rBnd
-  lBody' <- extendCtx1 xl leftTy SafeL $ toOilExpr l lBody
-  rBody' <- extendCtx1 xr rightTy SafeL $ toOilExpr l rBody
+  lBody' <- extendCtx1 xl leftTy SafeL $ toOilExpr lBody
+  rBody' <- extendCtx1 xr rightTy SafeL $ toOilExpr rBody
   let cond' = toOilVar cond
   return $
     lIfInst (fromJust mTy)
@@ -332,19 +344,19 @@ toOilExpr l T.OCase {..} = do
              [(xr, rBinder, GV aSlice @@ [cond', tagSize, rightSize])]
              rBody'
          ]
-toOilExpr _ T.Mux {..} = do
+toOilExpr T.Mux {..} = do
   -- The right branch should have the same type.
   (ty, _) <- lookupTy left
   size <- toOilSize ty
   return $ GV aMux @@ (size : (toOilVar <$> [cond, left, right]))
-toOilExpr _ T.Promote {..} = do
+toOilExpr T.Promote {..} = do
   (ty, _) <- lookupTy expr
   return $ retInst ty @@ [toOilVar expr]
-toOilExpr _ T.Tape {..} = do
+toOilExpr T.Tape {..} = do
   (ty, _) <- lookupTy expr
   size <- toOilSize ty
   return $ GV (leakyName "tape") @@ [size, toOilVar expr]
-toOilExpr _ _ = oops "Not a term in core taype ANF"
+toOilExpr _ = oops "Not a term in core taype ANF"
 
 -- | Translate a taype oblivious type to the OIL expression representing its
 -- size.
@@ -375,7 +387,7 @@ toOilSize T.OSum {..} = do
 toOilSize T.App {appKind = Just TypeApp, fn = T.GV {..}, ..} =
   return $ GV ref @@ toOilVar <$> args
 toOilSize T.Let {..} = do
-  rhs' <- toOilExpr SafeL rhs
+  rhs' <- withLabel SafeL $ toOilExpr rhs
   (x, body) <- unbind1 bnd
   body' <- extendCtx1 x (fromJust mTy) SafeL $ toOilSize body
   return $ let' x binder rhs' body'
@@ -504,7 +516,7 @@ toOilDefs Options {..} gctx = foldMap go
   where
     go =
       secondF (closedDef . runFreshM . biplateM simp)
-        . runTslM Env {tctx = TCtx [], ..}
+        . runTslM Env {tctx = TCtx [], label = SafeL, ..}
         . toOilDef
     simp =
       (if optNoReadableOil then return else readableExpr) <=< simpExpr
@@ -518,7 +530,7 @@ toOilDef (name, def) = case def of
   T.FunDef {..} -> do
     let l = fromJust label
         ty' = toOilTy l ty
-    expr' <- toOilExpr l expr
+    expr' <- withLabel l $ toOilExpr expr
     return $
       one
         ( name,
@@ -630,9 +642,11 @@ readableExpr = transformM go
 ----------------------------------------------------------------
 -- Helper functions
 
-mayLeakyGV :: Label -> Text -> Expr a
-mayLeakyGV SafeL x = GV x
-mayLeakyGV LeakyL x = GV $ leakyName x
+toMayLeakyGV :: Text -> TslM (Expr a)
+toMayLeakyGV x = go <$> getLabel
+  where
+    go SafeL = GV x
+    go LeakyL = GV $ leakyName x
 
 ----------------------------------------------------------------
 -- Prelude
