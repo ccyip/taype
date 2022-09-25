@@ -52,7 +52,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   when optPrintPrelude $ printOilDefs Oil.prelude
   when optPrintOil $ printOilDefs oilDefs
   let mlDoc = Oil.toOCaml options oilDefs
-  printDoc options mlDoc
+  when optPrintOCaml $ printDoc options mlDoc
   where
     printTaypeDefs defs =
       printDoc options $ cuteDefs options defs
@@ -83,17 +83,18 @@ opts = do
   optPrintCore <-
     switch $
       long "print-core"
-        <> short 'c'
         <> help "Whether to print the generated core taype programs"
   optPrintPrelude <-
     switch $
       long "print-prelude"
-        <> short 'p'
         <> help "Whether to print the OIL prelude"
   optPrintOil <-
     switch $
       long "print-oil"
-        <> short 'o'
+        <> help "Whether to print the generated OIL programs"
+  optPrintOCaml <-
+    switch $
+      long "print-ocaml"
         <> help "Whether to print the generated OIL programs"
   optNamePrefix <-
     strOption $
@@ -110,12 +111,10 @@ opts = do
   optPrintTokens <-
     switch $
       long "print-tokens"
-        <> short 't'
         <> help "Whether to print tokens (for internal debugging)"
   optPrintSource <-
     switch $
       long "print-source"
-        <> short 's'
         <> help "Whether to print the source code (for internal debugging)"
   optNoReadableOil <-
     switch $
