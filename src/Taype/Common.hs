@@ -171,11 +171,11 @@ oblivInfixes = oblivName <$> infixes
 
 -- | The leaky infix operators
 leakyInfixes :: [Text]
-leakyInfixes = leakyName <$> infixes
+leakyInfixes = leakyName "->" : (leakyName <$> infixes)
 
 -- | All infix operators
 allInfixes :: [Text]
-allInfixes = leakyName "->" : infixes <> oblivInfixes <> leakyInfixes
+allInfixes = infixes <> oblivInfixes <> leakyInfixes
 
 isInfix :: Text -> Bool
 isInfix = (`elem` allInfixes)

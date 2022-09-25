@@ -16,6 +16,7 @@ module Taype
 where
 
 import qualified Oil.Syntax as Oil (cuteDefs)
+import qualified Oil.ToOCaml as Oil (toOCaml)
 import Oil.Translation (toOilDefs)
 import qualified Oil.Translation as Oil (prelude)
 import Options.Applicative
@@ -49,7 +50,9 @@ process options@Options {optFile = file, optCode = code, ..} = do
   when optPrintCore $ printTaypeDefs defs
   let oilDefs = toOilDefs options gctx defs
   when optPrintPrelude $ printOilDefs Oil.prelude
-  printOilDefs oilDefs
+  when optPrintOil $ printOilDefs oilDefs
+  let mlDoc = Oil.toOCaml options oilDefs
+  printDoc options mlDoc
   where
     printTaypeDefs defs =
       printDoc options $ cuteDefs options defs
@@ -72,7 +75,7 @@ opts = do
     switch $
       long "internal-names"
         <> short 'i'
-        <> help "Whether to print the internal names for variables"
+        <> help "Whether to use the internal names for variables"
   optNoFlattenLets <-
     switch $
       long "no-flatten-lets"
@@ -87,13 +90,18 @@ opts = do
       long "print-prelude"
         <> short 'p'
         <> help "Whether to print the OIL prelude"
+  optPrintOil <-
+    switch $
+      long "print-oil"
+        <> short 'o'
+        <> help "Whether to print the generated OIL programs"
   optNamePrefix <-
     strOption $
       long "prefix"
         <> metavar "PREFIX"
         <> value "$"
         <> showDefault
-        <> help "Prefix to the internal names"
+        <> help "Prefix to the internal names (only affects printing)"
   optPrintLabels <-
     switch $
       long "print-labels"

@@ -488,6 +488,7 @@ instance HasPLevel (Ty a) where
     TV {} -> 0
     TInt {} -> 0
     OArray {} -> 0
+    TApp {..} | tctor `elem` leakyInfixes -> 19
     TApp {..} | isInfix tctor -> 20
     TApp {args = []} -> 0
     TApp {} -> 10

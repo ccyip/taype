@@ -62,7 +62,9 @@ module Taype.Cute
     cutePCaseDoc,
     cutePCase_,
     cutePCase,
+    cuteSubDoc,
     cuteSub,
+    cuteSubAggDoc,
     cuteSubAgg,
   )
 where
@@ -345,14 +347,23 @@ cutePCase accent cond lBinder rBinder bnd2 = do
   cutePCase_ accent cond xl xr body
 
 -- | Add parentheses to the expressions according to their precedence level.
+cuteSubDoc :: HasPLevel e => e -> e -> Doc -> Doc
+cuteSubDoc super sub doc = cuteSubIfDoc doc $ plevel super > plevel sub
+
 cuteSub :: (Cute e, HasPLevel e) => e -> e -> CuteM Doc
-cuteSub super sub = cuteSubIf sub $ plevel super > plevel sub
+cuteSub super sub = do
+  doc <- cute sub
+  return $ cuteSubDoc super sub doc
 
 -- | Add parentheses to the expressions more aggressively.
-cuteSubAgg :: (Cute e, HasPLevel e) => e -> CuteM Doc
-cuteSubAgg sub = cuteSubIf sub $ plevel sub == 0
+cuteSubAggDoc :: HasPLevel e => e -> Doc -> Doc
+cuteSubAggDoc sub doc = cuteSubIfDoc doc $ plevel sub == 0
 
-cuteSubIf :: Cute e => e -> Bool -> CuteM Doc
-cuteSubIf sub b = do
+cuteSubAgg :: (Cute e, HasPLevel e) => e -> CuteM Doc
+cuteSubAgg sub = do
   doc <- cute sub
-  return $ if b then doc else parens $ align doc
+  return $ cuteSubAggDoc sub doc
+
+cuteSubIfDoc :: Doc -> Bool -> Doc
+cuteSubIfDoc doc True = doc
+cuteSubIfDoc doc False = parens $ align doc

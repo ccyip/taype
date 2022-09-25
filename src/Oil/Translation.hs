@@ -23,9 +23,11 @@ module Oil.Translation
     retPrefix,
     lIfPrefix,
     lCasePrefix,
+    internalPrefix,
     retName,
     lIfName,
     lCaseName,
+    internalName,
 
     -- * Translation
     prelude,
@@ -58,6 +60,9 @@ lIfPrefix = leakyName "if#"
 lCasePrefix :: Text
 lCasePrefix = leakyName "case#"
 
+internalPrefix :: Text
+internalPrefix = "$"
+
 retName :: Text -> Text
 retName = (retPrefix <>)
 
@@ -66,6 +71,9 @@ lIfName = (lIfPrefix <>)
 
 lCaseName :: Text -> Text
 lCaseName = (lCasePrefix <>)
+
+internalName :: Text -> Text
+internalName = (internalPrefix <>)
 
 ----------------------------------------------------------------
 -- Environment for translation
@@ -363,7 +371,7 @@ toOilSize T.OProd {..} = do
 toOilSize T.OSum {..} = do
   lSize <- toOilSize left
   rSize <- toOilSize right
-  return $ GV "+" @@ [ILit 1, GV "$max" @@ [lSize, rSize]]
+  return $ GV "+" @@ [ILit 1, GV (internalName "max") @@ [lSize, rSize]]
 toOilSize T.App {appKind = Just TypeApp, fn = T.GV {..}, ..} =
   return $ GV ref @@ toOilVar <$> args
 toOilSize T.Let {..} = do
@@ -756,7 +764,7 @@ prelude =
     lBopDef "==" "bool",
     -- Helper functions
     funDef_
-      "$max"
+      (i_ "max")
       []
       (ar_ [TInt, TInt, TInt])
       $ lams_
@@ -1007,6 +1015,9 @@ s_ = fromString . toString . sectionName
 
 r_ :: IsString a => Text -> a
 r_ = fromString . toString . leakyName . retractionName
+
+i_ :: IsString a => Text -> a
+i_ = fromString . toString . internalName
 
 lif_ :: IsString a => Text -> a
 lif_ = fromString . toString . lIfName
