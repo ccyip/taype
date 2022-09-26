@@ -77,6 +77,7 @@ library
                      , mtl
                      , lattices
                      , containers
+                     , filepath
 
 executable taype
   import:              common-options

@@ -52,6 +52,7 @@ import Data.List (lookup)
 import qualified Data.Text as T
 import Oil.Syntax
 import Oil.Translation
+import Prettyprinter.Util (reflow)
 import Taype.Common
 import Taype.Cute
 import Taype.Name
@@ -187,17 +188,21 @@ toOCamlTy TApp {..} = do
 ----------------------------------------------------------------
 -- Translate definitions
 
--- | Translate all given OIL definitions into OCaml.
-toOCaml :: Options -> (forall b a. Defs b a) -> Doc
-toOCaml options defs =
-  runCuteM options $ withExprNamePrefix $ toOCamlDefs defs
+-- | Translate definitions into OCaml and open modules, with comments.
+toOCaml :: Options -> Text -> [Text] -> (forall b a. Defs b a) -> Doc
+toOCaml options header mods defs =
+  headerDoc <> openDoc <> doc
+  where
+    headerDoc = "(*" <+> reflow header <+> "*)" <> hardline2
+    openDoc = foldMap (\m -> "open" <+> pretty m <> hardline) mods <> hardline
+    doc = runCuteM options $ withExprNamePrefix $ toOCamlDefs defs
 
 data OCamlDefKind = NonRecDef | RecDef | AndDef
 
 -- | Translate all given OIL definitions into OCaml.
 toOCamlDefs :: (forall b a. Defs b a) -> CuteM Doc
 toOCamlDefs defs = do
-  let defs' = [ def | def <- defs, isNothing $ isBuiltin def ]
+  let defs' = [def | def <- defs, isNothing $ isBuiltin def]
       edges = mkDepGraph defs'
       sccs = stronglyConnComp edges
   foldMapM ((foldMap end <$>) . toOCamlSCCDef) $ sortSCCs edges sccs

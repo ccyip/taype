@@ -725,6 +725,9 @@ renameUnsafeDef :: HashSet Text -> Def Name Name -> Def Name Name
 renameUnsafeDef unsafeSet = runFreshM . transformBiM go
   where
     go :: Expr Name -> FreshM (Expr Name)
+    go GV {..}
+      | ref == retractionName "int" || ref == retractionName "bool" =
+          return GV {ref = unsafeName ref}
     go GV {..} =
       return $
         if ref `member` unsafeSet
