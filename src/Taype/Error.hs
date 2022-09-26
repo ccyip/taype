@@ -103,7 +103,6 @@ instance Cute Err where
         <> " !!!!"
         <> hardline
         <> pretty (renderFancyLocation file code errLoc)
-        <> hardline
-        <> hardline
+        <> hardline2
         <> errMsg
         <> hardline

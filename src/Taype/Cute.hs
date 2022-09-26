@@ -22,6 +22,7 @@ module Taype.Cute
     indentLevel,
     hang,
     indent,
+    hardline2,
     sep1,
     sep1_,
     sepWith,
@@ -95,6 +96,9 @@ hang = PP.hang indentLevel
 
 indent :: Doc -> Doc
 indent = PP.indent indentLevel
+
+hardline2 :: Doc
+hardline2 = hardline <> hardline
 
 sepWith :: Foldable t => Doc -> t Doc -> Doc
 sepWith s = concatWith (\x y -> x <> s <> y)

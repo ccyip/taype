@@ -778,7 +778,7 @@ instance Cute (Expr Text) where
 cuteDefs :: Options -> Defs Text -> Doc
 cuteDefs options = foldMap go
   where
-    go (name, def) = cuteDef options name def <> hardline <> hardline
+    go (name, def) = cuteDef options name def <> hardline2
 
 -- | Pretty printer for a definition
 cuteDef :: Options -> Text -> Def Text -> Doc

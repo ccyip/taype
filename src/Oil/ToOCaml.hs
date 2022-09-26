@@ -202,7 +202,7 @@ toOCamlDefs defs = do
       sccs = stronglyConnComp edges
   foldMapM ((foldMap end <$>) . toOCamlSCCDef) $ sortSCCs edges sccs
   where
-    end doc = doc <> hardline <> hardline
+    end doc = doc <> hardline2
     isBuiltin (name, FunDef {}) = isBuiltinExprName name
     isBuiltin (name, ADTDef {}) = isBuiltinTyName name
 

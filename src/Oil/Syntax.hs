@@ -461,7 +461,7 @@ instance Cute (NamedDef Text Text) where
 -- | Pretty printer for OIL definitions
 cuteDefs :: Options -> Defs Text Text -> Doc
 cuteDefs options =
-  foldMap $ \def -> runCuteM options (cute def) <> hardline <> hardline
+  foldMap $ \def -> runCuteM options (cute def) <> hardline2
 
 cuteLam :: Bool -> Expr Text -> CuteM Doc
 cuteLam isRoot e = do
