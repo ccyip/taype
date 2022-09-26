@@ -48,9 +48,10 @@ process options@Options {optFile = file, optCode = code, ..} = do
   gctx <- checkDefs options srcDefs
   let defs = defsFromGCtx (fromClosed gctx) names
   when optPrintCore $ printTaypeDefs defs
-  let oilDefs = toOilDefs options gctx defs
+  let oilDefs = toOilDefs options gctx False defs
+      unsafeOilDefs = toOilDefs options gctx True defs
   when optPrintPrelude $ printOilDefs Oil.prelude
-  when optPrintOil $ printOilDefs oilDefs
+  when optPrintOil $ printOilDefs $ oilDefs <> unsafeOilDefs
   let mlDoc = Oil.toOCaml options oilDefs
   when optPrintOCaml $ printDoc options mlDoc
   where

@@ -24,10 +24,12 @@ module Oil.Translation
     lIfPrefix,
     lCasePrefix,
     internalPrefix,
+    unsafePrefix,
     retName,
     lIfName,
     lCaseName,
     internalName,
+    unsafeName,
 
     -- * Translation
     prelude,
@@ -35,6 +37,8 @@ module Oil.Translation
   )
 where
 
+import Data.Graph (graphFromEdges, reachable)
+import Data.HashSet (member)
 import Data.List (lookup)
 import Data.Maybe (fromJust)
 import GHC.List (zipWith3)
@@ -63,6 +67,9 @@ lCasePrefix = leakyName "case#"
 internalPrefix :: Text
 internalPrefix = "$"
 
+unsafePrefix :: Text
+unsafePrefix = "unsafe!"
+
 retName :: Text -> Text
 retName = (retPrefix <>)
 
@@ -75,6 +82,9 @@ lCaseName = (lCasePrefix <>)
 internalName :: Text -> Text
 internalName = (internalPrefix <>)
 
+unsafeName :: Text -> Text
+unsafeName = (unsafePrefix <>)
+
 ----------------------------------------------------------------
 -- Environment for translation
 
@@ -83,6 +93,8 @@ data Env = Env
     gctx :: GCtx Name,
     -- Taype typing context
     tctx :: TCtx Name,
+    -- Whether the translation is unsafe, i.e. for revelation
+    isUnsafe :: Bool,
     -- The current label
     label :: Label
   }
@@ -112,11 +124,15 @@ lookupLCtx x = do
 -- | Look up a taype type and its label in both contexts.
 --
 -- The given taype expression should be a local or global variable.
+--
+-- If the translation is unsafe, the label is always 'SafeL'.
 lookupTy :: MonadReader Env m => T.Expr Name -> m (T.Ty Name, Label)
-lookupTy T.V {..} = lookupLCtx name
+lookupTy T.V {..} = lookupLCtx name >>= secondM toMayUnsafeLabel
 lookupTy T.GV {..} =
   lookupGDef ref >>= \case
-    T.FunDef {..} -> return (ty, fromJust label)
+    T.FunDef {..} -> do
+      l <- toMayUnsafeLabel $ fromJust label
+      return (ty, l)
     _ -> oops "Not a function definition"
 lookupTy _ = oops "Not a variable"
 
@@ -152,11 +168,21 @@ extendCtx1 ::
   MonadReader Env m => Name -> T.Ty Name -> Label -> m a -> m a
 extendCtx1 x t l = extendCtx [(x, t, l)]
 
+getIsUnsafe :: MonadReader Env m => m Bool
+getIsUnsafe = asks isUnsafe
+
 withLabel :: MonadReader Env m => Label -> m a -> m a
 withLabel l = local $ \Env {..} -> Env {label = l, ..}
 
 getLabel :: MonadReader Env m => m Label
-getLabel = asks label
+getLabel = do
+  l <- asks label
+  toMayUnsafeLabel l
+
+toMayUnsafeLabel :: MonadReader Env m => Label -> m Label
+toMayUnsafeLabel l = do
+  b <- asks isUnsafe
+  return $ if b then SafeL else l
 
 ----------------------------------------------------------------
 -- Translating expressions and types
@@ -202,9 +228,8 @@ toOilExpr T.App {appKind = Just FunApp, ..} =
   where
     go T.Pi {..} (arg : args') fn' = do
       (_, body) <- unbind1 bnd
-      go body args' $
-        GV (leakyName "ap")
-          @@ [lIfInst body, fn', toOilVar arg]
+      inst <- lIfInst body
+      go body args' $ GV (leakyName "ap") @@ [inst, fn', toOilVar arg]
     go _ [] fn' = return fn'
     go _ _ _ = oops "The arguments do not match the taype function type"
 toOilExpr T.Let {..} = do
@@ -219,31 +244,25 @@ toOilExpr T.Ite {..} = do
   left' <- toOilExpr left
   right' <- toOilExpr right
   let cond' = toOilVar cond
-  return $
-    case condLabel of
-      SafeL -> ite_ cond' left' right'
-      LeakyL ->
-        -- Recall that the first branch of Boolean case analysis corresponds to
-        -- @False@ while the second one to @True@, unlike the if-then-else
-        -- construct.
-        GV (lCaseName "bool")
-          @@ [ lIfInst $ fromJust mTy,
-               cond',
-               right',
-               left'
-             ]
+  case condLabel of
+    SafeL -> return $ ite_ cond' left' right'
+    LeakyL -> do
+      inst <- lIfInst $ fromJust mTy
+      -- Recall that the first branch of Boolean case analysis corresponds to
+      -- @False@ while the second one to @True@, unlike the if-then-else
+      -- construct.
+      return $ GV (lCaseName "bool") @@ [inst, cond', right', left']
 toOilExpr T.Case {..} = do
   (adtName, paraTypess, condLabel) <- lookupADT cond
   alts' <- zipWithM (go condLabel) (toList alts) paraTypess
   let cond' = toOilVar cond
-  return $
-    case condLabel of
-      SafeL -> case' cond' alts'
-      LeakyL ->
+  case condLabel of
+    SafeL -> return $ case' cond' alts'
+    LeakyL -> do
+      inst <- lIfInst $ fromJust mTy
+      return $
         GV (lCaseName adtName)
-          @@ ( [ lIfInst $ fromJust mTy,
-                 cond'
-               ]
+          @@ ( [inst, cond']
                  <> [lams' xs body | (_, xs, body) <- alts']
              )
   where
@@ -255,7 +274,8 @@ toOilExpr T.Case {..} = do
 toOilExpr T.OIte {..} = do
   -- The right branch should have the same type.
   (ty, _) <- lookupTy left
-  return $ lIfInst ty @@ (toOilVar <$> [cond, left, right])
+  inst <- lIfInstMayUnsafe ty
+  return $ inst @@ (toOilVar <$> [cond, left, right])
 toOilExpr T.Pair {..} = do
   ref <- toMayLeakyGV "(,)"
   return $ ref @@ (toOilVar <$> [left, right])
@@ -273,15 +293,17 @@ toOilExpr T.PCase {..} = do
       ]
       $ toOilExpr body
   let cond' = toOilVar cond
-  return $
-    case condLabel of
-      SafeL ->
+  case condLabel of
+    SafeL ->
+      return $
         case'
           cond'
           [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
-      LeakyL ->
+    LeakyL -> do
+      inst <- lIfInst $ fromJust mTy
+      return $
         GV (lCaseName "*")
-          @@ [ lIfInst $ fromJust mTy,
+          @@ [ inst,
                cond',
                lams' [(xl, lBinder), (xr, rBinder)] body'
              ]
@@ -334,8 +356,9 @@ toOilExpr T.OCase {..} = do
   lBody' <- extendCtx1 xl leftTy SafeL $ toOilExpr lBody
   rBody' <- extendCtx1 xr rightTy SafeL $ toOilExpr rBody
   let cond' = toOilVar cond
+  inst <- lIfInstMayUnsafe (fromJust mTy)
   return $
-    lIfInst (fromJust mTy)
+    inst
       @@ [ GV aSlice @@ [cond', ILit 0, tagSize],
            lets'
              [(xl, lBinder, GV aSlice @@ [cond', tagSize, leftSize])]
@@ -349,13 +372,22 @@ toOilExpr T.Mux {..} = do
   (ty, _) <- lookupTy left
   size <- toOilSize ty
   return $ GV aMux @@ (size : (toOilVar <$> [cond, left, right]))
-toOilExpr T.Promote {..} = do
-  (ty, _) <- lookupTy expr
-  return $ retInst ty @@ [toOilVar expr]
-toOilExpr T.Tape {..} = do
-  (ty, _) <- lookupTy expr
-  size <- toOilSize ty
-  return $ GV (leakyName "tape") @@ [size, toOilVar expr]
+toOilExpr T.Promote {..} =
+  getIsUnsafe >>= \b ->
+    if b
+      then return $ toOilVar expr
+      else do
+        (ty, _) <- lookupTy expr
+        inst <- retInst ty
+        return $ inst @@ [toOilVar expr]
+toOilExpr T.Tape {..} =
+  getIsUnsafe >>= \b ->
+    if b
+      then return $ toOilVar expr
+      else do
+        (ty, _) <- lookupTy expr
+        size <- toOilSize ty
+        return $ GV (leakyName "tape") @@ [size, toOilVar expr]
 toOilExpr _ = oops "Not a term in core taype ANF"
 
 -- | Translate a taype oblivious type to the OIL expression representing its
@@ -419,9 +451,11 @@ toOilVar _ = oops "Not a variable"
 -- | Translate a taype type with its label to the corresponding OIL type.
 --
 -- The taype type is well-kinded and in core taype ANF.
-toOilTy :: Label -> T.Ty a -> Ty b
-toOilTy SafeL = toOilTy_
-toOilTy LeakyL = toLeakyTy . toOilTy_
+toOilTy :: T.Ty Name -> TslM (Ty b)
+toOilTy t =
+  getLabel >>= \case
+    SafeL -> toOilTy_ t
+    LeakyL -> toLeakyTy <$> toOilTy_ t
 
 -- | Translate a taype type to the corresponding plain OIL type.
 --
@@ -432,21 +466,19 @@ toOilTy LeakyL = toLeakyTy . toOilTy_
 -- array.
 --
 -- Two equivalent taype type should be translated to the same OIL type.
-toOilTy_ :: T.Ty a -> Ty b
-toOilTy_ T.TBool = tGV "bool"
-toOilTy_ T.TInt = TInt
-toOilTy_ T.GV {..} = tGV ref
-toOilTy_ T.Prod {..} = "*" @@ [toOilTy_ left, toOilTy_ right]
-toOilTy_ T.Pi {..} =
-  let dom = toOilTy (fromJust label) ty
-      -- A bit hacky here. The bound variable is instantiated arbitrarily
-      -- because we do not inspect it when translating types anyway. This is
-      -- convenient so we don't have to wrap the function in the 'TslM' monad.
-      cod = toOilTy_ $ instantiate_ T.VUnit bnd
-   in Arrow {..}
+toOilTy_ :: T.Ty Name -> TslM (Ty b)
+toOilTy_ T.TBool = return $ tGV "bool"
+toOilTy_ T.TInt = return TInt
+toOilTy_ T.GV {..} = return $ tGV ref
+toOilTy_ T.Prod {..} = ("*" @@) <$> mapM toOilTy_ [left, right]
+toOilTy_ T.Pi {..} = do
+  dom <- withLabel (fromJust label) $ toOilTy ty
+  (_, body) <- unbind1 bnd
+  cod <- toOilTy_ body
+  return Arrow {..}
 -- Oblivious types, including type level computation, are translated into
 -- oblivious array.
-toOilTy_ _ = OArray
+toOilTy_ _ = return OArray
 
 -- | Translate an OIL type to its leaky counterpart.
 --
@@ -484,8 +516,8 @@ retInst_ TApp {..} = GV (retName tctor) @@ retInst_ <$> args
 retInst_ _ = oops "Cannot resolve return instance of type variable"
 
 -- | Resolve the return instance of the leaky structure of a taype type.
-retInst :: T.Ty Name -> Expr b
-retInst = retInst_ . toOilTy_
+retInst :: T.Ty Name -> TslM (Expr b)
+retInst = (retInst_ <$>) . toOilTy_
 
 -- | Resolve the leaky if instance of the leaky structure of an OIL type.
 --
@@ -504,22 +536,39 @@ lIfInst_ TApp {..} = GV (lIfName tctor)
 lIfInst_ _ = oops "Cannot resolve leaky if instance of type variable"
 
 -- | Resolve the leaky if instance of the leaky structure of a taype type.
-lIfInst :: T.Ty Name -> Expr b
-lIfInst = lIfInst_ . toOilTy_
+lIfInst :: T.Ty Name -> TslM (Expr b)
+lIfInst = (lIfInst_ <$>) . toOilTy_
+
+lIfInstMayUnsafe :: T.Ty Name -> TslM (Expr b)
+lIfInstMayUnsafe t =
+  getIsUnsafe >>= \b ->
+    if b
+      then return $ GV $ unsafeName "if"
+      else lIfInst t
 
 ----------------------------------------------------------------
 -- Translating definitions
 
 -- | Translate taype definitions to the corresponding OIL definitions.
-toOilDefs :: Options -> GCtx Name -> T.Defs Name -> Defs b a
-toOilDefs Options {..} gctx = foldMap go
+toOilDefs :: Options -> GCtx Name -> Bool -> T.Defs Name -> Defs b a
+toOilDefs Options {..} gctx isUnsafe defs =
+  secondF closedDef $
+    if isUnsafe
+      then
+        let funDefs = [def | def@(_, T.FunDef {}) <- defs]
+            unsafeSet = filterUnsafe funDefs
+         in bimapF unsafeName (renameUnsafeDef unsafeSet) $
+              foldMap
+                go
+                [def | def@(name, _) <- funDefs, name `member` unsafeSet]
+      else foldMap go defs
   where
     go =
-      secondF (closedDef . runFreshM . biplateM simp)
+      secondF simp
         . runTslM Env {tctx = TCtx [], label = SafeL, ..}
         . toOilDef
     simp =
-      (if optNoReadableOil then return else readableExpr) <=< simpExpr
+      (if optNoReadableOil then id else readableDef) . simpDef
 
 -- | Translate a taype definition to the corresponding OIL definition.
 --
@@ -527,10 +576,9 @@ toOilDefs Options {..} gctx = foldMap go
 -- function returns a list of OIL definitions.
 toOilDef :: T.NamedDef Name -> TslM [NamedDef Name Name]
 toOilDef (name, def) = case def of
-  T.FunDef {..} -> do
-    let l = fromJust label
-        ty' = toOilTy l ty
-    expr' <- withLabel l $ toOilExpr expr
+  T.FunDef {..} -> withLabel (fromJust label) $ do
+    ty' <- toOilTy ty
+    expr' <- toOilExpr expr
     return $
       one
         ( name,
@@ -543,7 +591,7 @@ toOilDef (name, def) = case def of
   T.OADTDef {..} -> do
     (x, body) <- unbind1 bnd
     body' <- extendCtx1 x ty SafeL $ toOilSize body
-    let ty' = toOilTy SafeL ty
+    ty' <- withLabel SafeL $ toOilTy ty
     return $
       one
         ( name,
@@ -555,8 +603,8 @@ toOilDef (name, def) = case def of
         )
   T.ADTDef {..} -> do
     let (ctorNames, paraTypess) = unzip $ toList ctors
-        sParaTypess = toOilTy SafeL <<$>> paraTypess
-        lParaTypess = toOilTy LeakyL <<$>> paraTypess
+    sParaTypess <- withLabel SafeL $ mapM (mapM toOilTy) paraTypess
+    lParaTypess <- withLabel LeakyL $ mapM (mapM toOilTy) paraTypess
     return
       [ -- ADT
         adtDef_ name [] $ zip ctorNames sParaTypess,
@@ -614,8 +662,8 @@ toOilDef (name, def) = case def of
 --
 -- This function performs various simplifcation such as let flattening and
 -- application collapsing.
-simpExpr :: MonadFresh m => Expr Name -> m (Expr Name)
-simpExpr = transformM go
+simpDef :: Def Name Name -> Def Name Name
+simpDef = runFreshM . transformBiM go
   where
     go App {args = [], ..} = return fn
     go App {fn = App {..}, args = args'} =
@@ -633,9 +681,10 @@ simpExpr = transformM go
 -- | Make the generated OIL programs more readable.
 --
 -- This function subsitutes all let bindings that do not have a named binder.
-readableExpr :: MonadFresh m => Expr Name -> m (Expr Name)
-readableExpr = transformM go
+readableDef :: Def Name Name -> Def Name Name
+readableDef = runFreshM . transformBiM go
   where
+    go :: Expr Name -> FreshM (Expr Name)
     go Let {binder = Nothing, ..} = return $ instantiate_ rhs bnd
     go e = return e
 
@@ -647,6 +696,41 @@ toMayLeakyGV x = go <$> getLabel
   where
     go SafeL = GV x
     go LeakyL = GV $ leakyName x
+
+filterUnsafe :: T.Defs Name -> HashSet Text
+filterUnsafe defs = unsafeSet
+  where
+    (graph, fromVertex, toVertex) = graphFromEdges $ mkDepGraph defs
+    unsafeDefs =
+      [ name
+        | (name, T.FunDef {..}) <- defs,
+          attr == T.SectionAttr || attr == T.RetractionAttr
+      ]
+    unsafeSet1 name =
+      fromList $ maybe [] (toNames . reachable graph) $ toVertex name
+    toNames vs = [name | (_, name, _) <- fromVertex <$> vs]
+    unsafeSet = fromList unsafeDefs <> foldMap unsafeSet1 unsafeDefs
+
+mkDepGraph :: T.Defs Name -> [(T.NamedDef Name, Text, [Text])]
+mkDepGraph defs =
+  let deps = runFreshM $ mapM (go . snd) defs
+   in zipWith (\def dep -> (def, fst def, dep)) defs deps
+  where
+    go T.FunDef {..} = do
+      deps <- universeM expr
+      return $ hashNub [x | T.GV x <- deps]
+    go _ = return []
+
+renameUnsafeDef :: HashSet Text -> Def Name Name -> Def Name Name
+renameUnsafeDef unsafeSet = runFreshM . transformBiM go
+  where
+    go :: Expr Name -> FreshM (Expr Name)
+    go GV {..} =
+      return $
+        if ref `member` unsafeSet
+          then GV {ref = unsafeName ref}
+          else GV {..}
+    go e = return e
 
 ----------------------------------------------------------------
 -- Prelude
