@@ -52,8 +52,10 @@ process options@Options {optFile = file, optCode = code, ..} = do
       unsafeOilDefs = toOilDefs options gctx True defs
   when optPrintPrelude $ printOilDefs Oil.prelude
   when optPrintOil $ printOilDefs $ oilDefs <> unsafeOilDefs
-  let mlDoc = Oil.toOCaml options oilDefs
-  when optPrintOCaml $ printDoc options mlDoc
+  let preludeDoc = Oil.toOCaml options Oil.prelude
+      mlDoc = Oil.toOCaml options oilDefs
+      unsafeDoc = Oil.toOCaml options unsafeOilDefs
+  when optPrintOCaml $ printDoc options $ preludeDoc <> mlDoc <> unsafeDoc
   where
     printTaypeDefs defs =
       printDoc options $ cuteDefs options defs

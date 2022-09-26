@@ -187,10 +187,10 @@ toOCamlTy TApp {..} = do
 ----------------------------------------------------------------
 -- Translate definitions
 
--- | Translate all given OIL definitions and OIL prelude into OCaml.
+-- | Translate all given OIL definitions into OCaml.
 toOCaml :: Options -> (forall b a. Defs b a) -> Doc
 toOCaml options defs =
-  runCuteM options $ withExprNamePrefix $ toOCamlDefs $ prelude <> defs
+  runCuteM options $ withExprNamePrefix $ toOCamlDefs defs
 
 data OCamlDefKind = NonRecDef | RecDef | AndDef
 
@@ -337,6 +337,7 @@ toValidName_ isTy = \case
   (T.stripPrefix oblivAccent -> Just x) -> "obliv_" <> go isTy x
   (T.stripPrefix leakyAccent -> Just x) -> "leaky_" <> go isTy x
   (T.stripPrefix internalPrefix -> Just x) -> "internal_" <> go isTy x
+  (T.stripPrefix unsafePrefix -> Just x) -> "unsafe_" <> go isTy x
   x -> go isTy x
   where
     go True "*" = "prod"
