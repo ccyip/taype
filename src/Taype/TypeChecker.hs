@@ -1481,7 +1481,7 @@ checkDefs options@Options {..} defs = runDcM options $ do
   return $
     if optNoFlattenLets
       then gctx
-      else runFreshM $ mapMGCtxDef flattenLets gctx
+      else mapGCtxDef flattenLets gctx
   where
     -- Type checking definitions are done in the order of the given definitions.
     -- They can freely refer to the signatures of all definitions, allowing for
@@ -1706,8 +1706,8 @@ noDupPattenVars = void . transformBiM go
 --
 -- If the input is in core taype ANF, the result must still be in core taype
 -- ANF.
-flattenLets :: MonadFresh m => Def Name -> m (Def Name)
-flattenLets = transformBiM go
+flattenLets :: Def Name -> Def Name
+flattenLets = runFreshM . transformBiM go
   where
     go e@Let {..} = case rhs of
       V {..} -> return $ instantiateName name bnd
