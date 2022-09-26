@@ -1,7 +1,5 @@
 - `AppKind` can be deprecated?
-- Unsafe retraction for decryption
-  + need to handle retraction and leaky if
-  + add a flag to the translation environment
+- A better way to close the definitions?
 - Unordered oblivious case (only need to change parser)
 - Scrap my boilerplate: instances for Monad, Eq1, etc
 - Support tuple pattern in product case and oblivious sum case

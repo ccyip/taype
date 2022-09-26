@@ -1529,16 +1529,13 @@ checkDef def = return def
 -- types are well-kinded and in core taype ANF.
 preCheckDefs :: Defs Name -> DcM (GCtx Name)
 preCheckDefs allDefs = do
+  -- First we check if the definition names and binder names follow our naming
+  -- rules.
   mapM_ preCheckName allDefs
-  options <- ask
-  -- First we check if any pattern matchings have conflicting pattern varaibles.
-  lift $
-    forM_ allDefs $
-      secondM $
-        runTcM (initEnv options mempty mempty) . noDupPattenVars
   -- We need to pre-check all ADTs first, because they can mutually refer to
   -- each other but do not contain dependent types.
   let (adtDefs, otherDefs) = partition isADTDef allDefs
+  options <- ask
   -- Note that @gctx@ trivially satisfies the invariant for global signature
   -- context, because it only contains ADTs (and prelude) at the moment.
   gctx <- extendGCtx preludeGCtx adtDefs
@@ -1571,20 +1568,22 @@ preCheckDefs allDefs = do
       gctx' <- extendGCtx1 gctx name def'
       go gctx' defs
 
--- | Check the definition names.
+-- | Check the definition and binder names.
 preCheckName :: NamedDef Name -> DcM ()
-preCheckName (name, def) = case def of
-  FunDef {..} -> lowerCaseWithOblivAccent loc "Function"
-  ADTDef {..} -> do
-    unless (isLower $ T.head name) $
-      err_ loc "ADT name should start with a lower case letter"
-    forM_ ctors $ \(ctor, _) ->
-      unless (isUpper $ T.head ctor) $
-        err_ loc "Constructor name should start with a upper case letter"
-  OADTDef {..} -> lowerCaseWithOblivAccent loc "OADT"
-  _ -> pass
+preCheckName (defName, def) = do
+  void $ runFreshT $ transformBiM go def
+  case def of
+    FunDef {..} -> checkLower defName loc "Function"
+    ADTDef {..} -> do
+      unless (isLower $ T.head defName) $
+        err_ loc "ADT name should start with a lower case letter"
+      forM_ ctors $ \(ctor, _) ->
+        unless (isUpper $ T.head ctor) $
+          err_ loc "Constructor name should start with a upper case letter"
+    OADTDef {..} -> checkLower defName loc "OADT"
+    _ -> pass
   where
-    lowerCaseWithOblivAccent loc what = do
+    checkLower name loc what = do
       let name' = fromMaybe name $ T.stripPrefix oblivAccent name
       unless (isLower $ T.head name') $
         err_ loc $
@@ -1592,6 +1591,27 @@ preCheckName (name, def) = case def of
             <+> "name should start with a lower case letter, possibly with a"
             <+> dquotes (pretty oblivAccent)
             <+> "prefix"
+    checkBinder binder =
+      whenJust binder $ \case
+        Named loc name -> checkLower name loc "Binder"
+        _ -> pass
+    go :: (MonadError Err m) => Expr Name -> m (Expr Name)
+    go e@Case {..} = do
+      forM_ alts $ \CaseAlt {..} -> do
+        mapM_ checkBinder binders
+        whenJust (findDupBinderName (catMaybes binders)) $ \case
+          Named loc name ->
+            err_ loc $
+              "Found conflicting pattern variables: " <> pretty name
+          _ -> oops "Anonymous binders cannot be duplicate"
+      return e
+    go e@Pi {..} = checkBinder binder >> return e
+    go e@Lam {..} = checkBinder binder >> return e
+    go e@Let {..} = checkBinder binder >> return e
+    go e@PCase {..} = checkBinder lBinder >> checkBinder rBinder >> return e
+    go e@OPCase {..} = checkBinder lBinder >> checkBinder rBinder >> return e
+    go e@OCase {..} = checkBinder lBinder >> checkBinder rBinder >> return e
+    go e = return e
 
 -- | Pre-check a global definition signature.
 preCheckDef :: Def Name -> TcM (Def Name)
@@ -1685,22 +1705,6 @@ extendGCtx ::
   Defs Name ->
   m (GCtx Name)
 extendGCtx = foldlM $ uncurry . extendGCtx1
-
--- | Check if there are pattern matchings with duplicate patten variables.
-noDupPattenVars :: Def Name -> TcM ()
-noDupPattenVars = void . transformBiM go
-  where
-    go :: Expr Name -> TcM (Expr Name)
-    go e@Case {..} = do
-      forM_ alts $ \CaseAlt {..} ->
-        whenJust (findDupBinderName (catMaybes binders)) $ \case
-          Named loc name ->
-            withCur e $
-              withLoc loc $
-                err [[DH "Found conflicting pattern variables", DC name]]
-          _ -> oops "Anonymous binders cannot be duplicate"
-      return e
-    go e = return e
 
 -- | Flatten all nested let bindings and remove single variable bindings.
 --
