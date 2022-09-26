@@ -84,6 +84,8 @@ TAGS
 
 # other
 .DS_Store
-examples/**/*.ml
+examples/test
+examples/**/prelude.ml
+examples/tutorial/tutorial*
 *.tpc
 *.oil
