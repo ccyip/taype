@@ -339,10 +339,13 @@ toValidName_ isTy = \case
   (T.stripPrefix retPrefix -> Just x) -> "leaky_ret_of_" <> go True x
   (T.stripPrefix lIfPrefix -> Just x) -> "leaky_if_of_" <> go True x
   (T.stripPrefix lCasePrefix -> Just x) -> "leaky_case_of_" <> go True x
+  (T.stripPrefix (privPrefix <> oblivAccent) -> Just x) ->
+    "private_obliv_" <> go isTy x
+  (T.stripPrefix privPrefix -> Just x) -> "private_" <> go isTy x
+  (T.stripPrefix unsafePrefix -> Just x) -> "unsafe_" <> go isTy x
   (T.stripPrefix oblivAccent -> Just x) -> "obliv_" <> go isTy x
   (T.stripPrefix leakyAccent -> Just x) -> "leaky_" <> go isTy x
   (T.stripPrefix internalPrefix -> Just x) -> "internal_" <> go isTy x
-  (T.stripPrefix unsafePrefix -> Just x) -> "unsafe_" <> go isTy x
   x -> go isTy x
   where
     go True "*" = "prod"

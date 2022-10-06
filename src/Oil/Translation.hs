@@ -25,15 +25,16 @@ module Oil.Translation
     lCasePrefix,
     internalPrefix,
     unsafePrefix,
+    privPrefix,
     retName,
     lIfName,
     lCaseName,
     internalName,
     unsafeName,
+    privName,
 
     -- * Translation
-    prelude,
-    toOilDefs,
+    toOilProgram,
   )
 where
 
@@ -70,6 +71,9 @@ internalPrefix = "$"
 unsafePrefix :: Text
 unsafePrefix = "unsafe!"
 
+privPrefix :: Text
+privPrefix = "private!"
+
 retName :: Text -> Text
 retName = (retPrefix <>)
 
@@ -85,6 +89,9 @@ internalName = (internalPrefix <>)
 unsafeName :: Text -> Text
 unsafeName = (unsafePrefix <>)
 
+privName :: Text -> Text
+privName = (privPrefix <>)
+
 ----------------------------------------------------------------
 -- Environment for translation
 
@@ -93,8 +100,8 @@ data Env = Env
     gctx :: GCtx Name,
     -- Taype typing context
     tctx :: TCtx Name,
-    -- Whether the translation is unsafe, i.e. for revelation
-    isUnsafe :: Bool,
+    -- Whether the translation is in the conceal/reveal phase.
+    isCrust :: Bool,
     -- The current label
     label :: Label
   }
@@ -127,11 +134,11 @@ lookupLCtx x = do
 --
 -- If the translation is unsafe, the label is always 'SafeL'.
 lookupTy :: MonadReader Env m => T.Expr Name -> m (T.Ty Name, Label)
-lookupTy T.V {..} = lookupLCtx name >>= secondM toMayUnsafeLabel
+lookupTy T.V {..} = lookupLCtx name >>= secondM toMayCrustLabel
 lookupTy T.GV {..} =
   lookupGDef ref >>= \case
     T.FunDef {..} -> do
-      l <- toMayUnsafeLabel $ fromJust label
+      l <- toMayCrustLabel $ fromJust label
       return (ty, l)
     _ -> oops "Not a function definition"
 lookupTy _ = oops "Not a variable"
@@ -168,8 +175,8 @@ extendCtx1 ::
   MonadReader Env m => Name -> T.Ty Name -> Label -> m a -> m a
 extendCtx1 x t l = extendCtx [(x, t, l)]
 
-getIsUnsafe :: MonadReader Env m => m Bool
-getIsUnsafe = asks isUnsafe
+getIsCrust :: MonadReader Env m => m Bool
+getIsCrust = asks isCrust
 
 withLabel :: MonadReader Env m => Label -> m a -> m a
 withLabel l = local $ \Env {..} -> Env {label = l, ..}
@@ -177,11 +184,11 @@ withLabel l = local $ \Env {..} -> Env {label = l, ..}
 getLabel :: MonadReader Env m => m Label
 getLabel = do
   l <- asks label
-  toMayUnsafeLabel l
+  toMayCrustLabel l
 
-toMayUnsafeLabel :: MonadReader Env m => Label -> m Label
-toMayUnsafeLabel l = do
-  b <- asks isUnsafe
+toMayCrustLabel :: MonadReader Env m => Label -> m Label
+toMayCrustLabel l = do
+  b <- asks isCrust
   return $ if b then SafeL else l
 
 ----------------------------------------------------------------
@@ -274,7 +281,7 @@ toOilExpr T.Case {..} = do
 toOilExpr T.OIte {..} = do
   -- The right branch should have the same type.
   (ty, _) <- lookupTy left
-  inst <- lIfInstMayUnsafe ty
+  inst <- lIfInstMayCrust ty
   return $ inst @@ (toOilVar <$> [cond, left, right])
 toOilExpr T.Pair {..} = do
   ref <- toMayLeakyGV "(,)"
@@ -348,23 +355,28 @@ toOilExpr T.OCase {..} = do
         case ty of
           T.OSum {..} -> (left, right)
           _ -> oops "Not an oblivious sum"
-  leftSize <- toOilSize leftTy
-  rightSize <- toOilSize rightTy
+  lSize <- toOilSize leftTy
+  rSize <- toOilSize rightTy
   tagSize <- toOilSize T.OBool
   (xl, lBody) <- unbind1 lBnd
   (xr, rBody) <- unbind1 rBnd
   lBody' <- extendCtx1 xl leftTy SafeL $ toOilExpr lBody
   rBody' <- extendCtx1 xr rightTy SafeL $ toOilExpr rBody
   let cond' = toOilVar cond
-  inst <- lIfInstMayUnsafe (fromJust mTy)
+  inst <- lIfInstMayCrust (fromJust mTy)
+  -- The tag is at the end of the payload.
   return $
     inst
-      @@ [ GV aSlice @@ [cond', ILit 0, tagSize],
+      @@ [ GV aSlice
+             @@ [ cond',
+                  GV (internalName "max") @@ [lSize, rSize],
+                  tagSize
+                ],
            lets'
-             [(xl, lBinder, GV aSlice @@ [cond', tagSize, leftSize])]
+             [(xl, lBinder, GV aSlice @@ [cond', ILit 0, lSize])]
              lBody',
            lets'
-             [(xr, rBinder, GV aSlice @@ [cond', tagSize, rightSize])]
+             [(xr, rBinder, GV aSlice @@ [cond', ILit 0, rSize])]
              rBody'
          ]
 toOilExpr T.Mux {..} = do
@@ -373,7 +385,7 @@ toOilExpr T.Mux {..} = do
   size <- toOilSize ty
   return $ GV aMux @@ (size : (toOilVar <$> [cond, left, right]))
 toOilExpr T.Promote {..} =
-  getIsUnsafe >>= \b ->
+  getIsCrust >>= \b ->
     if b
       then return $ toOilVar expr
       else do
@@ -381,7 +393,7 @@ toOilExpr T.Promote {..} =
         inst <- retInst ty
         return $ inst @@ [toOilVar expr]
 toOilExpr T.Tape {..} =
-  getIsUnsafe >>= \b ->
+  getIsCrust >>= \b ->
     if b
       then return $ toOilVar expr
       else do
@@ -539,9 +551,9 @@ lIfInst_ _ = oops "Cannot resolve leaky if instance of type variable"
 lIfInst :: T.Ty Name -> TslM (Expr b)
 lIfInst = (lIfInst_ <$>) . toOilTy_
 
-lIfInstMayUnsafe :: T.Ty Name -> TslM (Expr b)
-lIfInstMayUnsafe t =
-  getIsUnsafe >>= \b ->
+lIfInstMayCrust :: T.Ty Name -> TslM (Expr b)
+lIfInstMayCrust t =
+  getIsCrust >>= \b ->
     if b
       then return $ GV $ unsafeName "if"
       else lIfInst t
@@ -550,25 +562,57 @@ lIfInstMayUnsafe t =
 -- Translating definitions
 
 -- | Translate taype definitions to the corresponding OIL definitions.
-toOilDefs :: Options -> GCtx Name -> Bool -> T.Defs Name -> Defs b a
-toOilDefs Options {..} gctx isUnsafe defs =
-  secondF closedDef $
-    if isUnsafe
-      then
-        let funDefs = [def | def@(_, T.FunDef {}) <- defs]
-            unsafeSet = filterUnsafe funDefs
-         in bimapF unsafeName (renameUnsafeDef unsafeSet) $
-              foldMap
-                go
-                [def | def@(name, _) <- funDefs, name `member` unsafeSet]
-      else foldMap go defs
+--
+-- The result contains four sets of definitions: the prelude, the actual OIL
+-- definitions, the section functions with their dependencies for the conceal
+-- phase, and the retraction functions with their dependencies for the reveal
+-- phase.
+toOilProgram :: Options -> GCtx Name -> T.Defs Name -> Program b a
+toOilProgram Options {..} gctx defs =
+  Program
+    { preludeDefs = prelude,
+      mainDefs =
+        secondF closedDef $
+          foldMap (simp optNoReadableOil . go False) defs,
+      ..
+    }
   where
-    go =
-      secondF simp
-        . runTslM Env {tctx = TCtx [], label = SafeL, ..}
+    go isCrust =
+      runTslM Env {tctx = TCtx [], label = SafeL, ..}
         . toOilDef
-    simp =
-      (if optNoReadableOil then id else readableDef) . simpDef
+    simp noReadable =
+      secondF $
+        (if noReadable then id else readableDef) . simpDef
+    funDefs = [def | def@(_, T.FunDef {}) <- defs]
+    concealSet = filterCrust funDefs T.SectionAttr
+    revealSet = filterCrust funDefs T.RetractionAttr
+    crustDefs noReadable crustSet rename names =
+      secondF closedDef $
+        bimapF rename (renameCrustDef (crustSet <> fromList names) rename) $
+          foldMap
+            (simp noReadable . go True)
+            [def | def@(name, _) <- funDefs, name `member` crustSet]
+    -- In the conceal phase, we keep the ANF form because the evaluation order
+    -- is crucial.
+    concealDefs =
+      crustDefs
+        True
+        concealSet
+        privName
+        [ sectionName "int",
+          sectionName "bool",
+          oblivName "inl",
+          oblivName "inr",
+          aNew
+        ]
+    revealDefs =
+      crustDefs
+        optNoReadableOil
+        revealSet
+        unsafeName
+        [ retractionName "int",
+          retractionName "bool"
+        ]
 
 -- | Translate a taype definition to the corresponding OIL definition.
 --
@@ -697,19 +741,15 @@ toMayLeakyGV x = go <$> getLabel
     go SafeL = GV x
     go LeakyL = GV $ leakyName x
 
-filterUnsafe :: T.Defs Name -> HashSet Text
-filterUnsafe defs = unsafeSet
+filterCrust :: T.Defs Name -> T.Attribute -> HashSet Text
+filterCrust defs a = crustSet
   where
     (graph, fromVertex, toVertex) = graphFromEdges $ mkDepGraph defs
-    unsafeDefs =
-      [ name
-        | (name, T.FunDef {..}) <- defs,
-          attr == T.SectionAttr || attr == T.RetractionAttr
-      ]
-    unsafeSet1 name =
+    crustDefs = [name | (name, T.FunDef {..}) <- defs, attr == a]
+    crustSet1 name =
       fromList $ maybe [] (toNames . reachable graph) $ toVertex name
     toNames vs = [name | (_, name, _) <- fromVertex <$> vs]
-    unsafeSet = fromList unsafeDefs <> foldMap unsafeSet1 unsafeDefs
+    crustSet = fromList crustDefs <> foldMap crustSet1 crustDefs
 
 mkDepGraph :: T.Defs Name -> [(T.NamedDef Name, Text, [Text])]
 mkDepGraph defs =
@@ -721,18 +761,14 @@ mkDepGraph defs =
       return $ hashNub [x | T.GV x <- deps]
     go _ = return []
 
-renameUnsafeDef :: HashSet Text -> Def Name Name -> Def Name Name
-renameUnsafeDef unsafeSet = runFreshM . transformBiM go
+renameCrustDef ::
+  HashSet Text -> (Text -> Text) -> Def Name Name -> Def Name Name
+renameCrustDef renameSet rename = runFreshM . transformBiM go
   where
     go :: Expr Name -> FreshM (Expr Name)
     go GV {..}
-      | ref == retractionName "int" || ref == retractionName "bool" =
-          return GV {ref = unsafeName ref}
-    go GV {..} =
-      return $
-        if ref `member` unsafeSet
-          then GV {ref = unsafeName ref}
-          else GV {..}
+      | ref `member` renameSet =
+          return $ GV {ref = rename ref}
     go e = return e
 
 ----------------------------------------------------------------
@@ -774,13 +810,11 @@ prelude =
       $ lam_
         "b"
         (ite_ "b" (l_ "True") (l_ "False")),
-    funDef_
-      (s_ "bool")
-      []
-      (ar_ ["bool", OArray])
-      $ lam_
-        "b"
-        (ite_ "b" (s_ "int" @@ [ILit 1]) (s_ "int" @@ [ILit 0])),
+    -- Section of boolean
+    --
+    -- We need one for core computation and one for conceal phase.
+    sBoolDef True,
+    sBoolDef False,
     funDef_
       (r_ "bool")
       []
@@ -998,38 +1032,12 @@ prelude =
             ]
         ),
     -- Oblivious injection
-    funDef_
-      (o_ "inl")
-      []
-      (ar_ [sizeTy, sizeTy, OArray, OArray])
-      $ lams_
-        ["m", "n", o_ "a"]
-        ( V aConcat
-            @@ [ s_ "bool" @@ ["True"],
-                 ite_
-                   ("<=" @@ ["n", "m"])
-                   (o_ "a")
-                   ( V aConcat
-                       @@ [o_ "a", V aNew @@ ["-" @@ ["n", "m"]]]
-                   )
-               ]
-        ),
-    funDef_
-      (o_ "inr")
-      []
-      (ar_ [sizeTy, sizeTy, OArray, OArray])
-      $ lams_
-        ["m", "n", o_ "a"]
-        ( V aConcat
-            @@ [ s_ "bool" @@ ["False"],
-                 ite_
-                   ("<=" @@ ["m", "n"])
-                   (o_ "a")
-                   ( V aConcat
-                       @@ [o_ "a", V aNew @@ ["-" @@ ["m", "n"]]]
-                   )
-               ]
-        )
+    --
+    -- We need one for core computation and one for conceal phase.
+    oblivInjDef True True,
+    oblivInjDef False True,
+    oblivInjDef True False,
+    oblivInjDef False False
   ]
 
 -- | Build a leaky definition for binary operator, e.g., '+'.
@@ -1101,6 +1109,62 @@ lBopDef name cod =
             )
           ]
       )
+
+-- | Build a boolean section function.
+--
+-- The first argument is 'True' if this section is used in the core computation
+-- phase, or it is used in the conceal phase.
+sBoolDef :: Bool -> NamedDef b a
+sBoolDef isCompPhase =
+  funDef_
+    (prefix <> s_ "bool")
+    []
+    (ar_ ["bool", OArray])
+    $ lam_
+      "b"
+      ( ite_
+          "b"
+          (GV (prefix <> s_ "int") @@ [ILit 1])
+          (GV (prefix <> s_ "int") @@ [ILit 0])
+      )
+  where
+    prefix = if isCompPhase then "" else privPrefix
+
+-- | Build an oblivious injection.
+--
+-- The first argument indicates whether it is left or right injection. The
+-- second argument is 'True' if it is used in the core computation phase,
+-- otherwise in the conceal phase.
+oblivInjDef :: Bool -> Bool -> NamedDef b a
+oblivInjDef tag isCompPhase =
+  funDef_
+    name
+    []
+    (ar_ [sizeTy, sizeTy, OArray, OArray])
+    $ lams_
+      (if tag then ["m", "n", o_ "a"] else ["n", "m", o_ "a"])
+      ( lets_
+          [ ( "data",
+              ite_
+                ("<=" @@ ["n", "m"])
+                (o_ "a")
+                ( V aConcat
+                    @@ [o_ "a", aNew' @@ ["-" @@ ["n", "m"]]]
+                )
+            ),
+            ("tag", sBool @@ [if tag then "True" else "False"])
+          ]
+          $ V aConcat @@ ["data", "tag"]
+      )
+  where
+    rawName = if tag then "inl" else "inr"
+    name =
+      if isCompPhase
+        then oblivName rawName
+        else privPrefix <> oblivName rawName
+    sBool =
+      GV $ if isCompPhase then s_ "bool" else privName $ sectionName "bool"
+    aNew' = GV $ if isCompPhase then aNew else privName aNew
 
 ----------------------------------------------------------------
 -- Smart constructors

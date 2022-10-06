@@ -27,6 +27,7 @@ module Oil.Syntax
     NamedDef,
     Defs,
     closedDef,
+    Program (..),
 
     -- * Smart constructors
     Apply (..),
@@ -35,6 +36,8 @@ module Oil.Syntax
     ar_,
     lam_,
     lams_,
+    let_,
+    lets_,
     case_,
     ite_,
     tGV,
@@ -140,6 +143,14 @@ data Def b a
 type NamedDef b a = (Text, Def b a)
 
 type Defs b a = [NamedDef b a]
+
+-- | OIL program
+data Program b a = Program
+  { preludeDefs :: Defs b a,
+    mainDefs :: Defs b a,
+    concealDefs :: Defs b a,
+    revealDefs :: Defs b a
+  }
 
 ----------------------------------------------------------------
 -- Array operations
@@ -315,6 +326,17 @@ lam_ binder body =
 
 lams_ :: a ~ Text => [BinderM a] -> Expr a -> Expr a
 lams_ = flip $ foldr lam_
+
+let_ :: a ~ Text => BinderM a -> Expr a -> Expr a -> Expr a
+let_ binder rhs body =
+  Let
+    { binder = Just binder,
+      bnd = abstractBinder binder body,
+      ..
+    }
+
+lets_ :: a ~ Text => [(BinderM a, Expr a)] -> Expr a -> Expr a
+lets_ = flip $ foldr $ uncurry let_
 
 instance Apply (Expr a) (Expr a) where
   fn @@ args = App {..}

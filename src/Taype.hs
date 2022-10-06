@@ -16,10 +16,9 @@ module Taype
 where
 
 import Data.Char (toUpper)
-import qualified Oil.Syntax as Oil (cuteDefs)
+import qualified Oil.Syntax as Oil (Program (..), cuteDefs)
 import qualified Oil.ToOCaml as Oil (toOCaml)
-import Oil.Translation (toOilDefs)
-import qualified Oil.Translation as Oil (prelude)
+import Oil.Translation (toOilProgram)
 import Options.Applicative
 import System.FilePath
 import Taype.Common
@@ -41,8 +40,6 @@ run options@Options {optFile = file} = do
 
 process :: Options -> ExceptT Err IO ()
 process options@Options {optFile = file, optCode = code, ..} = do
-  let dir = takeDirectory file
-      baseName = takeBaseName file
   tokens <- lex file code
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
   namedDefs <- parse tokens
@@ -55,39 +52,41 @@ process options@Options {optFile = file, optCode = code, ..} = do
       coreDoc = cuteDefs options coreDefs
   when optPrintCore $ printDoc options coreDoc
   printDocToFile (file -<.> "tpc") coreDoc
-  let oilDefs = toOilDefs options gctx False coreDefs
-      unsafeOilDefs = toOilDefs options gctx True coreDefs
-      preludeOilDoc = Oil.cuteDefs options Oil.prelude
-      oilDoc = Oil.cuteDefs options oilDefs
-      unsafeOilDoc = Oil.cuteDefs options unsafeOilDefs
-  when (optPrintOil && optPrintPrelude) $ printDoc options preludeOilDoc
-  when optPrintOil $ printDoc options oilDoc
-  printDocToFile (dir </> "prelude.oil") preludeOilDoc
-  printDocToFile (file -<.> "oil") oilDoc
-  printDocToFile (dir </> (baseName <> "_unsafe") <.> "oil") unsafeOilDoc
-  let preludeDoc =
+  let Oil.Program {..} = toOilProgram options gctx coreDefs
+      preludeOil = Oil.cuteDefs options preludeDefs
+      mainOil = Oil.cuteDefs options mainDefs
+      concealOil = Oil.cuteDefs options concealDefs
+      revealOil = Oil.cuteDefs options revealDefs
+  when (optPrintOil && optPrintPrelude) $ printDoc options preludeOil
+  when optPrintOil $ printDoc options $ mainOil <> concealOil <> revealOil
+  printDocsToFile "oil" preludeOil mainOil concealOil revealOil
+  let preludeML =
         Oil.toOCaml
           options
           (mkHeader "the prelude of helper types and functions")
           ["Driver"]
-          Oil.prelude
-      mainDoc =
+          preludeDefs
+      mainML =
         Oil.toOCaml
           options
           (mkHeader "the main programs as a library")
           ["Driver", "Prelude"]
-          oilDefs
-      unsafeDoc =
+          mainDefs
+      concealML =
         Oil.toOCaml
           options
-          (mkHeader "the unsafe section and retraction functions for revelation")
-          ["Driver", "Prelude", toText $ capitalize baseName]
-          unsafeOilDefs
-  when (optPrintOCaml && optPrintPrelude) $ printDoc options preludeDoc
-  when optPrintOCaml $ printDoc options $ mainDoc <> unsafeDoc
-  printDocToFile (dir </> "prelude.ml") preludeDoc
-  printDocToFile (file -<.> "ml") mainDoc
-  printDocToFile (dir </> (baseName <> "_unsafe") <.> "ml") unsafeDoc
+          (mkHeader "the section functions for the conceal phase")
+          ["Driver", "Prelude", modName]
+          concealDefs
+      revealML =
+        Oil.toOCaml
+          options
+          (mkHeader "the retraction functions for the reveal phase")
+          ["Driver", "Prelude", modName]
+          revealDefs
+  when (optPrintOCaml && optPrintPrelude) $ printDoc options preludeML
+  when optPrintOCaml $ printDoc options $ mainML <> concealML <> revealML
+  printDocsToFile "ml" preludeML mainML concealML revealML
   where
     capitalize (h : t) = toUpper h : t
     capitalize "" = ""
@@ -96,6 +95,14 @@ process options@Options {optFile = file, optCode = code, ..} = do
       \It contains "
         <> what
         <> "."
+    printDocsToFile ext preludeDoc mainDoc concealDoc revealDoc = do
+      printDocToFile (dir </> "prelude" <.> ext) preludeDoc
+      printDocToFile (file -<.> ext) mainDoc
+      printDocToFile (dir </> (baseName <> "_conceal") <.> ext) concealDoc
+      printDocToFile (dir </> (baseName <> "_reveal") <.> ext) revealDoc
+    dir = takeDirectory file
+    baseName = takeBaseName file
+    modName = toText $ capitalize baseName
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)
