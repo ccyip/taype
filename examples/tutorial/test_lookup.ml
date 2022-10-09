@@ -26,6 +26,9 @@ let _ =
   let obliv_xs = get_private of_sexp (private_s_list n) size in
   (* Obtain an oblivious integer. *)
   let obliv_x = get_private Conv.int_of_sexp private_s_int 1 in
+  (* A testing program may also read an expected result to compare with the
+     output of the oblivious computation. This can be done with the function
+     [get_expected]. For example, [get_expected of_sexp]. *)
 
   (* We want to collect performance statistics. *)
   collect_stat ();
@@ -40,8 +43,9 @@ let _ =
   (* Clean up the driver. *)
   finalize_driver ();
 
-  (* Print out the statistics. Different driver may produce statistics using
-     different metrics. *)
+  (* Print out the statistics. If we also read the expected result, we would
+     compare here and print out "failed" if they don't match: [print_result
+     (expected = res)] *)
   print_stat ();
   (* Print out the result as an S-expression. *)
   Conv.sexp_of_bool res |> print_sexp

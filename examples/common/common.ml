@@ -48,7 +48,7 @@ let get_public conv =
    [size], with the help from the party who owns it. *)
 let get_private conv sec size =
   let (party, s) = scan_line () in
-  if party == !my_party
+  if party = !my_party
   then sec (Sexp.of_string_conv_exn s conv)
   else obliv_array_new_from size party
 
