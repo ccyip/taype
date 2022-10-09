@@ -1,4 +1,5 @@
+(lang dune 3.4)
+
 ; NOTE: the dune files in this directory are not for compilation. They are only
 ; here for IDE support and some quick testing. Use the Makefile in the project
 ; root to compile the examples.
-(lang dune 3.4)
