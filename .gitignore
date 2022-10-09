@@ -92,5 +92,6 @@ examples/**/*.output
 !examples/**/*_helper.ml
 !examples/**/test_*.ml
 !examples/**/*.input
+!examples**/*.csv
 *.tpc
 *.oil
