@@ -85,7 +85,12 @@ TAGS
 # other
 .DS_Store
 examples/test
-examples/**/prelude.ml
-examples/tutorial/tutorial*
+examples/**/*.ml
+examples/**/test_*
+examples/**/*.output
+!examples/common/common.ml
+!examples/**/*_helper.ml
+!examples/**/test_*.ml
+!examples/**/*.input
 *.tpc
 *.oil
