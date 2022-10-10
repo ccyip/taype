@@ -1,0 +1,7 @@
+public,alice,bob,expected
+1,(2),2,true
+^,^,1,false
+10,(2 3 5 7),5,true
+^,^,9,false
+^,(9 4 2 4 8 1),8,true
+20,^,^,^

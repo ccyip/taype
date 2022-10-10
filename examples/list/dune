@@ -1,0 +1,4 @@
+(executables
+ (names "test_lookup" "test_insert")
+ (flags (:standard -w -33))
+ (libraries taype-driver-plaintext common sexplib))

@@ -1,0 +1,46 @@
+data list = Nil | Cons int list
+
+fn lookup : int -> list -> bool = \ x xs ->
+  case xs of
+  | Nil -> False
+  | Cons y xs' -> if x == y then True else lookup x xs'
+  end
+
+fn insert : int -> list -> list = \ x xs ->
+  case xs of
+  | Nil -> Cons x Nil
+  | Cons y xs' -> if x <= y then Cons x xs else Cons y (insert x xs')
+  end
+
+obliv `list (k : int) =
+  if k == 0
+  then unit
+  else unit `+ `int `* `list (k-1)
+
+#[section]
+fn s_list : (k : int) -> list -> `list k = \ k xs ->
+  if k == 0
+  then ()
+  else tape (case xs of
+             | Nil -> `inl ()
+             | Cons x xs' -> `inr `(tape (s_int x), s_list (k-1) xs')
+             end)
+
+#[retraction]
+fn r_list : (k : int) -> `list k -> list = \ k ->
+  if k == 0
+  then \ _ -> Nil
+  else \ xs -> `case xs of
+               | `inl _ -> Nil
+               | `inr p -> `case p of
+                           `(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
+                           end
+               end
+
+#[safe]
+fn `lookup : (k : int) -> `int -> `list k -> `bool = \ k x xs ->
+  tape (s_bool (lookup (r_int x) (r_list k xs)))
+
+#[safe]
+fn `insert : (k : int) -> `int -> `list k -> `list (k+1) = \ k x xs ->
+  s_list (k+1) (insert (r_int x) (r_list k xs))
