@@ -18,13 +18,9 @@ let party_of_string = function
 (* Parse the commandline options. The first options is the party name, and the
    optional second one is the oblivious type selector. *)
 let parse_options () =
-  if Array.length Sys.argv < 2
-  then oops "Not enough arguments"
-  else
-    begin
-      my_party := party_of_string Sys.argv.(1);
-      if Array.length Sys.argv > 2 then option_otype := Sys.argv.(2)
-    end
+  if Array.length Sys.argv < 2 then oops "Not enough arguments";
+  my_party := party_of_string Sys.argv.(1);
+  if Array.length Sys.argv > 2 then option_otype := Sys.argv.(2)
 
 (* A simple wrapper around [setup_driver]. Probably should have a better way to
    find an unused port. *)
