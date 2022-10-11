@@ -139,7 +139,7 @@ opts = do
       metavar "PARTIES" <> help "Participating parties, comma separated"
   optRounds <-
     argument auto $
-      metavar "ROUNDS" <> help "How many rounds each test case is done"
+      metavar "ROUNDS" <> help "How many rounds each test case is evaluated for"
   optInput <-
     strArgument $
       metavar "INPUT" <> help "Input file"
