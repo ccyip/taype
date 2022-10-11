@@ -36,7 +36,9 @@ run options@Options {optFile = file} = do
   let code = decodeUtf8 content
       opt = options {optCode = code}
   result <- runExceptT $ process opt
-  whenLeft_ result $ printDoc opt . runCuteM opt . cute
+  whenLeft_ result $ \err -> do
+    printDoc opt $ runCuteM opt $ cute err
+    exitFailure
 
 process :: Options -> ExceptT Err IO ()
 process options@Options {optFile = file, optCode = code, ..} = do
