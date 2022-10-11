@@ -1,0 +1,4 @@
+(executables
+ (names "test_millionaire")
+ (flags (:standard -w -33))
+ (libraries taype-driver-plaintext common sexplib))

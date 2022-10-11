@@ -1,0 +1,5 @@
+fn compare : int -> int -> bool = \a b -> a <= b
+
+#[safe]
+fn `compare : `int -> `int -> `bool = \a b ->
+  tape (s_bool (compare (r_int a) (r_int b)))
