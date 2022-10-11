@@ -170,20 +170,20 @@ getInputCsvIn :: MonadIO m => FilePath -> m [FilePath]
 getInputCsvIn example =
   liftIO $ getDirectoryFilesIO (exampleDir </> example) ["*.input.csv"]
 
-getOTypeOptions :: MonadIO m => FilePath -> m (Maybe [String])
-getOTypeOptions file = do
+getSwitches :: MonadIO m => FilePath -> m (Maybe [String])
+getSwitches file = do
   line <- liftIO $ withFile file ReadMode TIO.hGetLine
-  return $ parseOTypeOptions $ T.strip line
+  return $ parseSwitches $ T.strip line
 
-parseOTypeOptions :: Text -> Maybe [String]
-parseOTypeOptions line = do
+parseSwitches :: Text -> Maybe [String]
+parseSwitches line = do
   line' <- T.stripPrefix "(*!" line
   let content = fromMaybe line' $ T.stripSuffix "*)" line'
       xs = T.splitOn ":" content
   case xs of
-    [key, options]
-      | T.strip key == "otype" ->
-          return $ T.splitOn "," options <&> toString . T.strip
+    [key, switches]
+      | T.strip key == "switch" ->
+          return $ T.splitOn "," switches <&> toString . T.strip
     _ -> Nothing
 
 rulesForRunner :: Int -> FilePath -> Rules ()
@@ -194,17 +194,17 @@ rulesForRunner rnd example = do
   outputs <- flip foldMapM inputNames $ \inputName -> do
     let name = dropExtensions inputName
         tgtWithName = tgt <> "/" <> name
-    opts <- getOTypeOptions $ dir </> name <.> "ml"
+    switches <- getSwitches $ dir </> name <.> "ml"
 
     outputs <- flip foldMapM drivers $ \driver -> do
       let tgtWithDriver = tgtWithName <> "/" <> driver
 
-      outputs <- forM (sequence opts) $ \opt -> do
+      outputs <- forM (sequence switches) $ \switch -> do
         let input = dir </> inputName
             path = dir </> name
             output =
-              ( case opt of
-                  Just o -> path <.> driver <.> o
+              ( case switch of
+                  Just s -> path <.> driver <.> s
                   _ -> path <.> driver
               )
                 <.> "output"
@@ -218,9 +218,9 @@ rulesForRunner rnd example = do
           need [bin, input]
           runnerCmd $
             [bin, partiesFromDriver driver, show rnd', input, out]
-              <> maybeToList opt
+              <> maybeToList switch
 
-        whenJust opt $ \o -> tgtWithDriver <> "/" <> o ~> need [output]
+        whenJust switch $ \o -> tgtWithDriver <> "/" <> o ~> need [output]
         return output
       tgtWithDriver ~> need outputs
       return outputs
