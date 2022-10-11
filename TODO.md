@@ -1,11 +1,12 @@
+- Generate prelude to a different directory
 - `AppKind` can be deprecated?
 - A better way to close the definitions?
 - Unordered oblivious case (only need to change parser)
-- Scrap my boilerplate: instances for Monad, Eq1, etc
 - Support tuple pattern in product case and oblivious sum case
 - Consider checking labels in type equivalence
 - Consider adding tests
 - Add program context for better inference
 - Error messages for `isProd` / `isOProd` / `isPi` could be confusing in
   introduction form
-- Error message for dependent expressions are confusing and redundant
+- Error message for dependent expressions are confusing
+- Allow explicit label annotation
