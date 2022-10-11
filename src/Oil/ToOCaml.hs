@@ -319,7 +319,9 @@ builtinExprTable =
     ("<=", "<="),
     ("==", "=="),
     ("+", "+"),
-    ("-", "-")
+    ("-", "-"),
+    ("*", "*"),
+    ("/", "/")
   ]
 
 builtinTyTable :: [(Text, Text)]
@@ -353,6 +355,7 @@ toValidName_ isTy = \case
     go True "+" = "sum"
     go False "+" = "int_add"
     go _ "-" = "int_sub"
+    go _ "/" = "int_div"
     go _ "==" = "int_eq"
     go _ "<=" = "int_le"
     go _ "->" = "arrow"

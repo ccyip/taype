@@ -164,7 +164,7 @@ retractionName = (retractionPrefix <>)
 
 -- | The infix operators
 infixes :: [Text]
-infixes = ["<=", "==", "+", "-", "*"]
+infixes = ["<=", "==", "+", "-", "*", "/"]
 
 -- | The oblivious infix operators
 oblivInfixes :: [Text]

@@ -224,7 +224,7 @@ grammar = mdo
     rule $
       choice
         [ pInfixExpr
-            ["==", "<=", oblivName "==", oblivAccent <> "<="]
+            ["==", "<=", oblivName "==", oblivName "<="]
             pAddExpr
             pAddExpr,
           pAddExpr
@@ -235,17 +235,22 @@ grammar = mdo
     rule $
       choice
         [ pInfixExpr
-            ["+", "-", oblivName "+", oblivAccent <> "-"]
+            ["+", "-", oblivName "+", oblivName "-"]
             pAddExpr
             pMulExpr,
           pMulExpr
         ]
 
   -- Left-associative multiplicative infix
-  --
-  -- We do not have any of these at the moment, but we will probably add at
-  -- least integer multiplication in the future.
-  pMulExpr <- rule pAppExpr
+  pMulExpr <-
+    rule $
+      choice
+        [ pInfixExpr
+            ["*", "/", oblivName "*", oblivName "/"]
+            pMulExpr
+            pAppExpr,
+          pAppExpr
+        ]
 
   -- Application expression
   pAppExpr <-

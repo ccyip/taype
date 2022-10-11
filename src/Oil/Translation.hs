@@ -895,6 +895,8 @@ prelude =
         ),
     lBopDef "+" "int",
     lBopDef "-" "int",
+    lBopDef "*" "int",
+    lBopDef "/" "int",
     lBopDef "<=" "bool",
     lBopDef "==" "bool",
     -- Helper functions
