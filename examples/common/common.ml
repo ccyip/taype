@@ -4,7 +4,7 @@ open Scanf
 open Fun
 
 let my_party : int ref = ref (-1)
-let option_otype : string ref = ref ""
+let switch : string ref = ref ""
 let stat : int ref = ref (-1)
 
 let oops s = raise (Failure s)
@@ -20,7 +20,7 @@ let party_of_string = function
 let parse_options () =
   if Array.length Sys.argv < 2 then oops "Not enough arguments";
   my_party := party_of_string Sys.argv.(1);
-  if Array.length Sys.argv > 2 then option_otype := Sys.argv.(2)
+  if Array.length Sys.argv > 2 then switch := Sys.argv.(2)
 
 (* A simple wrapper around [setup_driver]. Probably should have a better way to
    find an unused port. *)
