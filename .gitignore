@@ -84,14 +84,14 @@ TAGS
 
 # other
 .DS_Store
-examples/test
+.shake
 examples/**/*.ml
 examples/**/test_*
-examples/**/*.output
-!examples/common/common.ml
-!examples/**/*_helper.ml
+examples/**/*.output.csv
+!examples/common/*.ml
+!examples/**/*helper.ml
 !examples/**/test_*.ml
 !examples/**/*.input
-!examples**/*.csv
+!examples**/*.input.csv
 *.tpc
 *.oil
