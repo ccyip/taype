@@ -1348,7 +1348,7 @@ isProd t =
 -- | Check if a type is an oblivious product type and return its components.
 isOProd :: Ty Name -> TcM (Ty Name, Ty Name)
 isOProd t = do
-  nf <- whnf t
+  nf <- whnf_ t
   case nf of
     OProd {..} -> return (left, right)
     _ ->
@@ -1360,7 +1360,7 @@ isOProd t = do
 -- | Check if a type is an oblivious sum type and return its components.
 isOSum :: Ty Name -> TcM (Ty Name, Ty Name)
 isOSum t = do
-  nf <- whnf t
+  nf <- whnf_ t
   case nf of
     OSum {..} -> return (left, right)
     _ ->
