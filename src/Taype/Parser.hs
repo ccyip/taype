@@ -214,10 +214,32 @@ grammar = mdo
             pToken L.End
             return Loc {expr = ocase_ cond lBinder lBody rBinder rBody, ..},
           -- Next precedence
-          pCompareExpr
+          pOrExpr
         ]
 
   let pInfixExpr = pInfix $ \ref left right -> app_ (GV {..}) [left, right]
+
+  -- Left-associative Boolean or
+  pOrExpr <-
+    rule $
+      choice
+        [ pInfixExpr
+            ["||", oblivName "||"]
+            pOrExpr
+            pAndExpr,
+          pAndExpr
+        ]
+
+  -- Left-associative Boolean and
+  pAndExpr <-
+    rule $
+      choice
+        [ pInfixExpr
+            ["&&", oblivName "&&"]
+            pAndExpr
+            pCompareExpr,
+          pCompareExpr
+        ]
 
   -- Comparative infix
   pCompareExpr <-

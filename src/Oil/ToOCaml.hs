@@ -42,7 +42,6 @@ module Oil.ToOCaml (toOCaml) where
 import Data.Char
 import Data.Graph
   ( SCC (..),
-    Vertex,
     flattenSCC,
     graphFromEdges,
     reachable,
@@ -321,7 +320,10 @@ builtinExprTable =
     ("+", "+"),
     ("-", "-"),
     ("*", "*"),
-    ("/", "/")
+    ("/", "/"),
+    ("not", "not"),
+    ("&&", "&&"),
+    ("||", "||")
   ]
 
 builtinTyTable :: [(Text, Text)]
@@ -358,6 +360,9 @@ toValidName_ isTy = \case
     go _ "/" = "int_div"
     go _ "==" = "int_eq"
     go _ "<=" = "int_le"
+    go _ "not" = "bool_not"
+    go _ "&&" = "bool_and"
+    go _ "||" = "bool_or"
     go _ "->" = "arrow"
     go _ "(,)" = "Pair"
     go _ x | x == aName = "obliv_array"
@@ -461,8 +466,7 @@ sortSCCs ::
 sortSCCs edges sccs = sortBy sccCmp $ sortCyclic <$> sccs
   where
     (g, _, toVertex) = graphFromEdges edges
-    table :: [(Text, (Int, Vertex, [Vertex]))]
-    table = mkTable 0 edges
+    table = mkTable (0 :: Int) edges
     mkTable _ [] = []
     mkTable i ((_, name, _) : edges') =
       let v = fromMaybe (-1) $ toVertex name

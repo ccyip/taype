@@ -893,12 +893,15 @@ prelude =
               )
             ]
         ),
-    lBopDef "+" "int",
-    lBopDef "-" "int",
-    lBopDef "*" "int",
-    lBopDef "/" "int",
-    lBopDef "<=" "bool",
-    lBopDef "==" "bool",
+    lIntBopDef "+" "int",
+    lIntBopDef "-" "int",
+    lIntBopDef "*" "int",
+    lIntBopDef "/" "int",
+    lIntBopDef "<=" "bool",
+    lIntBopDef "==" "bool",
+    lBoolUopDef "not",
+    lBoolBopDef "&&",
+    lBoolBopDef "||",
     -- Helper functions
     funDef_
       (i_ "max")
@@ -1042,9 +1045,99 @@ prelude =
     oblivInjDef False False
   ]
 
--- | Build a leaky definition for binary operator, e.g., '+'.
-lBopDef :: Text -> Text -> NamedDef b a
-lBopDef name cod =
+-- | Build a leaky definition for unary boolean operator, e.g., 'not'.
+lBoolUopDef :: Text -> NamedDef b a
+lBoolUopDef name =
+  funDef_
+    (l_ name)
+    []
+    (ar_ [l_ "bool", l_ "bool"])
+    $ lam_
+      (l_ "a")
+      ( case_
+          (l_ "a")
+          [ (l_ "False", [], ret_ "bool" @@ [V name @@ ["False"]]),
+            (l_ "True", [], ret_ "bool" @@ [V name @@ ["True"]]),
+            ( lif_ "bool",
+              [o_ "b", l_ "a1", l_ "a2"],
+              lif_ "bool"
+                @@ [ o_ "b",
+                     "$self" @@ [l_ "a1"],
+                     "$self" @@ [l_ "a2"]
+                   ]
+            )
+          ]
+      )
+
+-- | Build a leaky definition for binary boolean operator, e.g., '&&'.
+lBoolBopDef :: Text -> NamedDef b a
+lBoolBopDef name =
+  funDef_
+    (l_ name)
+    []
+    (ar_ [l_ "bool", l_ "bool", l_ "bool"])
+    $ lams_
+      [l_ "a", l_ "b"]
+      ( case_
+          (l_ "a")
+          [ ( l_ "False",
+              [],
+              case_
+                (l_ "b")
+                [ ( l_ "False",
+                    [],
+                    ret_ "bool" @@ [V name @@ ["False", "False"]]
+                  ),
+                  ( l_ "True",
+                    [],
+                    ret_ "bool" @@ [V name @@ ["False", "True"]]
+                  ),
+                  ( lif_ "bool",
+                    [o_ "b", l_ "b1", l_ "b2"],
+                    lif_ "bool"
+                      @@ [ o_ "b",
+                           "$self" @@ [l_ "a", l_ "b1"],
+                           "$self" @@ [l_ "a", l_ "b2"]
+                         ]
+                  )
+                ]
+            ),
+            ( l_ "True",
+              [],
+              case_
+                (l_ "b")
+                [ ( l_ "False",
+                    [],
+                    ret_ "bool" @@ [V name @@ ["True", "False"]]
+                  ),
+                  ( l_ "True",
+                    [],
+                    ret_ "bool" @@ [V name @@ ["True", "True"]]
+                  ),
+                  ( lif_ "bool",
+                    [o_ "b", l_ "b1", l_ "b2"],
+                    lif_ "bool"
+                      @@ [ o_ "b",
+                           "$self" @@ [l_ "a", l_ "b1"],
+                           "$self" @@ [l_ "a", l_ "b2"]
+                         ]
+                  )
+                ]
+            ),
+            ( lif_ "bool",
+              [o_ "b", l_ "a1", l_ "a2"],
+              lif_ "bool"
+                @@ [ o_ "b",
+                     "$self" @@ [l_ "a1", l_ "b"],
+                     "$self" @@ [l_ "a2", l_ "b"]
+                   ]
+            )
+          ]
+      )
+
+-- | Build a leaky definition for binary integer operator, e.g., '+'.
+lIntBopDef :: Text -> Text -> NamedDef b a
+lIntBopDef name cod =
   funDef_
     (l_ name)
     []
