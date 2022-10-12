@@ -221,7 +221,7 @@ typing App {..} Nothing ml =
         zipWithM (\arg t -> typing arg (Just t) argLabel) args paraTypes
       let (argTs', argLs, _) = unzip3 argRes
           argLabel' = case strat of
-            JoinStrategy -> fromMaybe (foldl' (\/) SafeL argLs) argLabel
+            JoinStrategy -> argLabel ?: foldl' (\/) SafeL argLs
             _ -> SafeL
       -- Promote all arguments to the right labels.
       args' <- forM argRes $ uncurry3 $ mayPromote argLabel'
@@ -343,7 +343,8 @@ typing Ite {..} mt ml = do
 
   (left', leftTy', leftLabel, right', rightTy', rightLabel, t') <-
     depType typeNoDep inferDep checkDep mt (\(_, _, _, _, _, _, t) -> t)
-  let l' = condLabel \/ leftLabel \/ rightLabel
+  let l' = ml ?: condLabel \/ leftLabel \/ rightLabel
+  checkLabel (Just (condLabel \/ l')) l'
   left'' <- mayPromote l' leftTy' leftLabel left'
   right'' <- mayPromote l' rightTy' rightLabel right'
   x <- fresh
@@ -440,7 +441,8 @@ typing PCase {..} mt ml = do
 
   (body', bodyTy', bodyLabel, t') <-
     depType typeNoDep inferDep checkDep mt (\(_, _, _, t) -> t)
-  let l' = condLabel \/ bodyLabel
+  let l' = ml ?: condLabel \/ bodyLabel
+  checkLabel (Just (condLabel \/ l')) l'
   body'' <- mayPromote l' bodyTy' bodyLabel body'
   x <- fresh
   return
@@ -523,7 +525,8 @@ typing Case {..} mt ml = do
       typeAlt mt' args body = extendCtx args $ typing body mt' ml
 
   (altRes, t') <- depType typeNoDep inferDep checkDep mt snd
-  let l' = flipfoldl' (\(_, l, _) -> (l \/)) condLabel altRes
+  let l' = ml ?: flipfoldl' (\(_, l, _) -> (l \/)) condLabel altRes
+  checkLabel (Just (condLabel \/ l')) l'
   alts' <- NE.zipWith3M (promoteAlt l') ctorNames argss altRes
   x <- fresh
   return
