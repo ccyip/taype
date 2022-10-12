@@ -10,3 +10,6 @@
   introduction form
 - Error message for dependent expressions are confusing
 - Allow explicit label annotation
+- Syntax highlight for VSCode and Emacs
+- Add floating points
+- Generated prelude's order is not quite right (`leaky_int_mul`)
