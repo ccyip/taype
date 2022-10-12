@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
@@ -460,10 +461,11 @@ toOCamlTyArgs args = do
 -- order. It is also possibly quite inefficient. However, we still want to keep
 -- the user-given order as much as possible for readability.
 sortSCCs ::
-  [(NamedDef Text Text, Text, [Text])] ->
+  [(NamedDef Text Text, DefKey, [DefKey])] ->
   [SCC (NamedDef Text Text)] ->
   [SCC (NamedDef Text Text)]
-sortSCCs edges sccs = sortBy sccCmp $ sortCyclic <$> sccs
+sortSCCs edges sccs =
+  sortBy sccCmp $ sortCyclic <$> sccs
   where
     (g, _, toVertex) = graphFromEdges edges
     table = mkTable (0 :: Int) edges
@@ -474,11 +476,11 @@ sortSCCs edges sccs = sortBy sccCmp $ sortCyclic <$> sccs
        in (name, (i, v, r)) : mkTable (i + 1) edges'
     sortCyclic (CyclicSCC defs) = CyclicSCC $ sortOn defIndex defs
     sortCyclic scc = scc
-    defIndex (name, _) = maybe (-1) (\(i, _, _) -> i) $ lookup name table
+    defIndex def = maybe (-1) (\(i, _, _) -> i) $ lookup (toDefKey def) table
     sccCmp scc scc' = cmp (getIdx scc) (getIdx scc')
     getIdx scc = fromMaybe (-1, -1, []) $ do
-      (name, _) <- viaNonEmpty head $ flattenSCC scc
-      lookup name table
+      def <- viaNonEmpty head $ flattenSCC scc
+      lookup (toDefKey def) table
     cmp (i, v, r) (i', v', r') =
       if
           | v `elem` r' -> LT
@@ -489,19 +491,30 @@ sortSCCs edges sccs = sortBy sccCmp $ sortCyclic <$> sccs
 --
 -- This function returns the edges of the computed dependency graph. The return
 -- type is in accordance with the container library APIs.
-mkDepGraph :: (forall b a. Defs b a) -> [(NamedDef Text Text, Text, [Text])]
+mkDepGraph :: (forall b a. Defs b a) -> [(NamedDef Text Text, DefKey, [DefKey])]
 mkDepGraph defs =
   let deps = runFreshM $ mapM (go . snd) defs
-   in zipWith (\def dep -> (def, fst def, dep)) defs deps
+   in zipWith (\def dep -> (def, toDefKey def, dep)) defs deps
   where
-    go :: Def Name Name -> FreshM [Text]
+    go :: Def Name Name -> FreshM [DefKey]
     go FunDef {..} = do
       (_, ty) <- unbindMany (length binders) tyBnd
-      tDeps <- universeM ty <&> \es -> [x | TApp x _ <- es]
-      eDeps <- universeM expr <&> \es -> [x | GV x <- es]
+      tDeps <- universeM ty <&> \es -> [TyKey x | TApp x _ <- es]
+      eDeps <- universeM expr <&> \es -> [FunKey x | GV x <- es]
       return $ hashNub $ tDeps <> eDeps
     go ADTDef {..} = do
       xs <- freshes $ length binders
       let ts = foldMap (\(_, bnds) -> instantiateName xs <$> bnds) ctors
-      deps <- foldMapM universeM ts <&> \es -> [x | TApp x _ <- es]
+      deps <- foldMapM universeM ts <&> \es -> [TyKey x | TApp x _ <- es]
       return $ hashNub deps
+
+data DefKey = TyKey Text | FunKey Text
+  deriving stock (Eq, Ord)
+
+instance Hashable DefKey where
+  hashWithSalt salt (TyKey s) = hashWithSalt salt s
+  hashWithSalt salt (FunKey s) = hashWithSalt salt s
+
+toDefKey :: NamedDef b a -> DefKey
+toDefKey (name, FunDef {}) = FunKey name
+toDefKey (name, ADTDef {}) = TyKey name
