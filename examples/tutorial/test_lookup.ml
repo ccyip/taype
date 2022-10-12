@@ -35,11 +35,13 @@ let _ =
 
   (* Perform the core oblivious computation, [obliv_lookup] in this case. *)
   let obliv_res = obliv_lookup n obliv_x obliv_xs in
-  (* Reveal the result. *)
-  let res = unsafe_r_bool obliv_res in
 
   (* Save the performance statistics. *)
   record_stat ();
+
+  (* Reveal the result. *)
+  let res = unsafe_r_bool obliv_res in
+
   (* Clean up the driver. *)
   finalize_driver ();
 

@@ -19,10 +19,12 @@ let _ =
   collect_stat ();
 
   let obliv_res = obliv_insert n obliv_x obliv_xs in
+
+  record_stat ();
+
   (* Make sure the public view is consistent with the one defined in taype. *)
   let res = unsafe_r_list (n+1) obliv_res in
 
-  record_stat ();
   finalize_driver ();
 
   print_stat ();

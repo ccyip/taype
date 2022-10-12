@@ -17,9 +17,11 @@ let _ =
   collect_stat ();
 
   let obliv_res = obliv_compare a b in
-  let res = unsafe_r_bool obliv_res in
 
   record_stat ();
+
+  let res = unsafe_r_bool obliv_res in
+
   finalize_driver ();
 
   expected = res |> print_result
