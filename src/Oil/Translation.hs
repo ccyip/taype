@@ -254,7 +254,7 @@ toOilExpr T.Ite {..} = do
   case condLabel of
     SafeL -> return $ ite_ cond' left' right'
     LeakyL -> do
-      inst <- lIfInst $ fromJust mTy
+      inst <- lIfInst $ fromJust retTy
       -- Recall that the first branch of Boolean case analysis corresponds to
       -- @False@ while the second one to @True@, unlike the if-then-else
       -- construct.
@@ -266,7 +266,7 @@ toOilExpr T.Case {..} = do
   case condLabel of
     SafeL -> return $ case' cond' alts'
     LeakyL -> do
-      inst <- lIfInst $ fromJust mTy
+      inst <- lIfInst $ fromJust retTy
       return $
         GV (lCaseName adtName)
           @@ ( [inst, cond']
@@ -307,7 +307,7 @@ toOilExpr T.PCase {..} = do
           cond'
           [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
     LeakyL -> do
-      inst <- lIfInst $ fromJust mTy
+      inst <- lIfInst $ fromJust retTy
       return $
         GV (lCaseName "*")
           @@ [ inst,
@@ -317,9 +317,8 @@ toOilExpr T.PCase {..} = do
 toOilExpr T.OPair {..} =
   return $ GV aConcat @@ (toOilVar <$> [left, right])
 toOilExpr T.OPCase {..} = do
-  (ty, _) <- lookupTy cond
   let (leftTy, rightTy) =
-        case ty of
+        case fromJust oprodTy of
           T.OProd {..} -> (left, right)
           _ -> oops "Not an oblivious product"
   leftSize <- toOilSize leftTy
@@ -350,9 +349,8 @@ toOilExpr T.OInj {..} = do
     GV (oblivName $ if tag then "inl" else "inr")
       @@ [leftSize, rightSize, inj']
 toOilExpr T.OCase {..} = do
-  (ty, _) <- lookupTy cond
   let (leftTy, rightTy) =
-        case ty of
+        case fromJust osumTy of
           T.OSum {..} -> (left, right)
           _ -> oops "Not an oblivious sum"
   lSize <- toOilSize leftTy
@@ -363,7 +361,7 @@ toOilExpr T.OCase {..} = do
   lBody' <- extendCtx1 xl leftTy SafeL $ toOilExpr lBody
   rBody' <- extendCtx1 xr rightTy SafeL $ toOilExpr rBody
   let cond' = toOilVar cond
-  inst <- lIfInstMayCrust (fromJust mTy)
+  inst <- lIfInstMayCrust (fromJust retTy)
   -- The tag is at the end of the payload.
   return $
     inst

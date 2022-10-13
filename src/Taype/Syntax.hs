@@ -123,7 +123,7 @@ data Expr a
     ILit {iLit :: Int}
   | -- | (Dependent) if conditional
     Ite
-      { mTy :: Maybe (Ty a),
+      { retTy :: Maybe (Ty a),
         cond :: Expr a,
         left :: Expr a,
         right :: Expr a
@@ -132,7 +132,7 @@ data Expr a
     --
     --  Do not support empty type, i.e. 'alts' must be non empty.
     Case
-      { mTy :: Maybe (Ty a),
+      { retTy :: Maybe (Ty a),
         cond :: Expr a,
         alts :: NonEmpty (CaseAlt Expr a)
       }
@@ -148,7 +148,7 @@ data Expr a
     Pair {left :: Expr a, right :: Expr a}
   | -- | Case analysis for product
     PCase
-      { mTy :: Maybe (Ty a),
+      { retTy :: Maybe (Ty a),
         cond :: Expr a,
         lBinder :: Maybe Binder,
         rBinder :: Maybe Binder,
@@ -160,7 +160,8 @@ data Expr a
     OPair {left :: Expr a, right :: Expr a}
   | -- | Case analysis for oblivious product
     OPCase
-      { cond :: Expr a,
+      { oprodTy :: Maybe (Ty a),
+        cond :: Expr a,
         lBinder :: Maybe Binder,
         rBinder :: Maybe Binder,
         bnd2 :: Scope Bool Expr a
@@ -175,7 +176,8 @@ data Expr a
       }
   | -- | (Leaky) case analysis for oblivious sum type
     OCase
-      { mTy :: Maybe (Ty a),
+      { retTy :: Maybe (Ty a),
+        osumTy :: Maybe (Ty a),
         cond :: Expr a,
         lBinder :: Maybe Binder,
         lBnd :: Scope () Expr a,
@@ -342,14 +344,14 @@ instance Monad Expr where
   ILit {..} >>= _ = ILit {..}
   Ite {..} >>= f =
     Ite
-      { mTy = mTy <&> (>>= f),
+      { retTy = retTy <&> (>>= f),
         cond = cond >>= f,
         left = left >>= f,
         right = right >>= f
       }
   Case {..} >>= f =
     Case
-      { mTy = mTy <&> (>>= f),
+      { retTy = retTy <&> (>>= f),
         cond = cond >>= f,
         alts = alts <&> (>>>= f),
         ..
@@ -365,7 +367,7 @@ instance Monad Expr where
   Pair {..} >>= f = Pair {left = left >>= f, right = right >>= f, ..}
   PCase {..} >>= f =
     PCase
-      { mTy = mTy <&> (>>= f),
+      { retTy = retTy <&> (>>= f),
         cond = cond >>= f,
         bnd2 = bnd2 >>>= f,
         ..
@@ -374,7 +376,8 @@ instance Monad Expr where
   OPair {..} >>= f = OPair {left = left >>= f, right = right >>= f, ..}
   OPCase {..} >>= f =
     OPCase
-      { cond = cond >>= f,
+      { oprodTy = oprodTy <&> (>>= f),
+        cond = cond >>= f,
         bnd2 = bnd2 >>>= f,
         ..
       }
@@ -382,7 +385,8 @@ instance Monad Expr where
   OInj {..} >>= f = OInj {mTy = mTy <&> (>>= f), inj = inj >>= f, ..}
   OCase {..} >>= f =
     OCase
-      { mTy = mTy <&> (>>= f),
+      { retTy = retTy <&> (>>= f),
+        osumTy = osumTy <&> (>>= f),
         cond = cond >>= f,
         lBnd = lBnd >>>= f,
         rBnd = rBnd >>>= f,
@@ -513,16 +517,16 @@ instance PlateM (Expr Name) where
     args' <- mapM f args
     return App {fn = fn', args = args', ..}
   plateM f Ite {..} = do
-    mTy' <- mapM f mTy
+    retTy' <- mapM f retTy
     cond' <- f cond
     left' <- f left
     right' <- f right
-    return Ite {mTy = mTy', cond = cond', left = left', right = right'}
+    return Ite {retTy = retTy', cond = cond', left = left', right = right'}
   plateM f Case {..} = do
-    mTy' <- mapM f mTy
+    retTy' <- mapM f retTy
     cond' <- f cond
     alts' <- mapM (biplateM f) alts
-    return Case {mTy = mTy', cond = cond', alts = alts'}
+    return Case {retTy = retTy', cond = cond', alts = alts'}
   plateM f OIte {..} = do
     cond' <- f cond
     left' <- f left
@@ -537,11 +541,11 @@ instance PlateM (Expr Name) where
     right' <- f right
     return Pair {left = left', right = right'}
   plateM f PCase {..} = do
-    mTy' <- mapM f mTy
+    retTy' <- mapM f retTy
     cond' <- f cond
     ((xl, xr), body) <- unbind2 bnd2
     body' <- f body
-    return PCase {mTy = mTy', cond = cond', bnd2 = abstract_ (xl, xr) body', ..}
+    return PCase {retTy = retTy', cond = cond', bnd2 = abstract_ (xl, xr) body', ..}
   plateM f OProd {..} = do
     left' <- f left
     right' <- f right
@@ -564,7 +568,7 @@ instance PlateM (Expr Name) where
     inj' <- f inj
     return OInj {mTy = mTy', inj = inj', ..}
   plateM f OCase {..} = do
-    mTy' <- mapM f mTy
+    retTy' <- mapM f retTy
     cond' <- f cond
     (xl, lBody) <- unbind1 lBnd
     lBody' <- f lBody
@@ -572,7 +576,7 @@ instance PlateM (Expr Name) where
     rBody' <- f rBody
     return
       OCase
-        { mTy = mTy',
+        { retTy = retTy',
           cond = cond',
           lBnd = abstract_ xl lBody',
           rBnd = abstract_ xr rBody',
@@ -650,13 +654,13 @@ let_ binder mTy rhs body =
     }
 
 ite_ :: Expr a -> Expr a -> Expr a -> Expr a
-ite_ cond left right = Ite {mTy = Nothing, ..}
+ite_ cond left right = Ite {retTy = Nothing, ..}
 
 oite_ :: Expr a -> Expr a -> Expr a -> Expr a
 oite_ cond left right = OIte {..}
 
 case_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
-case_ cond alts = Case {mTy = Nothing, alts = uncurry3 caseAlt_ <$> alts, ..}
+case_ cond alts = Case {retTy = Nothing, alts = uncurry3 caseAlt_ <$> alts, ..}
 
 ocase_ ::
   a ~ Text =>
@@ -668,7 +672,8 @@ ocase_ ::
   Expr a
 ocase_ cond lBinder lBody rBinder rBody =
   OCase
-    { mTy = Nothing,
+    { retTy = Nothing,
+      osumTy = Nothing,
       lBinder = Just lBinder,
       lBnd = abstractBinder lBinder lBody,
       rBinder = Just rBinder,
@@ -679,7 +684,7 @@ ocase_ cond lBinder lBody rBinder rBody =
 pcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 pcase_ cond lBinder rBinder body =
   PCase
-    { mTy = Nothing,
+    { retTy = Nothing,
       lBinder = Just lBinder,
       rBinder = Just rBinder,
       bnd2 = abstractBinder (lBinder, rBinder) body,
@@ -689,7 +694,8 @@ pcase_ cond lBinder rBinder body =
 opcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 opcase_ cond lBinder rBinder body =
   OPCase
-    { lBinder = Just lBinder,
+    { oprodTy = Nothing,
+      lBinder = Just lBinder,
       rBinder = Just rBinder,
       bnd2 = abstractBinder (lBinder, rBinder) body,
       ..

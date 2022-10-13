@@ -332,7 +332,7 @@ typing Ite {..} mt ml = do
         return $
           lets'
             [(x, TBool, SafeL, cond')]
-            Ite {cond = V x, left = leftTy', right = rightTy', mTy = Nothing}
+            Ite {cond = V x, left = leftTy', right = rightTy', retTy = Nothing}
       gen _ = depOops
 
       -- Matcher
@@ -354,7 +354,7 @@ typing Ite {..} mt ml = do
       lets'
         [(x, TBool, condLabel, cond')]
         Ite
-          { mTy = Just t',
+          { retTy = Just t',
             cond = V x,
             left = left'',
             right = right''
@@ -425,7 +425,7 @@ typing PCase {..} mt ml = do
             PCase
               { cond = V x,
                 bnd2 = abstract_ (xl, xr) bodyTy',
-                mTy = Nothing,
+                retTy = Nothing,
                 ..
               }
       gen _ = depOops
@@ -451,7 +451,7 @@ typing PCase {..} mt ml = do
       lets'
         [(x, Prod {left = leftTy', right = rightTy'}, condLabel, cond')]
         PCase
-          { mTy = Just t',
+          { retTy = Just t',
             cond = V x,
             bnd2 = abstract_ (xl, xr) body'',
             ..
@@ -504,7 +504,7 @@ typing Case {..} mt ml = do
         return $
           lets'
             [(x, condTy', SafeL, cond')]
-            Case {cond = V x, alts = tyAlts, mTy = Nothing}
+            Case {cond = V x, alts = tyAlts, retTy = Nothing}
 
       -- Matcher
       match Case {cond = condQ, alts = altsQ} = do
@@ -535,7 +535,7 @@ typing Case {..} mt ml = do
       lets'
         [(x, GV ref, condLabel, cond')]
         Case
-          { mTy = Just t',
+          { retTy = Just t',
             cond = V x,
             alts = alts'
           }
@@ -610,14 +610,16 @@ typing OPCase {..} mt ml = do
         (xr, rightTy', SafeL, rBinder)
       ]
       $ typing body mt ml
+  let oprodTy' = OProd {left = leftTy', right = rightTy'}
   x <- fresh
   return
     ( bodyTy',
       bodyLabel,
       lets'
-        [(x, OProd {left = leftTy', right = rightTy'}, SafeL, cond')]
+        [(x, oprodTy', SafeL, cond')]
         OPCase
-          { cond = V x,
+          { oprodTy = Just oprodTy',
+            cond = V x,
             bnd2 = abstract_ (xl, xr) body',
             ..
           }
@@ -671,14 +673,16 @@ typing OCase {..} mt Nothing = do
   rBody' <-
     extendCtx1 xr right' SafeL rBinder $
       check rBody bodyTy' LeakyL
+  let osumTy' = OSum {left = left', right = right'}
   x <- fresh
   return
     ( bodyTy',
       LeakyL,
       lets'
-        [(x, OSum {left = left', right = right'}, SafeL, cond')]
+        [(x, osumTy', SafeL, cond')]
         OCase
-          { mTy = Just bodyTy',
+          { retTy = Just bodyTy',
+            osumTy = Just osumTy',
             cond = V x,
             lBnd = abstract_ xl lBody',
             rBnd = abstract_ xr rBody',
