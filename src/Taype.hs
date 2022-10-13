@@ -53,7 +53,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   let coreDefs = defsFromGCtx (fromClosed gctx) names
       coreDoc = cuteDefs options coreDefs
   when optPrintCore $ printDoc options coreDoc
-  printDocToFile (file -<.> "tpc") coreDoc
+  printToFile (file -<.> "tpc") coreDoc
   let Oil.Program {..} = toOilProgram options gctx coreDefs
       preludeOil = Oil.cuteDefs options preludeDefs
       mainOil = Oil.cuteDefs options mainDefs
@@ -61,7 +61,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
       revealOil = Oil.cuteDefs options revealDefs
   when (optPrintOil && optPrintPrelude) $ printDoc options preludeOil
   when optPrintOil $ printDoc options $ mainOil <> concealOil <> revealOil
-  printDocsToFile "oil" preludeOil mainOil concealOil revealOil
+  printToFiles "oil" preludeOil mainOil concealOil revealOil
   let preludeML =
         Oil.toOCaml
           options
@@ -88,7 +88,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
           revealDefs
   when (optPrintOCaml && optPrintPrelude) $ printDoc options preludeML
   when optPrintOCaml $ printDoc options $ mainML <> concealML <> revealML
-  printDocsToFile "ml" preludeML mainML concealML revealML
+  printToFiles "ml" preludeML mainML concealML revealML
   where
     capitalize (h : t) = toUpper h : t
     capitalize "" = ""
@@ -97,11 +97,12 @@ process options@Options {optFile = file, optCode = code, ..} = do
       \It contains "
         <> what
         <> "."
-    printDocsToFile ext preludeDoc mainDoc concealDoc revealDoc = do
-      printDocToFile (dir </> "prelude" <.> ext) preludeDoc
-      printDocToFile (file -<.> ext) mainDoc
-      printDocToFile (dir </> (baseName <> "_conceal") <.> ext) concealDoc
-      printDocToFile (dir </> (baseName <> "_reveal") <.> ext) revealDoc
+    printToFile f d = unless optNoFiles $ printDocToFile f d
+    printToFiles ext preludeDoc mainDoc concealDoc revealDoc = do
+      printToFile (dir </> "prelude" <.> ext) preludeDoc
+      printToFile (file -<.> ext) mainDoc
+      printToFile (dir </> (baseName <> "_conceal") <.> ext) concealDoc
+      printToFile (dir </> (baseName <> "_reveal") <.> ext) revealDoc
     dir = takeDirectory file
     baseName = takeBaseName file
     modName = toText $ capitalize baseName
@@ -127,6 +128,11 @@ opts = do
     switch $
       long "no-flatten-lets"
         <> help "Do not flatten let bindings"
+  optNoFiles <-
+    switch $
+      long "no-files"
+        <> short 'n'
+        <> help "Do not generate files"
   optPrintCore <-
     switch $
       long "print-core"
