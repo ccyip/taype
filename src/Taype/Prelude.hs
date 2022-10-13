@@ -19,6 +19,7 @@ module Taype.Prelude
     secondM,
     findAndDel,
     snoc,
+    flip2,
   )
 where
 
@@ -45,3 +46,6 @@ findAndDel p (x : xs)
 
 snoc :: [a] -> a -> [a]
 snoc xs x = xs <> [x]
+
+flip2 :: (c -> a -> b -> d) -> a -> b -> c -> d
+flip2 f a b c = f c a b

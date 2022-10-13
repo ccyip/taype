@@ -33,18 +33,18 @@
 --     require the constructors and builtin functions are always in application
 --     form, even if they have no argument.
 --
---   - Core taype: an expression is in core taype, if it is
+--   - Core taype: an expression is in core taype, if
 --
---     * fully annotated. This includes type and label annotations, as well as
---       annotations specific to certain constructs, e.g., application kinds in
---       applications and return types in conditionals.
+--     * It is fully annotated. This includes type and label annotations, as
+--       well as annotations specific to certain constructs, e.g., application
+--       kinds in applications and return types in conditionals.
 --
 --     * No ascription or location constructs.
 --
---     * Use explicit label promotion. The implicit label conversion is disabled
---       in the typing rules for core taype. Various constructs also require
---       their subcomponents to have the same label, e.g., arguments of a
---       constructor.
+--     * It uses explicit label promotion. The implicit label conversion is
+--       disabled in the typing rules for core taype. Various constructs also
+--       require their subcomponents to have the same label, e.g., arguments of
+--       a constructor.
 --
 --     * The alternatives in all pattern matchings are in the canonical order,
 --       i.e. the order in the corresponding ADT signature.
