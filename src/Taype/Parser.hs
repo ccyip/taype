@@ -94,6 +94,10 @@ getLoc :: Expr a -> Int
 getLoc Loc {loc} = loc
 getLoc _ = oops "Location not available"
 
+setLoc :: Int -> Expr a -> Expr a
+setLoc loc Loc {loc = _, ..} = Loc {..}
+setLoc loc expr = Loc {..}
+
 infixToTypeFormer :: Text -> (Ty a -> Ty a -> Ty a)
 infixToTypeFormer "*" = Prod
 infixToTypeFormer x | x == oblivName "*" = OProd
@@ -476,13 +480,13 @@ grammar = mdo
         return Loc {expr = case_ cond alts, ..}
       -- Pair-like
       pPair former openParenToken = do
-        pToken openParenToken
+        loc <- pLocatedToken openParenToken
         prefix <- some1 $ pExpr <* pToken L.Comma
         end <- pExpr
         pToken L.RParen
         return $
           let go left right = Loc {expr = former left right, loc = getLoc left}
-           in foldr go end prefix
+           in setLoc loc $ foldr go end prefix
       -- Application-like
       pApp former pFn = do
         fn <- pFn
@@ -514,13 +518,17 @@ grammar = mdo
 
   -- Pattern
   let pLocatedPairPatRule pLocatedPat_ openParenToken = rule $ do
-        pToken openParenToken
+        patLoc <- pLocatedToken openParenToken
         prefix <- some1 $ pLocatedPat_ <* pToken L.Comma
         end <- pLocatedPat_
         pToken L.RParen
         return $
           let go (loc, left) (_, right) = (loc, PairP loc left right)
-           in foldr go end prefix
+              (_, pat) = foldr go end prefix
+              pat' = case pat of
+                PairP _ left right -> PairP patLoc left right
+                p -> p
+           in (patLoc, pat')
       pLocatedPatRule pLocatedPairPat_ =
         rule $
           choice

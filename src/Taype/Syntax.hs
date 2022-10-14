@@ -759,8 +759,10 @@ elabPat pcase = go
     go (PairP _ lPat rPat) src body = do
       xl <- freshPatBinder lPat
       xr <- freshPatBinder rPat
-      body' <- go rPat (V $ fromBinder xr) body >>= go lPat (V $ fromBinder xl)
+      body' <- go rPat (srcFromBinder xr) body >>= go lPat (srcFromBinder xl)
       return $ pcase src xl xr body'
+    srcFromBinder (Named loc name) = Loc {expr = V name, ..}
+    srcFromBinder _ = oops "Not a pair pattern"
 
 freshPatBinder :: (a ~ Text, MonadFresh m) => Pat a -> m (BinderM a)
 freshPatBinder (VarP binder) = return binder
