@@ -1,4 +1,3 @@
-- Generate prelude to a different directory
 - `AppKind` can be deprecated?
 - Consider checking labels in type equivalence
 - Add program context for better inference

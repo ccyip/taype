@@ -33,6 +33,9 @@ module Oil.Translation
 
     -- * Translation
     toOilProgram,
+
+    -- * Prelude
+    prelude,
   )
 where
 
@@ -560,8 +563,7 @@ lIfInstMayCrust t =
 toOilProgram :: Options -> GCtx Name -> T.Defs Name -> Program b a
 toOilProgram Options {..} gctx defs =
   Program
-    { preludeDefs = prelude,
-      mainDefs =
+    { mainDefs =
         secondF closedDef $
           foldMap (simp optNoReadableOil . go False) defs,
       ..

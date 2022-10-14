@@ -146,8 +146,7 @@ type Defs b a = [NamedDef b a]
 
 -- | OIL program
 data Program b a = Program
-  { preludeDefs :: Defs b a,
-    mainDefs :: Defs b a,
+  { mainDefs :: Defs b a,
     concealDefs :: Defs b a,
     revealDefs :: Defs b a
   }

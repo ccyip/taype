@@ -75,8 +75,8 @@ mlCmd :: [String] -> Action ()
 mlCmd args =
   command_ [Traced "OCAMLOPT"] "ocamlfind" $ ["ocamlopt"] <> args
 
-mlGarbages :: [FilePattern]
-mlGarbages = ["*.cmi", "*.cmx", "*.o"]
+garbages :: [FilePattern]
+garbages = ["*.cmi", "*.cmx", "*.o", "*.tpc", "*.oil"]
 
 getExamples :: MonadIO m => m [FilePath]
 getExamples = do
@@ -89,8 +89,7 @@ getTaypeFilesIn example =
 
 getMLFromTaype :: FilePath -> [FilePath]
 getMLFromTaype file =
-  [ replaceBaseName prefix "prelude",
-    prefix,
+  [ prefix,
     prefix <> "_conceal",
     prefix <> "_reveal"
   ]
@@ -116,7 +115,7 @@ rulesForExample example = do
     forM drivers $ \driver -> do
       let bin = mkTestBin (dir </> takeBaseName srcName) driver
           allMls =
-            [commonDir </> "common.ml"]
+            ((commonDir </>) <$> ["common.ml", "prelude.ml"])
               <> mls
               <> helpers
               <> [dir </> srcName]
@@ -142,7 +141,7 @@ rulesForExample example = do
 
   ("clean/" <> example) ~> do
     removeFilesAfter "." $ mls <> bins
-    removeFilesAfter dir $ ["*.tpc", "*.oil"] <> mlGarbages
+    removeFilesAfter dir garbages
   return bins
 
 rulesFromTaypeFile :: FilePath -> Rules [FilePath]
@@ -156,15 +155,20 @@ rulesFromTaypeFile tp = do
 rulesForCommon :: Rules ()
 rulesForCommon = do
   let bin = commonDir </> "test"
+      preludeML = commonDir </> "prelude.ml"
+
   bin %> \out -> do
     let mls = [out <.> "ml"]
     need mls
     mlCmd $ ["-o", out] <> mls
 
-  "build/common" ~> need [bin]
+  preludeML %> \out -> do
+    taypeCmd ["--generate-prelude", dropExtension out]
+
+  "build/common" ~> need [bin, preludeML]
 
   "clean/common" ~> do
-    removeFilesAfter commonDir $ "test" : mlGarbages
+    removeFilesAfter commonDir $ ["test", "prelude.ml"] <> garbages
 
 getInputCsvIn :: MonadIO m => FilePath -> m [FilePath]
 getInputCsvIn example =
