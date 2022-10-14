@@ -1590,8 +1590,10 @@ preCheckName (defName, def) = do
     OADTDef {..} -> checkLower defName loc "OADT"
     _ -> pass
   where
+    mayStripPrefix prefix s = fromMaybe s $ T.stripPrefix prefix s
     checkLower name loc what = do
-      let name' = fromMaybe name $ T.stripPrefix oblivAccent name
+      let name' =
+            mayStripPrefix oblivAccent $ mayStripPrefix internalPrefix name
       unless (isLower $ T.head name') $
         err_ loc $
           what

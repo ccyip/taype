@@ -23,13 +23,11 @@ module Oil.Translation
     retPrefix,
     lIfPrefix,
     lCasePrefix,
-    internalPrefix,
     unsafePrefix,
     privPrefix,
     retName,
     lIfName,
     lCaseName,
-    internalName,
     unsafeName,
     privName,
 
@@ -65,9 +63,6 @@ lIfPrefix = leakyName "if#"
 lCasePrefix :: Text
 lCasePrefix = leakyName "case#"
 
-internalPrefix :: Text
-internalPrefix = "$"
-
 unsafePrefix :: Text
 unsafePrefix = "unsafe!"
 
@@ -82,9 +77,6 @@ lIfName = (lIfPrefix <>)
 
 lCaseName :: Text -> Text
 lCaseName = (lCasePrefix <>)
-
-internalName :: Text -> Text
-internalName = (internalPrefix <>)
 
 unsafeName :: Text -> Text
 unsafeName = (unsafePrefix <>)

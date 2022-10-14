@@ -32,6 +32,8 @@ module Taype.Common
     sectionName,
     retractionPrefix,
     retractionName,
+    internalPrefix,
+    internalName,
     infixes,
     oblivInfixes,
     leakyInfixes,
@@ -162,6 +164,13 @@ retractionPrefix = "r_"
 
 retractionName :: Text -> Text
 retractionName = (retractionPrefix <>)
+
+-- | Internal name
+internalPrefix :: Text
+internalPrefix = "$"
+
+internalName :: Text -> Text
+internalName = (internalPrefix <>)
 
 -- | The infix operators
 infixes :: [Text]

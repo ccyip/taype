@@ -32,6 +32,7 @@ module Taype.Syntax
     closeDefs,
     Attribute (..),
     LabelPolyStrategy (..),
+    Pat (..),
 
     -- * Smart constructors
     lam_,
@@ -42,8 +43,11 @@ module Taype.Syntax
     oite_,
     case_,
     ocase_,
+    ocasePat_,
     pcase_,
+    pcasePat_,
     opcase_,
+    opcasePat_,
 
     -- * Pretty printer
     cuteBinder,
@@ -313,6 +317,9 @@ instance Pretty Attribute where
 -- constructors. Taype does not support general label polymorphism yet.
 data LabelPolyStrategy = JoinStrategy | LeakyStrategy | SafeStrategy
   deriving stock (Eq, Show)
+
+-- | A rudimentary pattern that only supports pairs
+data Pat a = VarP (BinderM a) | PairP Int (Pat a) (Pat a)
 
 ----------------------------------------------------------------
 -- Instances of expressions and definitions
@@ -681,6 +688,21 @@ ocase_ cond lBinder lBody rBinder rBody =
       ..
     }
 
+ocasePat_ ::
+  a ~ Text =>
+  Expr a ->
+  Pat a ->
+  Expr a ->
+  Pat a ->
+  Expr a ->
+  Expr a
+ocasePat_ cond lPat lBody rPat rBody = runFreshM $ do
+  xl <- freshPatBinder lPat
+  lBody' <- elabPat opcase_ lPat (V $ fromBinder xl) lBody
+  xr <- freshPatBinder rPat
+  rBody' <- elabPat opcase_ rPat (V $ fromBinder xr) rBody
+  return $ ocase_ cond xl lBody' xr rBody'
+
 pcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 pcase_ cond lBinder rBinder body =
   PCase
@@ -691,6 +713,10 @@ pcase_ cond lBinder rBinder body =
       ..
     }
 
+-- The pattern has to be 'PairP'.
+pcasePat_ :: a ~ Text => Expr a -> Pat a -> Expr a -> Expr a
+pcasePat_ cond pat body = runFreshM $ elabPat pcase_ pat cond body
+
 opcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 opcase_ cond lBinder rBinder body =
   OPCase
@@ -700,6 +726,47 @@ opcase_ cond lBinder rBinder body =
       bnd2 = abstractBinder (lBinder, rBinder) body,
       ..
     }
+
+-- The pattern has to be 'PairP'.
+opcasePat_ :: a ~ Text => Expr a -> Pat a -> Expr a -> Expr a
+opcasePat_ cond pat body = runFreshM $ elabPat opcase_ pat cond body
+
+-- | Elaborate pattern.
+--
+-- The first argument is the smart constructor of case analysis for product-like
+-- types, e.g., public and oblivious products.
+--
+-- The second argument is the pattern to elaborate.
+--
+-- The third argument is the source expression of the pair pattern 'PairP',
+-- which is not used if the pattern is simply a 'VarP'.
+--
+-- The last argument is the pattern matching body.
+--
+-- The invariant of this function may be a bit awkward: the returned expression
+-- is closed under all pattern variables in the pattern if the pattern is a
+-- 'PairP', while it is open if the pattern is a 'VarP'.
+elabPat ::
+  (a ~ Text, MonadFresh m) =>
+  (Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a) ->
+  Pat a ->
+  Expr a ->
+  Expr a ->
+  m (Expr a)
+elabPat pcase = go
+  where
+    go (VarP _) _ body = return body
+    go (PairP _ lPat rPat) src body = do
+      xl <- freshPatBinder lPat
+      xr <- freshPatBinder rPat
+      body' <- go rPat (V $ fromBinder xr) body >>= go lPat (V $ fromBinder xl)
+      return $ pcase src xl xr body'
+
+freshPatBinder :: (a ~ Text, MonadFresh m) => Pat a -> m (BinderM a)
+freshPatBinder (VarP binder) = return binder
+freshPatBinder (PairP loc _ _) = do
+  x <- fresh
+  return $ Named loc $ internalName ("p" <> show x)
 
 ----------------------------------------------------------------
 -- Pretty printer

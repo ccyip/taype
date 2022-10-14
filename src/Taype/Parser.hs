@@ -191,9 +191,9 @@ grammar = mdo
           -- Oblivious (leaky) if conditional
           pIf oite_ L.OIf pExpr,
           -- Product elimination
-          pPCase pcase_ L.Case L.LParen pExpr,
+          pPCase pcasePat_ L.Case pPairPat pExpr,
           -- Oblivious product elimination
-          pPCase opcase_ L.OCase L.LOParen pExpr,
+          pPCase opcasePat_ L.OCase pOPairPat pExpr,
           -- Case analysis
           pCase pExpr,
           -- Oblivious (leaky) case analysis
@@ -203,16 +203,16 @@ grammar = mdo
             pToken L.Of
             optional $ pToken L.Bar
             pToken $ L.OInj True
-            lBinder <- pBinder
+            lPat <- pOPat
             pToken L.Arrow
             lBody <- pExpr
             pToken L.Bar
             pToken $ L.OInj False
-            rBinder <- pBinder
+            rPat <- pOPat
             pToken L.Arrow
             rBody <- pExpr
             pToken L.End
-            return Loc {expr = ocase_ cond lBinder lBody rBinder rBody, ..},
+            return Loc {expr = ocasePat_ cond lPat lBody rPat rBody, ..},
           -- Next precedence
           pOrExpr
         ]
@@ -364,7 +364,7 @@ grammar = mdo
           -- If conditional
           pIf ite_ L.If pType,
           -- Product elimination
-          pPCase pcase_ L.Case L.LParen pType,
+          pPCase pcasePat_ L.Case pPairPat pType,
           -- Case analysis
           pCase pType,
           -- Next precedence
@@ -449,20 +449,16 @@ grammar = mdo
         right <- pBranch
         return Loc {expr = former cond left right, ..}
       -- Product-like elimination
-      pPCase former caseToken openParenToken pBody = do
+      pPCase former caseToken pPairPat_ pBody = do
         loc <- pLocatedToken caseToken
         cond <- pExpr
         pToken L.Of
         optional $ pToken L.Bar
-        pToken openParenToken
-        left <- pBinder
-        pToken L.Comma
-        right <- pBinder
-        pToken L.RParen
+        pat <- pPairPat_
         pToken L.Arrow
         body <- pBody
         pToken L.End
-        return Loc {expr = former cond left right body, ..}
+        return Loc {expr = former cond pat body, ..}
       -- Public case-like elimination
       pCase pBody = do
         let pAlt = do
@@ -515,6 +511,29 @@ grammar = mdo
             return (binder, Just ty),
           pToken L.LParen *> pLocatedFunArg <* pToken L.RParen
         ]
+
+  -- Pattern
+  let pLocatedPairPatRule pLocatedPat_ openParenToken = rule $ do
+        pToken openParenToken
+        prefix <- some1 $ pLocatedPat_ <* pToken L.Comma
+        end <- pLocatedPat_
+        pToken L.RParen
+        return $
+          let go (loc, left) (_, right) = (loc, PairP loc left right)
+           in foldr go end prefix
+      pLocatedPatRule pLocatedPairPat_ =
+        rule $
+          choice
+            [ second VarP <$> pLocatedBinder,
+              pLocatedPairPat_
+            ]
+      pPairPat = snd <$> pLocatedPairPat
+      pOPairPat = snd <$> pLocatedOPairPat
+      pOPat = snd <$> pLocatedOPat
+  pLocatedPairPat <- pLocatedPairPatRule pLocatedPat L.LParen
+  pLocatedPat <- pLocatedPatRule pLocatedPairPat
+  pLocatedOPairPat <- pLocatedPairPatRule pLocatedOPat L.LOParen
+  pLocatedOPat <- pLocatedPatRule pLocatedOPairPat
 
   return pProg
 
