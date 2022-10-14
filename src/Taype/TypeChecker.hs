@@ -1604,21 +1604,31 @@ preCheckName (defName, def) = do
       whenJust binder $ \case
         Named loc name -> checkLower name loc "Binder"
         _ -> pass
+    errConflict :: (MonadError Err m) => Binder -> m ()
+    errConflict = \case
+      Named loc name ->
+        err_ loc $
+          "Found conflicting pattern variables: " <> pretty name
+      _ -> oops "Anonymous binders cannot be duplicate"
     go :: (MonadError Err m) => Expr Name -> m (Expr Name)
     go e@Case {..} = do
       forM_ alts $ \CaseAlt {..} -> do
         mapM_ checkBinder binders
-        whenJust (findDupBinderName (catMaybes binders)) $ \case
-          Named loc name ->
-            err_ loc $
-              "Found conflicting pattern variables: " <> pretty name
-          _ -> oops "Anonymous binders cannot be duplicate"
+        whenJust (findDupBinderName (catMaybes binders)) errConflict
       return e
     go e@Pi {..} = checkBinder binder >> return e
     go e@Lam {..} = checkBinder binder >> return e
     go e@Let {..} = checkBinder binder >> return e
-    go e@PCase {..} = checkBinder lBinder >> checkBinder rBinder >> return e
-    go e@OPCase {..} = checkBinder lBinder >> checkBinder rBinder >> return e
+    go e@PCase {..} = do
+      checkBinder lBinder
+      checkBinder rBinder
+      whenJust (findDupBinderName (catMaybes [lBinder, rBinder])) errConflict
+      return e
+    go e@OPCase {..} = do
+      checkBinder lBinder
+      checkBinder rBinder
+      whenJust (findDupBinderName (catMaybes [lBinder, rBinder])) errConflict
+      return e
     go e@OCase {..} = checkBinder lBinder >> checkBinder rBinder >> return e
     go e = return e
 
