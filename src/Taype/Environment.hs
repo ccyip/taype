@@ -43,6 +43,8 @@ module Taype.Environment
     withLoc,
     mayWithLoc,
     withCur,
+    withOption,
+    withOptPrintLabels,
 
     -- * Prelude context
     preludeGCtx,
@@ -210,6 +212,12 @@ mayWithLoc _ = id
 
 withCur :: MonadReader Env m => Expr Name -> m a -> m a
 withCur e = local (\Env {..} -> Env {cur = e, ..})
+
+withOption :: MonadReader Env m => (Options -> Options) -> m a -> m a
+withOption f = local $ \Env {..} -> Env {options = f options, ..}
+
+withOptPrintLabels :: MonadReader Env m => m a -> m a
+withOptPrintLabels = withOption $ \opt -> opt { optPrintLabels = True }
 
 ----------------------------------------------------------------
 -- Prelude context

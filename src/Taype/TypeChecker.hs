@@ -1791,10 +1791,16 @@ instance Cutie (Expr Text)
 instance Cutie (TCtx Text)
 
 instance Cutie (Expr Name) where
-  cutie = cutie <=< mapM renderName <=< readableExpr
+  cutie =
+    withOptPrintLabels . cutie
+      <=< mapM renderName
+      <=< readableExpr
 
 instance Cutie (TCtx Int) where
-  cutie = cutie <=< mapM renderName <=< biplateM readableExpr
+  cutie =
+    withOptPrintLabels . cutie
+      <=< mapM renderName
+      <=< biplateM readableExpr
 
 instance Cutie D where
   cutie (DD doc) = return doc
