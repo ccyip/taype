@@ -177,8 +177,7 @@ typing Lam {..} (Just t) ml = do
     t' <- kinded binderTy
     -- If the binder type is given in the lambda term, it has to agree with the
     -- one in the pi-type.
-    mayWithLoc (peekLoc binderTy) $
-      equate binderTy' t'
+    withLoc_ binderTy $ equate binderTy' t'
   (x, body, tBody') <- unbind1With bnd tBnd'
   (l, body') <-
     extendCtx1 x binderTy' binderLabel' binder $
@@ -309,7 +308,7 @@ typing Ite {..} mt ml = do
 
       -- Infer a dependent type.
       inferDep = do
-        checkLabel (Just condLabel) SafeL
+        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         (leftTy', leftLabel, left') <- infer_ left ml
         (rightTy', rightLabel, right') <- infer_ right ml
         t' <- depGen gen ctxs argss (NE.fromList [leftTy', rightTy'])
@@ -317,7 +316,7 @@ typing Ite {..} mt ml = do
 
       -- Check a dependent type.
       checkDep t' = do
-        checkLabel (Just condLabel) SafeL
+        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         (leftTy', rightTy') <-
           depMatch match ctxs argss t' >>= \case
             leftTy' :| [rightTy'] -> return (leftTy', rightTy')
@@ -380,7 +379,7 @@ typing Pair {..} mt ml = do
     )
 typing PCase {..} mt ml = do
   (condTy', condLabel, cond') <- infer cond
-  (leftTy', rightTy') <- mayWithLoc (peekLoc cond) $ isProd condTy'
+  (leftTy', rightTy') <- withLoc_ cond $ isProd condTy'
   ((xl, xr), body) <- unbind2 bnd2
 
   let ctxs = NE.fromList [[]]
@@ -401,14 +400,14 @@ typing PCase {..} mt ml = do
 
       -- Infer a dependent type.
       inferDep = do
-        checkLabel (Just condLabel) SafeL
+        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         (bodyTy', bodyLabel, body') <- typeBody Nothing
         t' <- depGen gen ctxs argss (NE.fromList [bodyTy'])
         return (body', bodyTy', bodyLabel, t')
 
       -- Check a dependent type.
       checkDep t' = do
-        checkLabel (Just condLabel) SafeL
+        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         bodyTy' <-
           depMatch match ctxs argss t' >>= \case
             bodyTy' :| [] -> return bodyTy'
@@ -485,14 +484,14 @@ typing Case {..} mt ml = do
 
       -- Infer a dependent type.
       inferDep = do
-        checkLabel (Just condLabel) SafeL
+        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         altRes <- NE.zipWithM (typeAlt Nothing) argss bodies
         t' <- depGen gen ctxs argss $ altRes <&> \(t, _, _) -> t
         return (altRes, t')
 
       -- Check a dependent type.
       checkDep t' = do
-        checkLabel (Just condLabel) SafeL
+        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         bodyTs <- depMatch match ctxs argss t'
         altRes <- NE.zipWith3M (typeAlt . Just) bodyTs argss bodies
         return (altRes, t')
@@ -602,7 +601,7 @@ typing OPair {..} mt Nothing = do
     )
 typing OPCase {..} mt ml = do
   (condTy', _, cond') <- infer_ cond (Just SafeL)
-  (leftTy', rightTy') <- mayWithLoc (peekLoc cond) $ isOProd condTy'
+  (leftTy', rightTy') <- withLoc_ cond $ isOProd condTy'
   ((xl, xr), body) <- unbind2 bnd2
   (bodyTy', bodyLabel, body') <-
     extendCtx
@@ -625,7 +624,7 @@ typing OPCase {..} mt ml = do
           }
     )
 typing OInj {mTy = Just t, ..} Nothing Nothing = do
-  (left, right) <- mayWithLoc (peekLoc t) $ isOSum t
+  (left, right) <- withLoc_ t $ isOSum t
   left' <- checkKind left OblivK
   right' <- checkKind right OblivK
   let injTy' = if tag then left' else right'
@@ -662,7 +661,7 @@ typing OInj {..} (Just t') Nothing = do
     )
 typing OCase {..} mt Nothing = do
   (condTy', _, cond') <- infer_ cond (Just SafeL)
-  (left, right) <- mayWithLoc (peekLoc cond) $ isOSum condTy'
+  (left, right) <- withLoc_ cond $ isOSum condTy'
   left' <- checkKind left OblivK
   right' <- checkKind right OblivK
   (xl, lBody) <- unbind1 lBnd
@@ -980,7 +979,7 @@ kinding Ite {..} Nothing = do
     )
 kinding PCase {..} Nothing = do
   (condTy', _, cond') <- infer_ cond (Just SafeL)
-  (left', right') <- mayWithLoc (peekLoc cond) $ isProd condTy'
+  (left', right') <- withLoc_ cond $ isProd condTy'
   ((xl, xr), body) <- unbind2 bnd2
   body' <-
     extendCtx [(xl, left', SafeL, lBinder), (xr, right', SafeL, rBinder)] $
@@ -1383,7 +1382,7 @@ isCaseCond cond condTy =
   maybeGV condTy >>= \case
     Just (ref, ADTDef {..}) -> return (ref, ctors)
     _ ->
-      mayWithLoc (peekLoc cond) $
+      withLoc_ cond $
         err
           [ [ DH "The discriminee to the pattern matching is not an ADT",
               DC cond
@@ -1450,6 +1449,9 @@ joinAlts alts ctors =
 peekLoc :: Expr Name -> Maybe Int
 peekLoc Loc {..} = Just loc
 peekLoc _ = Nothing
+
+withLoc_ :: MonadReader Env m => Expr Name -> m a -> m a
+withLoc_ e = mayWithLoc (peekLoc e)
 
 notAppearIn :: Ty Name -> [(Name, Ty Name, Label, Maybe Binder)] -> TcM ()
 notAppearIn ty args = do
