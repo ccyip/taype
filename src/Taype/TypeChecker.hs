@@ -882,13 +882,13 @@ depType typeNoDep inferDep checkDep mt proj =
   typeNoDep `catchError` \noDepErr ->
     case mt of
       Just t ->
-        checkDep t `catchError` \_ ->
+        checkDep t `catchError` \checkErr ->
           ( do
               a <- inferDep
               equate t (proj a)
               return a
           )
-            `catchError` \_ -> throwError noDepErr
+            `catchError` \_ -> throwError checkErr
       _ -> inferDep `catchError` \_ -> throwError noDepErr
 
 -- | Kind check a type bidirectionally.
