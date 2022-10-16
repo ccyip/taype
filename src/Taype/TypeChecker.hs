@@ -308,7 +308,6 @@ typing Ite {..} mt ml = do
 
       -- Infer a dependent type.
       inferDep = do
-        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         (leftTy', leftLabel, left') <- infer_ left ml
         (rightTy', rightLabel, right') <- infer_ right ml
         t' <- depGen gen ctxs argss (NE.fromList [leftTy', rightTy'])
@@ -316,7 +315,6 @@ typing Ite {..} mt ml = do
 
       -- Check a dependent type.
       checkDep t' = do
-        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         (leftTy', rightTy') <-
           depMatch match ctxs argss t' >>= \case
             leftTy' :| [rightTy'] -> return (leftTy', rightTy')
@@ -341,7 +339,9 @@ typing Ite {..} mt ml = do
       match t = depMatchErr t
 
   (left', leftTy', leftLabel, right', rightTy', rightLabel, t') <-
-    depType typeNoDep inferDep checkDep mt (\(_, _, _, _, _, _, t) -> t)
+    if condLabel == SafeL
+      then depType typeNoDep inferDep checkDep mt (\(_, _, _, _, _, _, t) -> t)
+      else typeNoDep
   let l' = ml ?: condLabel \/ leftLabel \/ rightLabel
   checkLabel (Just (condLabel \/ l')) l'
   left'' <- mayPromote l' leftTy' leftLabel left'
@@ -400,14 +400,12 @@ typing PCase {..} mt ml = do
 
       -- Infer a dependent type.
       inferDep = do
-        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         (bodyTy', bodyLabel, body') <- typeBody Nothing
         t' <- depGen gen ctxs argss (NE.fromList [bodyTy'])
         return (body', bodyTy', bodyLabel, t')
 
       -- Check a dependent type.
       checkDep t' = do
-        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         bodyTy' <-
           depMatch match ctxs argss t' >>= \case
             bodyTy' :| [] -> return bodyTy'
@@ -439,7 +437,9 @@ typing PCase {..} mt ml = do
       typeBody mt' = extendCtx (head argss) $ typing body mt' ml
 
   (body', bodyTy', bodyLabel, t') <-
-    depType typeNoDep inferDep checkDep mt (\(_, _, _, t) -> t)
+    if condLabel == SafeL
+      then depType typeNoDep inferDep checkDep mt (\(_, _, _, t) -> t)
+      else typeNoDep
   let l' = ml ?: condLabel \/ bodyLabel
   checkLabel (Just (condLabel \/ l')) l'
   body'' <- mayPromote l' bodyTy' bodyLabel body'
@@ -484,14 +484,12 @@ typing Case {..} mt ml = do
 
       -- Infer a dependent type.
       inferDep = do
-        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         altRes <- NE.zipWithM (typeAlt Nothing) argss bodies
         t' <- depGen gen ctxs argss $ altRes <&> \(t, _, _) -> t
         return (altRes, t')
 
       -- Check a dependent type.
       checkDep t' = do
-        withLoc_ cond $ checkLabel (Just condLabel) SafeL
         bodyTs <- depMatch match ctxs argss t'
         altRes <- NE.zipWith3M (typeAlt . Just) bodyTs argss bodies
         return (altRes, t')
@@ -523,7 +521,10 @@ typing Case {..} mt ml = do
       -- Type check an alternative.
       typeAlt mt' args body = extendCtx args $ typing body mt' ml
 
-  (altRes, t') <- depType typeNoDep inferDep checkDep mt snd
+  (altRes, t') <-
+    if condLabel == SafeL
+      then depType typeNoDep inferDep checkDep mt snd
+      else typeNoDep
   let l' = ml ?: flipfoldl' (\(_, l, _) -> (l \/)) condLabel altRes
   checkLabel (Just (condLabel \/ l')) l'
   alts' <- NE.zipWith3M (promoteAlt l') ctorNames argss altRes
