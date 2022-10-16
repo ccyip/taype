@@ -85,6 +85,7 @@ TAGS
 # other
 .DS_Store
 .shake
+/test
 examples/**/*.ml
 examples/**/test_*
 examples/**/*.output.csv
