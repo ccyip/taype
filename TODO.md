@@ -10,3 +10,4 @@
 - More descriptive field names for syntax?
 - Support tuple patterns in dependent case?
 - Unordered oblivious case?
+- Support nondeterministic oblivious value (of any oblivious type)?
