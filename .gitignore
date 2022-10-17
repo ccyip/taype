@@ -90,6 +90,7 @@ examples/**/*.ml
 examples/**/test_*
 examples/**/*.output.csv
 !examples/common/*.ml
+examples/common/prelude.ml
 !examples/**/*helper.ml
 !examples/**/test_*.ml
 !examples/**/*.input
