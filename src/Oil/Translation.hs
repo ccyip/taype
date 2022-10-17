@@ -888,7 +888,10 @@ prelude =
     lIntBopDef "+" "int",
     lIntBopDef "-" "int",
     lIntBopDef "*" "int",
-    lIntBopDef "/" "int",
+    -- Because of the tape semantics, it is possible to divide a number by 0 in
+    -- the "wrong" branches. We check the denominator and return -1 if it is 0.
+    lIntBopDef_ "/" "int" $
+      \m n -> ite_ ("==" @@ [n, ILit 0]) (ILit (-1)) $ "/" @@ [m, n],
     lIntBopDef "<=" "bool",
     lIntBopDef "==" "bool",
     lBoolUopDef "not",
@@ -1128,8 +1131,9 @@ lBoolBopDef name =
       )
 
 -- | Build a leaky definition for binary integer operator, e.g., '+'.
-lIntBopDef :: Text -> Text -> NamedDef b a
-lIntBopDef name cod =
+lIntBopDef_ ::
+  Text -> Text -> (Expr Text -> Expr Text -> Expr Text) -> NamedDef b a
+lIntBopDef_ name cod mkExpr =
   funDef_
     (l_ name)
     []
@@ -1174,7 +1178,7 @@ lIntBopDef name cod =
                   ( ret_ "int",
                     ["n"],
                     ret_ cod
-                      @@ [V name @@ ["m", "n"]]
+                      @@ [mkExpr "m" "n"]
                   ),
                   ( lif_ "int",
                     [o_ "b", l_ "n1", l_ "n2"],
@@ -1196,6 +1200,9 @@ lIntBopDef name cod =
             )
           ]
       )
+
+lIntBopDef :: Text -> Text -> NamedDef b a
+lIntBopDef name cod = lIntBopDef_ name cod $ \m n -> V name @@ [m, n]
 
 -- | Build a boolean section function.
 --
