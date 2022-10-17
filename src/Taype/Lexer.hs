@@ -126,7 +126,7 @@ pToken =
       choice
         [ BLit True <$ symbol "True",
           BLit False <$ symbol "False",
-          ILit <$> lexeme L.decimal
+          ILit <$> pILit
         ]
         <?> "literal",
       Lambda <$ symbol "\\",
@@ -158,6 +158,15 @@ pIdent = lexeme . try $ do
   let ident = mayObliv <> T.cons x xs
   guard (ident `notElem` reserved)
   return $ Ident ident
+
+pILit :: Parser Int
+pILit =
+  lexeme $
+    choice
+      [ L.decimal,
+        try $ between (symbol "(") (symbol ")") $
+          L.signed mempty L.decimal
+      ]
 
 -- | Reserved tokens that cannot be used for identifier
 reserved :: [Text]

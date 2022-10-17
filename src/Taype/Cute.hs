@@ -75,7 +75,7 @@ import Bound
 import qualified Data.Text as T
 import Prettyprinter hiding (Doc, hang, indent)
 import qualified Prettyprinter as PP
-import Prettyprinter.Render.Text (putDoc, hPutDoc)
+import Prettyprinter.Render.Text (hPutDoc, putDoc)
 import Prettyprinter.Util (putDocW)
 import Taype.Binder
 import Taype.Common
@@ -137,7 +137,7 @@ instance IsString a => IsString (CuteM a) where
 class Cute a where
   cute :: a -> CuteM Doc
   default cute :: Pretty a => a -> CuteM Doc
-  cute = return <$> pretty
+  cute = return . pretty
 
 -- | Precedence level
 class HasPLevel a where
@@ -146,11 +146,16 @@ class HasPLevel a where
 ----------------------------------------------------------------
 -- Pretty printing instances
 
-instance Cute Int
-
 instance Cute Text
 
 instance Cute Label
+
+instance Cute Int where
+  cute i =
+    return $
+      if i < 0
+        then parens $ pretty i
+        else pretty i
 
 instance (Monad f, Cute (f Text)) => Cute (CaseAlt f Text) where
   cute CaseAlt {..} = do
