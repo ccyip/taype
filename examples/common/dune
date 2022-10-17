@@ -3,6 +3,11 @@
  (modules common)
  (libraries taype-driver-plaintext sexplib))
 
+(library
+ (name prelude)
+ (modules prelude)
+ (libraries taype-driver-plaintext))
+
 (executable
  (name test)
  (modules test))
