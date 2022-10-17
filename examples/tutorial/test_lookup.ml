@@ -23,7 +23,7 @@ let _ =
   (* Obtain an oblivious list. The party who owns the private list reads it
      from the input, and "encrypt" it with [private_s_list]. The other parties
      do not have this private list, but still participate in the encryption. *)
-  let obliv_xs = get_private of_sexp (private_s_list n) size in
+  let obliv_xs = get_private (mylist_of_sexp_check n) (private_s_list n) size in
   (* Obtain an oblivious integer. *)
   let obliv_x = get_private Conv.int_of_sexp private_s_int 1 in
   (* A testing program may also read an expected result to compare with the

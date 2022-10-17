@@ -13,7 +13,7 @@ let _ =
 
   let n = get_public Conv.int_of_sexp in
   let size = obliv_list n in
-  let obliv_xs = get_private of_sexp (private_s_list n) size in
+  let obliv_xs = get_private (mylist_of_sexp_check n) (private_s_list n) size in
   let obliv_x = get_private Conv.int_of_sexp private_s_int 1 in
 
   collect_stat ();
@@ -28,4 +28,4 @@ let _ =
   finalize_driver ();
 
   print_stat ();
-  to_sexp res |> print_sexp
+  mylist_to_sexp res |> print_sexp

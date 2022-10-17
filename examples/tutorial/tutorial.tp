@@ -34,6 +34,7 @@ fn insert : int -> list -> list = \ x xs ->
 -- Now let's implement a corresponding oblivious list. By convention, we prefix
 -- the oblivious type with "`". The name after the prefix should start with a
 -- lower-case letter. All builtin oblivious operations are also prefixed by "`".
+-- Here the public view [k] is the maximum length of the list.
 obliv `list (k : int) =
   if k == 0
   then unit

@@ -63,3 +63,8 @@ let print_result ok =
 
 let print_sexp s =
   print_endline (Sexp.to_string s)
+
+let of_sexp_check of_sexp check v s =
+  let d = of_sexp s in
+  if (not (check d v)) then oops "input data is invalid";
+  d
