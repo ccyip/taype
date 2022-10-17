@@ -1,4 +1,5 @@
 open Driver
+open Prelude
 open Sexplib
 open Scanf
 open Fun
@@ -47,6 +48,9 @@ let get_private conv sec size =
   if party = !my_party
   then sec (Sexp.of_string_conv_exn s conv)
   else obliv_array_new_from size party
+
+let get_private_int () = get_private Conv.int_of_sexp private_s_int 1
+let get_private_bool () = get_private Conv.bool_of_sexp private_s_bool 1
 
 (* Get the expected result of the computation from input. [conv] is used to
    convert the sexp to the data. *)

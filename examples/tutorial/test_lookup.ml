@@ -25,7 +25,7 @@ let _ =
      do not have this private list, but still participate in the encryption. *)
   let obliv_xs = get_private (mylist_of_sexp_check n) (private_s_list n) size in
   (* Obtain an oblivious integer. *)
-  let obliv_x = get_private Conv.int_of_sexp private_s_int 1 in
+  let obliv_x = get_private_int () in
   (* A testing program may also read an expected result to compare with the
      output of the oblivious computation. This can be done with the function
      [get_expected]. For example, [get_expected of_sexp]. *)

@@ -14,7 +14,7 @@ let _ =
   let n = get_public Conv.int_of_sexp in
   let size = obliv_list n in
   let obliv_xs = get_private (mylist_of_sexp_check n) (private_s_list n) size in
-  let obliv_x = get_private Conv.int_of_sexp private_s_int 1 in
+  let obliv_x = get_private_int () in
 
   collect_stat ();
 

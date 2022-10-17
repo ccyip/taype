@@ -115,7 +115,7 @@ rulesForExample example = do
     forM drivers $ \driver -> do
       let bin = mkTestBin (dir </> takeBaseName srcName) driver
           allMls =
-            ((commonDir </>) <$> ["common.ml", "prelude.ml"])
+            ((commonDir </>) <$> ["prelude.ml", "common.ml"])
               <> mls
               <> helpers
               <> [dir </> srcName]
@@ -158,7 +158,7 @@ rulesForCommon = do
       preludeML = commonDir </> "prelude.ml"
 
   bin %> \out -> do
-    let mls = [out <.> "ml"]
+    let mls = [preludeML, out <.> "ml"]
     need mls
     mlCmd $ ["-o", out] <> mls
 

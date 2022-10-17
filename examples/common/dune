@@ -1,7 +1,7 @@
 (library
  (name common)
  (modules common)
- (libraries taype-driver-plaintext sexplib))
+ (libraries taype-driver-plaintext prelude sexplib))
 
 (library
  (name prelude)
