@@ -11,3 +11,10 @@
 - Support tuple patterns in dependent case?
 - Unordered oblivious case?
 - Support nondeterministic oblivious value (of any oblivious type)?
+  + May need to support bottom in the public computation, as a correspondence
+
+- Performance
+  + `test_healthy_rate`
+    * express boolean operators, including retraction, using MUX is a bad idea.
+    * perform section earlier (for every iteration) can reduce the exponential
+      MUX to linear.
