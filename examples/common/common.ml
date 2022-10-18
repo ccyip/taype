@@ -25,8 +25,8 @@ let parse_options () =
 
 (* A simple wrapper around [setup_driver]. Probably should have a better way to
    find an unused port. *)
-let setup_driver_simple () =
-  setup_driver "127.0.0.1" 12345 !my_party
+let setup_driver_simple ?(verbose=false) () =
+  setup_driver ~verbose "127.0.0.1" 12345 !my_party
 
 let scan_line () =
   let (party, s) = scanf "%s@:%s@\n" (fun x y -> (x, y)) in
