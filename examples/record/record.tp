@@ -1,0 +1,404 @@
+-- Id, age, height (in cm) and weight (in kg)
+data patient = Patient int int int int
+
+fn is_taller : patient -> patient -> bool = \p1 p2 ->
+  case p1 of
+  | Patient _ _ h1 _ ->
+    case p2 of
+    | Patient _ _ h2 _ -> h2 <= h1
+    end
+  end
+
+-- Calculate body mass index (BMI). The result is multiplied by 10 so we don't
+-- have to deal with floating point.
+fn get_bmi : patient -> int = \p ->
+  case p of
+  | Patient _ _ h w -> w * 100000 / (h * h)
+  end
+
+-- Yes, I know. BMI is not an accurate indication.
+fn is_healthy : patient -> bool = \p ->
+  let bmi = get_bmi p
+   in 185 <= bmi && bmi <= 249
+
+fn is_obese : patient -> bool = \p ->
+  let bmi = get_bmi p
+   in 300 <= bmi
+
+-- Database of the patients as a list.
+data db = Db_Empty | Db_More patient db
+
+fn is_obese_by_id : db -> int -> bool = \ps id ->
+  case ps of
+  | Db_Empty -> False
+  | Db_More p ps' ->
+    case p of
+    | Patient id' _ _ _ ->
+      if id' == id
+      then is_obese p
+      else is_obese_by_id ps' id
+    end
+  end
+
+fn count_healthy_age_group : db -> int -> int -> int * int = \ps b e ->
+  case ps of
+  | Db_Empty -> (0, 0)
+  | Db_More p ps' ->
+    case count_healthy_age_group ps' b e of
+    (n, total) ->
+      case p of
+      | Patient _ age _ _ ->
+        if b <= age && age <= e
+        then if is_healthy p then (n + 1, total + 1) else (n, total + 1)
+        else (n, total)
+      end
+    end
+  end
+
+fn healthy_rate_of_age_group : db -> int -> int -> int = \ps b e ->
+  case count_healthy_age_group ps b e of
+  | (n, total) ->
+    if total == 0
+    then 0
+    else n * 100 / total
+  end
+
+fn euclidean_distance : patient -> patient -> int = \p1 p2 ->
+  case p1 of
+  | Patient _ age1 h1 w1 ->
+    case p2 of
+    | Patient _ age2 h2 w2 ->
+      let d1 = age1 - age2
+          d2 = h1 - h2
+          d3 = w1 - w2
+       in d1*d1 + d2*d2 + d3*d3
+    end
+  end
+
+fn min_euclidean_distance_with : db -> patient -> int -> int = \ps ref_p min ->
+  case ps of
+  | Db_Empty -> min
+  | Db_More p ps' ->
+    let d = euclidean_distance p ref_p
+        min' = min_euclidean_distance_with ps' ref_p min
+     in if d <= min' then d else min'
+  end
+
+-- biometric matching
+fn min_euclidean_distance : db -> patient -> int = \ps ref_p ->
+  case ps of
+  | Db_Empty -> (-1)
+  | Db_More p ps' ->
+    let d = euclidean_distance p ref_p
+     in min_euclidean_distance_with ps' ref_p d
+  end
+
+-- Isomorhpic to list append
+fn db_concat : db -> db -> db = \ps1 ps2 ->
+  case ps1 of
+  | Db_Empty -> ps2
+  | Db_More p ps1' ->
+    Db_More p (db_concat ps1' ps2)
+  end
+
+fn db_length : db -> int = \ps ->
+  case ps of
+  | Db_Empty -> 0
+  | Db_More _ ps' -> 1 + db_length ps'
+  end
+
+fn age_sum : db -> int = \ps ->
+  case ps of
+  | Db_Empty -> 0
+  | Db_More p ps' ->
+    case p of
+    | Patient _ age _ _ -> age + age_sum ps'
+    end
+  end
+
+fn age_mean : db -> int = \ps ->
+  let n = db_length ps
+      s = age_sum ps
+   in if n == 0 then (-1) else s / n
+
+fn age_sdm : db -> int -> int = \ps m ->
+  case ps of
+  | Db_Empty -> 0
+  | Db_More p ps' ->
+    case p of
+    | Patient _ age _ _ ->
+      let d = age - m
+       in d*d + age_sdm ps' m
+    end
+  end
+
+fn age_variance : db -> int = \ps ->
+  let n = db_length ps
+      m = age_mean ps
+      sdm = age_sdm ps m
+   in if n == 0 then (-1) else sdm / n
+
+data option_int = None | Some int
+
+data bmi_db = Nil | Cons int int bmi_db
+
+fn bmi_db_lookup : bmi_db -> int -> option_int = \bmis id ->
+  case bmis of
+  | Nil -> None
+  | Cons id' bmi bmis' ->
+    if id == id' then Some bmi else bmi_db_lookup bmis' id
+  end
+
+fn bmi_sse : db -> bmi_db -> int * int = \ps bmis ->
+  case ps of
+  | Db_Empty -> (0, 0)
+  | Db_More p ps' ->
+    case p of
+    | Patient id _ _ _ ->
+      case bmi_sse ps' bmis of
+      (se, total) ->
+        case bmi_db_lookup bmis id of
+        | Some bmi ->
+          let bmi' = get_bmi p
+              d = bmi - bmi'
+           in (se + d*d, total + 1)
+        | None -> (se, total)
+        end
+      end
+    end
+  end
+
+fn bmi_mse : db -> bmi_db -> int = \ps bmis ->
+  case bmi_sse ps bmis of
+  (se, total) ->
+    if total == 0 then (-1) else se / total
+  end
+
+data feature = Age | Height | Weight
+
+data dtree = Node feature int dtree dtree | Leaf bool
+
+fn decide : dtree -> patient -> bool = \t p ->
+  case t of
+  | Leaf b -> b
+  | Node f thd lt rt ->
+    case p of
+    Patient _ age h w ->
+      let d = case f of
+              | Age -> age <= thd
+              | Height -> h <= thd
+              | Weight -> w <= thd
+              end
+       in if d then decide lt p else decide rt p
+    end
+  end
+
+----------------------------------------------------------------
+-- Oblivious types, sections and retractions
+
+data patient_view
+  -- Height is public.
+  = Know_height int
+  -- Weight is public.
+  | Know_weight int
+
+-- In this case, the oblivious type does not care about the public view because
+-- the oblivious structures are the same regardless. But the public view is
+-- still important in section and retraction functions.
+obliv `patient (_ : patient_view) = `int `* `int `* `int
+
+#[section]
+fn s_patient : (v : patient_view) -> patient -> `patient v = \v p ->
+  tape
+    (case p of
+     | Patient id age h w ->
+         case v of
+         | Know_height _ -> `(tape (s_int id), tape (s_int age), tape (s_int w))
+         | Know_weight _ -> `(tape (s_int id), tape (s_int age), tape (s_int h))
+         end
+     end)
+
+#[retraction]
+fn r_patient : (v : patient_view) -> `patient v -> patient = \v p ->
+  `case p of
+  `(id, age, w_or_h) ->
+    case v of
+    | Know_height h -> Patient (r_int id) (r_int age) h (r_int w_or_h)
+    | Know_weight w -> Patient (r_int id) (r_int age) (r_int w_or_h) w
+    end
+  end
+
+-- Due to the lack of type polymorphism, we need to define db_view and
+-- db_view_concat even though they are just list and list operations.
+data db_view = Db_View_Empty | Db_View_More patient_view db_view
+
+#[safe]
+fn db_view_concat : db_view -> db_view -> db_view = \vs1 vs2 ->
+  case vs1 of
+  | Db_View_Empty -> vs2
+  | Db_View_More v vs1' -> Db_View_More v (db_view_concat vs1' vs2)
+  end
+
+obliv `db (vs : db_view) =
+  case vs of
+  | Db_View_Empty -> unit
+  | Db_View_More v vs' -> `patient v `* `db vs'
+  end
+
+#[section]
+fn s_db : (vs : db_view) -> db -> `db vs = \vs ps ->
+  case vs of
+  | Db_View_Empty -> ()
+  | Db_View_More v vs' ->
+    tape
+      (case ps of
+       | Db_Empty ->
+         -- Bogus
+         `(`(s_int 0, s_int 0, s_int 0), s_db vs' Db_Empty)
+       | Db_More p ps' -> `(s_patient v p, s_db vs' ps')
+       end)
+  end
+
+#[retraction]
+fn r_db : (vs : db_view) -> `db vs -> db = \vs ->
+  case vs of
+  | Db_View_Empty -> \_ -> Db_Empty
+  | Db_View_More v vs' -> \ps ->
+    `case ps of
+    | `(p, ps') -> Db_More (r_patient v p) (r_db vs' ps')
+    end
+  end
+
+obliv `bmi_db (k : int) =
+  if k == 0
+  then unit
+  else `int `* `int `* `bmi_db (k-1)
+
+#[section]
+fn s_bmi_db : (k : int) -> bmi_db -> `bmi_db k = \k bmis ->
+  if k == 0
+  then ()
+  else tape (case bmis of
+             | Nil ->
+               -- Bogus
+               `(tape (s_int 0), tape (s_int 0), s_bmi_db (k-1) Nil)
+             | Cons id bmi bmis' ->
+               `(tape (s_int id), tape (s_int bmi), s_bmi_db (k-1) bmis')
+             end)
+
+#[retraction]
+fn r_bmi_db : (k : int) -> `bmi_db k -> bmi_db = \k ->
+  if k == 0
+  then \_ -> Nil
+  else \bmis ->
+    `case bmis of
+    | `(id, bmi, bmis') -> Cons (r_int id) (r_int bmi) (r_bmi_db (k-1) bmis')
+    end
+
+data dtree_view = Node_View feature dtree_view dtree_view | Leaf_View
+
+obliv `dtree (v : dtree_view) =
+  case v of
+  | Node_View f lt rt ->
+    `int `* `dtree lt `* `dtree rt
+  | Leaf_View -> `bool
+  end
+
+#[section]
+fn s_dtree : (v : dtree_view) -> dtree -> `dtree v = \v t ->
+  case v of
+  | Node_View f lv rv ->
+    tape
+      (case t of
+       | Node _ thrd lt rt -> `(tape (s_int thrd), s_dtree lv lt, s_dtree rv rt)
+       | Leaf _ ->
+         -- Bogus
+         `(s_int 0, s_dtree lv t, s_dtree rv t)
+       end)
+  | Leaf_View ->
+    tape
+      (case t of
+       | Node _ _ _ _ ->
+         -- Bogus
+         s_bool True
+       | Leaf d -> tape (s_bool d)
+       end)
+  end
+
+#[retraction]
+fn r_dtree : (v : dtree_view) -> `dtree v -> dtree = \v ->
+  case v of
+  | Node_View f lv rv ->
+    \t ->
+      `case t of
+      `(thrd, lt, rt) -> Node f (r_int thrd) (r_dtree lv lt) (r_dtree rv rt)
+      end
+  | Leaf_View ->
+    \t ->
+      Leaf (r_bool t)
+  end
+
+----------------------------------------------------------------
+-- Lifted functions
+
+#[safe]
+fn `is_taller :
+  (v1 : patient_view) -> (v2 : patient_view) ->
+  `patient v1 -> `patient v2 -> `bool = \v1 v2 p1 p2 ->
+  tape (s_bool (is_taller (r_patient v1 p1) (r_patient v2 p2)))
+
+-- Imagine a hospital owns the database, and another entity tries to query if
+-- someone is obese by id. The entity owning the id may be advertisers or cops,
+-- who don't want the hospital to know who they are investigating.
+#[safe]
+fn `is_obese_by_id : (v : db_view) -> `db v -> `int -> `bool = \v ps id ->
+  tape (s_bool (is_obese_by_id (r_db v ps) (r_int id)))
+
+-- Imagine a hospital owns the database, and a reserach institute wants to know
+-- the healthy rate of a age range. The research project might be kept secret.
+#[safe]
+fn `healthy_rate_of_age_group : (v : db_view) -> `db v -> `int -> `int -> `int =
+  \v ps b e ->
+    tape (s_int (healthy_rate_of_age_group (r_db v ps) (r_int b) (r_int e)))
+
+-- Similar to the previous example.
+#[safe]
+fn `min_euclidean_distance :
+  (vs : db_view) -> (v : patient_view) -> `db vs -> `patient v -> `int =
+  \vs v ps p ->
+    tape (s_int (min_euclidean_distance (r_db vs ps) (r_patient v p)))
+
+-- Each database is owned by a hospital. These two hospital want to compute some
+-- statistics over their combined databases.
+#[safe]
+fn `db_concat :
+  (v1 : db_view) -> (v2 : db_view) -> `db v1 -> `db v2 ->
+  `db (db_view_concat v1 v2) = \v1 v2 ps1 ps2 ->
+  s_db (db_view_concat v1 v2) (db_concat (r_db v1 ps1) (r_db v2 ps2))
+
+#[safe]
+fn `age_mean : (v : db_view) -> `db v -> `int = \v ps ->
+  tape (s_int (age_mean (r_db v ps)))
+
+#[safe]
+fn `age_variance : (v : db_view) -> `db v -> `int = \v ps ->
+  tape (s_int (age_variance (r_db v ps)))
+
+-- Imagine a hospital owns the database. A company, perhaps a machine learning
+-- one, develops a method to estimate a patient's BMI without knowing their
+-- height or weight. Instead they estimate using other publicly known metrics.
+-- Now they want to know how accurate their method is, so they provide a
+-- database of their estimated BMIs, without letting the hospital know what
+-- their estimations are. This BMI database do not need to match the hospital's
+-- database exactly: the hospital will only process the data points that their
+-- databases overlap. The result is the mean-squared-error.
+#[safe]
+fn `bmi_mse : (v : db_view) -> (k : int) -> `db v -> `bmi_db k -> `int =
+  \v k ps bmis ->
+    tape (s_int (bmi_mse (r_db v ps) (r_bmi_db k bmis)))
+
+#[safe]
+fn `decide :
+  (tv : dtree_view) -> (pv : patient_view) ->
+  `dtree tv -> `patient pv -> `bool = \tv pv t p ->
+  tape (s_bool (decide (r_dtree tv t) (r_patient pv p)))
