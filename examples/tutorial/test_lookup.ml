@@ -15,7 +15,7 @@ let _ =
 
   (* Read the maximum length of the input list. This is the public view, so
      every party gets the same public value here. *)
-  let n = get_public Conv.int_of_sexp in
+  let n = get_public_int () in
   (* Calculate the size of the oblivious list. The parties who do not own the
      private list need this information to jointly compute the "encrypted" list
      with the party who owns it. *)

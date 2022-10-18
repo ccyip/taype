@@ -11,7 +11,7 @@ let _ =
   parse_options ();
   setup_driver_simple ();
 
-  let n = get_public Conv.int_of_sexp in
+  let n = get_public_int () in
   let size = obliv_list n in
   let obliv_xs = get_private (mylist_of_sexp_check n) (private_s_list n) size in
   let obliv_x = get_private_int () in

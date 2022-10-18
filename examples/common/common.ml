@@ -49,6 +49,8 @@ let get_private conv sec size =
   then sec (Sexp.of_string_conv_exn s conv)
   else obliv_array_new_from size party
 
+let get_public_int () = get_public Conv.int_of_sexp
+let get_public_bool () = get_public Conv.bool_of_sexp
 let get_private_int () = get_private Conv.int_of_sexp private_s_int 1
 let get_private_bool () = get_private Conv.bool_of_sexp private_s_bool 1
 
