@@ -18,3 +18,5 @@
     * express boolean operators, including retraction, using MUX is a bad idea.
     * perform section earlier (for every iteration) can reduce the exponential
       MUX to linear.
+  + `test_min_euclidean_distance`
+    * Going from 5 to 6 is like day and night.
