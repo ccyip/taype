@@ -1099,14 +1099,17 @@ equate e e' = do
     go nf nf'@GV {} = equateGV nf nf'
     go nf@App {} nf' = equateApp nf nf'
     go nf nf'@App {} = equateApp nf nf'
-    go Pi {ty, bnd} Pi {ty = ty', bnd = bnd'} = do
+    go Pi {ty, label, bnd} Pi {ty = ty', label = label', bnd = bnd'} = do
+      errEquateUnless $ label == label'
       equate ty ty'
       (_, body, body') <- unbind1With bnd bnd'
       equate body body'
-    go Lam {bnd} Lam {bnd = bnd'} = do
+    go Lam {label, bnd} Lam {label = label', bnd = bnd'} = do
+      errEquateUnless $ label == label'
       (_, body, body') <- unbind1With bnd bnd'
       equate body body'
-    go Let {rhs, bnd} Let {rhs = rhs', bnd = bnd'} = do
+    go Let {rhs, label, bnd} Let {rhs = rhs', label = label', bnd = bnd'} = do
+      errEquateUnless $ label == label'
       equate rhs rhs'
       (_, body, body') <- unbind1With bnd bnd'
       equate body body'
@@ -1217,6 +1220,7 @@ equate e e' = do
           [DH "Expected", DC e],
           [DH "Got", DC e']
         ]
+    errEquateUnless b = unless b errEquate
 
 equateSome :: NonEmpty (Expr Name) -> TcM ()
 equateSome (e :| es) = forM_ es $ equate e

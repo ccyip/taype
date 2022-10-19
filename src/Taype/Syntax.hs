@@ -426,18 +426,17 @@ instance Bound DefB where
 instance Eq1 Expr where
   liftEq eq V {name} V {name = name'} = eq name name'
   liftEq _ GV {ref} GV {ref = ref'} = ref == ref'
-  liftEq eq Pi {ty, bnd} Pi {ty = ty', bnd = bnd'} =
-    -- Ignore labels
-    liftEq eq ty ty' && liftEq eq bnd bnd'
-  liftEq eq Lam {bnd} Lam {bnd = bnd'} =
-    -- Ignore type annotations and labels
-    liftEq eq bnd bnd'
+  liftEq eq Pi {ty, label, bnd} Pi {ty = ty', label = label', bnd = bnd'} =
+    liftEq eq ty ty' && label == label' && liftEq eq bnd bnd'
+  liftEq eq Lam {label, bnd} Lam {label = label', bnd = bnd'} =
+    -- Ignore type annotations
+    label == label' && liftEq eq bnd bnd'
   liftEq eq App {fn, args} App {fn = fn', args = args'} =
     -- Ignore application kind
     liftEq eq fn fn' && liftEq (liftEq eq) args args'
-  liftEq eq Let {rhs, bnd} Let {rhs = rhs', bnd = bnd'} =
-    -- Ignore type annotations and labels
-    liftEq eq rhs rhs' && liftEq eq bnd bnd'
+  liftEq eq Let {rhs, label, bnd} Let {rhs = rhs', label = label', bnd = bnd'} =
+    -- Ignore type annotations
+    liftEq eq rhs rhs' && label == label' && liftEq eq bnd bnd'
   liftEq _ TUnit TUnit = True
   liftEq _ VUnit VUnit = True
   liftEq _ TBool TBool = True
