@@ -39,7 +39,7 @@ let rec expr_depth e =
   match e with
   | Const _ | Var _ -> 0
   | Add (e1, e2) | Sub (e1, e2) | Mul (e1, e2) | Div (e1, e2) ->
-    max (expr_depth e1) (expr_depth e2)
+    1 + max (expr_depth e1) (expr_depth e2)
 
 let expr_check e k = expr_depth e <= k
 
