@@ -12,6 +12,45 @@ fn insert : int -> list -> list = \ x xs ->
   | Cons y xs' -> if x <= y then Cons x xs else Cons y (insert x xs')
   end
 
+-- The two lists are of the same length.
+fn hamming_distance : list -> list -> int = \xs ys ->
+  case xs of
+  | Nil ->
+    case ys of
+    | Nil -> 0
+    | Cons _ _ ->
+      -- Bogus
+      (-1)
+    end
+  | Cons x xs' ->
+    case ys of
+    | Nil ->
+      -- Bogus
+      (-1)
+    | Cons y ys' ->
+      let d = hamming_distance xs' ys'
+       in if x == y then d else d + 1
+    end
+  end
+
+fn map : (int -> int) -> list -> list = \f xs ->
+  case xs of
+  | Nil -> Nil
+  | Cons x xs' -> Cons (f x) (map f xs')
+  end
+
+fn filter : (int -> bool) -> list -> list = \f xs ->
+  case xs of
+  | Nil -> Nil
+  | Cons x xs' ->
+    if f x
+    then Cons x (filter f xs')
+    else filter f xs'
+  end
+
+----------------------------------------------------------------
+-- Oblivious types
+
 obliv `list (k : int) =
   if k == 0
   then unit
@@ -37,6 +76,9 @@ fn r_list : (k : int) -> `list k -> list = \ k ->
                            end
                end
 
+----------------------------------------------------------------
+-- Lifted functions
+
 #[safe]
 fn `lookup : (k : int) -> `int -> `list k -> `bool = \ k x xs ->
   tape (s_bool (lookup (r_int x) (r_list k xs)))
@@ -44,3 +86,15 @@ fn `lookup : (k : int) -> `int -> `list k -> `bool = \ k x xs ->
 #[safe]
 fn `insert : (k : int) -> `int -> `list k -> `list (k+1) = \ k x xs ->
   s_list (k+1) (insert (r_int x) (r_list k xs))
+
+#[safe]
+fn `hamming_distance : (k : int) -> `list k -> `list k -> `int = \k xs ys ->
+  tape (s_int (hamming_distance (r_list k xs) (r_list k ys)))
+
+#[safe]
+fn `test_map : (k : int) -> `list k -> `int -> `list k = \k xs y ->
+  s_list k (map (\x -> x + r_int y) (r_list k xs))
+
+#[safe]
+fn `test_filter : (k : int) -> `list k -> `int -> `list k = \k xs y ->
+  s_list k (filter (\x -> x <= r_int y) (r_list k xs))
