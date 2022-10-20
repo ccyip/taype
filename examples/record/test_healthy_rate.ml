@@ -24,7 +24,7 @@ let _ =
 
   let obliv_res = obliv_healthy_rate_of_age_group v db b e in
 
-  (* #mux = 7^n - 1, where n is the length of the database. *)
+  (* #mux = 5^n - 1, where n is the length of the database. *)
   record_stat ();
 
   let res = unsafe_r_int obliv_res in
