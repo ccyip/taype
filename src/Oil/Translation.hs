@@ -791,17 +791,9 @@ prelude =
     adtDef_
       (l_ "bool")
       []
-      [ (l_ "False", []),
-        (l_ "True", []),
+      [ (ret_ "bool", ["bool"]),
         (lif_ "bool", [OArray, "$self", "$self"])
       ],
-    funDef_
-      (ret_ "bool")
-      []
-      (ar_ ["bool", l_ "bool"])
-      $ lam_
-        "b"
-        (ite_ "b" (l_ "True") (l_ "False")),
     -- Section of boolean
     --
     -- We need one for core computation and one for conceal phase.
@@ -813,7 +805,9 @@ prelude =
       (ar_ [OArray, l_ "bool"])
       $ lam_
         (o_ "b")
-        (lif_ "bool" @@ [o_ "b", l_ "True", l_ "False"]),
+        ( lif_ "bool"
+            @@ [o_ "b", ret_ "bool" @@ ["True"], ret_ "bool" @@ ["False"]]
+        ),
     -- The first branch of Boolean case analysis corresponds to @False@ while
     -- the second one to @True@.
     funDef_
@@ -831,8 +825,7 @@ prelude =
         [lif_ "r", l_ "b", l_ "ff", l_ "ft"]
         ( case_
             (l_ "b")
-            [ (l_ "False", [], l_ "ff"),
-              (l_ "True", [], l_ "ft"),
+            [ (ret_ "bool", ["b"], ite_ "b" (l_ "ft") (l_ "ff")),
               ( lif_ "bool",
                 [o_ "b", l_ "b1", l_ "b2"],
                 lif_ "r"
@@ -851,8 +844,10 @@ prelude =
         (l_ "b")
         ( case_
             (l_ "b")
-            [ (l_ "False", [], ret_ aName @@ [s_ "bool" @@ ["False"]]),
-              (l_ "True", [], ret_ aName @@ [s_ "bool" @@ ["True"]]),
+            [ ( ret_ "bool",
+                ["b"],
+                ret_ aName @@ [s_ "bool" @@ ["b"]]
+              ),
               ( lif_ "bool",
                 [o_ "b", l_ "b1", l_ "b2"],
                 lif_ aName
@@ -895,8 +890,8 @@ prelude =
     lIntBopDef "<=" "bool",
     lIntBopDef "==" "bool",
     lBoolUopDef "not",
-    lBoolBopDef "&&",
-    lBoolBopDef "||",
+    lBoolBopDef "&&" False,
+    lBoolBopDef "||" True,
     -- Helper functions
     funDef_
       (i_ "max")
@@ -1040,7 +1035,6 @@ prelude =
     oblivInjDef False False
   ]
 
--- | Build a leaky definition for unary boolean operator, e.g., 'not'.
 lBoolUopDef :: Text -> NamedDef b a
 lBoolUopDef name =
   funDef_
@@ -1051,8 +1045,7 @@ lBoolUopDef name =
       (l_ "a")
       ( case_
           (l_ "a")
-          [ (l_ "False", [], ret_ "bool" @@ [V name @@ ["False"]]),
-            (l_ "True", [], ret_ "bool" @@ [V name @@ ["True"]]),
+          [ (ret_ "bool", ["b"], ret_ "bool" @@ [V name @@ ["b"]]),
             ( lif_ "bool",
               [o_ "b", l_ "a1", l_ "a2"],
               lif_ "bool"
@@ -1065,8 +1058,8 @@ lBoolUopDef name =
       )
 
 -- | Build a leaky definition for binary boolean operator, e.g., '&&'.
-lBoolBopDef :: Text -> NamedDef b a
-lBoolBopDef name =
+lBoolBopDef :: Text -> Bool -> NamedDef b a
+lBoolBopDef name domi =
   funDef_
     (l_ name)
     []
@@ -1075,49 +1068,12 @@ lBoolBopDef name =
       [l_ "a", l_ "b"]
       ( case_
           (l_ "a")
-          [ ( l_ "False",
-              [],
-              case_
-                (l_ "b")
-                [ ( l_ "False",
-                    [],
-                    ret_ "bool" @@ [V name @@ ["False", "False"]]
-                  ),
-                  ( l_ "True",
-                    [],
-                    ret_ "bool" @@ [V name @@ ["False", "True"]]
-                  ),
-                  ( lif_ "bool",
-                    [o_ "b", l_ "b1", l_ "b2"],
-                    lif_ "bool"
-                      @@ [ o_ "b",
-                           "$self" @@ [l_ "a", l_ "b1"],
-                           "$self" @@ [l_ "a", l_ "b2"]
-                         ]
-                  )
-                ]
-            ),
-            ( l_ "True",
-              [],
-              case_
-                (l_ "b")
-                [ ( l_ "False",
-                    [],
-                    ret_ "bool" @@ [V name @@ ["True", "False"]]
-                  ),
-                  ( l_ "True",
-                    [],
-                    ret_ "bool" @@ [V name @@ ["True", "True"]]
-                  ),
-                  ( lif_ "bool",
-                    [o_ "b", l_ "b1", l_ "b2"],
-                    lif_ "bool"
-                      @@ [ o_ "b",
-                           "$self" @@ [l_ "a", l_ "b1"],
-                           "$self" @@ [l_ "a", l_ "b2"]
-                         ]
-                  )
-                ]
+          [ ( ret_ "bool",
+              ["a"],
+              ite_
+                "a"
+                (if domi then l_ "a" else l_ "b")
+                (if domi then l_ "b" else l_ "a")
             ),
             ( lif_ "bool",
               [o_ "b", l_ "a1", l_ "a2"],
