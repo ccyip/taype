@@ -34,7 +34,7 @@ let _ =
   collect_stat ();
 
   (* Perform the core oblivious computation, [obliv_lookup] in this case. *)
-  let obliv_res = obliv_lookup n obliv_x obliv_xs in
+  let obliv_res = obliv_elem n obliv_x obliv_xs in
 
   (* Save the performance statistics. *)
   record_stat ();

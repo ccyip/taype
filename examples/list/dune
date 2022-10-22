@@ -1,6 +1,6 @@
 (executables
  (names
-   "test_lookup"
+   "test_elem"
    "test_insert"
    "test_hamming_distance"
    "test_map"

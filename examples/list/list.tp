@@ -1,9 +1,9 @@
 data list = Nil | Cons int list
 
-fn lookup : int -> list -> bool = \ x xs ->
+fn elem : int -> list -> bool = \ x xs ->
   case xs of
   | Nil -> False
-  | Cons y xs' -> if x == y then True else lookup x xs'
+  | Cons y xs' -> if x == y then True else elem x xs'
   end
 
 fn insert : int -> list -> list = \ x xs ->
@@ -80,8 +80,8 @@ fn r_list : (k : int) -> `list k -> list = \ k ->
 -- Lifted functions
 
 #[safe]
-fn `lookup : (k : int) -> `int -> `list k -> `bool = \ k x xs ->
-  tape (s_bool (lookup (r_int x) (r_list k xs)))
+fn `elem : (k : int) -> `int -> `list k -> `bool = \ k x xs ->
+  tape (s_bool (elem (r_int x) (r_list k xs)))
 
 #[safe]
 fn `insert : (k : int) -> `int -> `list k -> `list (k+1) = \ k x xs ->

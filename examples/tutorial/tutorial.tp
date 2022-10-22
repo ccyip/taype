@@ -11,15 +11,16 @@
 -- start with a upper-case letter.
 data list = Nil | Cons int list
 
--- We can write a simple lookup function over list. We need to provide the type
--- signatures for the function definitions. Most language constructs are similar
--- to the ones found in standard functional languages, with slightly different
--- syntax. The function name should start with a lower-case letter, possibly
--- prefixed by "`" for oblivious functions.
-fn lookup : int -> list -> bool = \ x xs ->
+-- We can write a simple function over list that checks if an integer is an
+-- element of the list. We need to provide the type signatures for the function
+-- definitions. Most language constructs are similar to the ones found in
+-- standard functional languages, with slightly different syntax. The function
+-- name should start with a lower-case letter, possibly prefixed by "`" for
+-- oblivious functions.
+fn elem : int -> list -> bool = \ x xs ->
   case xs of
   | Nil -> False
-  | Cons y xs' -> if x == y then True else lookup x xs'
+  | Cons y xs' -> if x == y then True else elem x xs'
   end
 
 -- Here is an insertion function that inserts the new element to the right place
@@ -68,8 +69,8 @@ fn r_list : (k : int) -> `list k -> list = \ k ->
 -- attribute indicates that these functions and their arguments are free of
 -- potential leakage.
 #[safe]
-fn `lookup : (k : int) -> `int -> `list k -> `bool = \ k x xs ->
-  tape (s_bool (lookup (r_int x) (r_list k xs)))
+fn `elem : (k : int) -> `int -> `list k -> `bool = \ k x xs ->
+  tape (s_bool (elem (r_int x) (r_list k xs)))
 
 #[safe]
 fn `insert : (k : int) -> `int -> `list k -> `list (k+1) = \ k x xs ->

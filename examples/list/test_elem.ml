@@ -19,7 +19,7 @@ let _ =
 
   collect_stat ();
 
-  let obliv_res = obliv_lookup n obliv_x obliv_xs in
+  let obliv_res = obliv_elem n obliv_x obliv_xs in
 
   record_stat ();
 
