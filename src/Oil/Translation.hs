@@ -15,17 +15,17 @@
 --
 -- We use naming convention to translate definition names and references to the
 -- corresponding leaky types and leaky case analysis definitions, and to resolve
--- return and leaky if instances. This is more convenient than maintaining a
+-- promote and leaky if instances. This is more convenient than maintaining a
 -- lookup table. The generated names contain characters that are illegal in the
 -- taype identifiers to avoid name conflicts.
 module Oil.Translation
   ( -- * Naming
-    retPrefix,
+    promPrefix,
     lIfPrefix,
     lCasePrefix,
     unsafePrefix,
     privPrefix,
-    retName,
+    promName,
     lIfName,
     lCaseName,
     unsafeName,
@@ -57,8 +57,8 @@ import qualified Taype.Syntax as T
 ----------------------------------------------------------------
 -- Naming
 
-retPrefix :: Text
-retPrefix = leakyName "ret#"
+promPrefix :: Text
+promPrefix = leakyName "prom#"
 
 lIfPrefix :: Text
 lIfPrefix = leakyName "if#"
@@ -72,8 +72,8 @@ unsafePrefix = "unsafe!"
 privPrefix :: Text
 privPrefix = "private!"
 
-retName :: Text -> Text
-retName = (retPrefix <>)
+promName :: Text -> Text
+promName = (promPrefix <>)
 
 lIfName :: Text -> Text
 lIfName = (lIfPrefix <>)
@@ -514,10 +514,10 @@ toLeakyTy _ = oops "Local type variables appear"
 -- The given OIL type is nonleaky. In addition, it is a concrete type, i.e. not
 -- a type variable.
 retInst_ :: Ty a -> Expr b
-retInst_ TInt = GV (retName "int")
-retInst_ OArray = GV (retName aName)
-retInst_ Arrow {..} = GV (retName "->") @@ [retInst_ cod]
-retInst_ TApp {..} = GV (retName tctor) @@ retInst_ <$> args
+retInst_ TInt = GV (promName "int")
+retInst_ OArray = GV (promName aName)
+retInst_ Arrow {..} = GV (promName "->") @@ [retInst_ cod]
+retInst_ TApp {..} = GV (promName tctor) @@ retInst_ <$> args
 retInst_ _ = oops "Cannot resolve return instance of type variable"
 
 -- | Resolve the return instance of the leaky structure of a taype type.
@@ -649,7 +649,7 @@ toOilDef (name, def) = case def of
           zipWith ((,) . l_) ctorNames lParaTypess
             `snoc` (lif_ name, [OArray, "$self", "$self"]),
         -- Return instance of the leaky type
-        funDef_ (ret_ name) [] (ar_ [TV name, l_ name]) $
+        funDef_ (prom_ name) [] (ar_ [TV name, l_ name]) $
           lam_ "x" $
             case_ "x" $
               zipWith retAlt ctorNames sParaTypess,
@@ -777,7 +777,7 @@ prelude =
     adtDef_
       (l_ aName)
       []
-      [ (ret_ aName, [OArray]),
+      [ (prom_ aName, [OArray]),
         (lif_ aName, [OArray, "$self", "$self"])
       ],
     -- Boolean
@@ -791,7 +791,7 @@ prelude =
     adtDef_
       (l_ "bool")
       []
-      [ (ret_ "bool", ["bool"]),
+      [ (prom_ "bool", ["bool"]),
         (lif_ "bool", [OArray, "$self", "$self"])
       ],
     -- Section of boolean
@@ -806,7 +806,7 @@ prelude =
       $ lam_
         (o_ "b")
         ( lif_ "bool"
-            @@ [o_ "b", ret_ "bool" @@ ["True"], ret_ "bool" @@ ["False"]]
+            @@ [o_ "b", prom_ "bool" @@ ["True"], prom_ "bool" @@ ["False"]]
         ),
     -- The first branch of Boolean case analysis corresponds to @False@ while
     -- the second one to @True@.
@@ -825,7 +825,7 @@ prelude =
         [lif_ "r", l_ "b", l_ "ff", l_ "ft"]
         ( case_
             (l_ "b")
-            [ (ret_ "bool", ["b"], ite_ "b" (l_ "ft") (l_ "ff")),
+            [ (prom_ "bool", ["b"], ite_ "b" (l_ "ft") (l_ "ff")),
               ( lif_ "bool",
                 [o_ "b", l_ "b1", l_ "b2"],
                 lif_ "r"
@@ -844,9 +844,9 @@ prelude =
         (l_ "b")
         ( case_
             (l_ "b")
-            [ ( ret_ "bool",
+            [ ( prom_ "bool",
                 ["b"],
-                ret_ aName @@ [s_ "bool" @@ ["b"]]
+                prom_ aName @@ [s_ "bool" @@ ["b"]]
               ),
               ( lif_ "bool",
                 [o_ "b", l_ "b1", l_ "b2"],
@@ -860,7 +860,7 @@ prelude =
       (l_ "int")
       []
       [ (r_ "int", [OArray]),
-        (ret_ "int", [TInt]),
+        (prom_ "int", [TInt]),
         (lif_ "int", [OArray, "$self", "$self"])
       ],
     funDef_
@@ -871,8 +871,8 @@ prelude =
         (l_ "n")
         ( case_
             (l_ "n")
-            [ (r_ "int", [o_ "n"], ret_ aName @@ [o_ "n"]),
-              (ret_ "int", ["n"], ret_ aName @@ [s_ "int" @@ ["n"]]),
+            [ (r_ "int", [o_ "n"], prom_ aName @@ [o_ "n"]),
+              (prom_ "int", ["n"], prom_ aName @@ [s_ "int" @@ ["n"]]),
               ( lif_ "int",
                 [o_ "b", l_ "n1", l_ "n2"],
                 lif_ aName
@@ -917,7 +917,7 @@ prelude =
         )
       ],
     funDef_
-      (ret_ "*")
+      (prom_ "*")
       ["a", l_ "a", "b", l_ "b"]
       ( ar_
           [ ar_ ["a", l_ "a"],
@@ -927,12 +927,12 @@ prelude =
           ]
       )
       $ lams_
-        [ret_ "a", ret_ "b", "p"]
+        [prom_ "a", prom_ "b", "p"]
         ( case_
             "p"
             [ ( "(,)",
                 ["x", "y"],
-                l_ "(,)" @@ [ret_ "a" @@ ["x"], ret_ "b" @@ ["y"]]
+                l_ "(,)" @@ [prom_ "a" @@ ["x"], prom_ "b" @@ ["y"]]
               )
             ]
         ),
@@ -974,12 +974,12 @@ prelude =
         )
       ],
     funDef_
-      (ret_ "->")
+      (prom_ "->")
       ["a", "b", l_ "b"]
       (ar_ [ar_ ["b", l_ "b"], ar_ ["a", "b"], l_ "->" @@ ["a", l_ "b"]])
       $ lams_
-        [ret_ "b", "f"]
-        (l_ "Lam" @@ [lam_ "x" $ ret_ "b" @@ ["f" @@ ["x"]]]),
+        [prom_ "b", "f"]
+        (l_ "Lam" @@ [lam_ "x" $ prom_ "b" @@ ["f" @@ ["x"]]]),
     funDef_
       (l_ "ap")
       ["a", l_ "b"]
@@ -1014,7 +1014,7 @@ prelude =
         ["n", l_ "a"]
         ( case_
             (l_ "a")
-            [ (ret_ aName, [o_ "a"], o_ "a"),
+            [ (prom_ aName, [o_ "a"], o_ "a"),
               ( lif_ aName,
                 [o_ "b", l_ "a1", l_ "a2"],
                 V aMux
@@ -1045,7 +1045,7 @@ lBoolUopDef name =
       (l_ "a")
       ( case_
           (l_ "a")
-          [ (ret_ "bool", ["b"], ret_ "bool" @@ [V name @@ ["b"]]),
+          [ (prom_ "bool", ["b"], prom_ "bool" @@ [V name @@ ["b"]]),
             ( lif_ "bool",
               [o_ "b", l_ "a1", l_ "a2"],
               lif_ "bool"
@@ -1068,7 +1068,7 @@ lBoolBopDef name domi =
       [l_ "a", l_ "b"]
       ( case_
           (l_ "a")
-          [ ( ret_ "bool",
+          [ ( prom_ "bool",
               ["a"],
               ite_
                 "a"
@@ -1107,7 +1107,7 @@ lIntBopDef_ name cod mkExpr =
                     r_ cod
                       @@ [o_ name @@ [o_ "m", o_ "n"]]
                   ),
-                  ( ret_ "int",
+                  ( prom_ "int",
                     ["n"],
                     r_ cod
                       @@ [o_ name @@ [o_ "m", s_ "int" @@ ["n"]]]
@@ -1122,7 +1122,7 @@ lIntBopDef_ name cod mkExpr =
                   )
                 ]
             ),
-            ( ret_ "int",
+            ( prom_ "int",
               ["m"],
               case_
                 (l_ "n")
@@ -1131,9 +1131,9 @@ lIntBopDef_ name cod mkExpr =
                     r_ cod
                       @@ [o_ name @@ [s_ "int" @@ ["m"], o_ "n"]]
                   ),
-                  ( ret_ "int",
+                  ( prom_ "int",
                     ["n"],
-                    ret_ cod
+                    prom_ cod
                       @@ [mkExpr "m" "n"]
                   ),
                   ( lif_ "int",
@@ -1237,8 +1237,8 @@ i_ = fromString . toString . internalName
 lif_ :: IsString a => Text -> a
 lif_ = fromString . toString . lIfName
 
-ret_ :: IsString a => Text -> a
-ret_ = fromString . toString . retName
+prom_ :: IsString a => Text -> a
+prom_ = fromString . toString . promName
 
 lcase_ :: IsString a => Text -> a
 lcase_ = fromString . toString . lCaseName

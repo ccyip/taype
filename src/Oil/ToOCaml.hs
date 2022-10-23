@@ -262,7 +262,7 @@ toOCamlDef k (name, ADTDef {..}) = do
       -- Because OCaml doesn't treat constructors as functions, we define a
       -- wrapper function for return or leaky if constructor.
       ctorWrapper (leakyAccent <> retractionPrefix) 1
-        <> ctorWrapper retPrefix 1
+        <> ctorWrapper promPrefix 1
         <> ctorWrapper lIfPrefix 3
     )
   where
@@ -341,7 +341,7 @@ isBuiltinTyName x = lookup x builtinTyTable
 
 toValidName_ :: Bool -> Text -> Text
 toValidName_ isTy = \case
-  (T.stripPrefix retPrefix -> Just x) -> "leaky_ret_of_" <> go True x
+  (T.stripPrefix promPrefix -> Just x) -> "leaky_ret_of_" <> go True x
   (T.stripPrefix lIfPrefix -> Just x) -> "leaky_if_of_" <> go True x
   (T.stripPrefix lCasePrefix -> Just x) -> "leaky_case_of_" <> go True x
   (T.stripPrefix (privPrefix <> oblivAccent) -> Just x) ->
@@ -399,7 +399,7 @@ capitalize x =
 
 isCtor :: Text -> Bool
 isCtor = \case
-  (T.stripPrefix retPrefix -> Just _) -> False
+  (T.stripPrefix promPrefix -> Just _) -> False
   (T.stripPrefix lIfPrefix -> Just _) -> False
   (T.stripPrefix lCasePrefix -> Just _) -> False
   (T.stripPrefix leakyAccent -> Just x) -> go x
