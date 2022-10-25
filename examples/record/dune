@@ -1,6 +1,5 @@
 (executables
- (names "test_simple"
-        "test_is_taller"
+ (names "test_is_taller"
         "test_is_obese_by_id"
         "test_healthy_rate"
         "test_min_euclidean_distance"
