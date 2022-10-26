@@ -48,6 +48,10 @@ module Taype.Syntax
     pcasePat_,
     opcase_,
     opcasePat_,
+    let',
+    lets',
+    pcase',
+    opcase',
 
     -- * Pretty printer
     cuteBinder,
@@ -768,6 +772,42 @@ freshPatBinder (VarP binder) = return binder
 freshPatBinder (PairP loc _ _) = do
   x <- fresh
   return $ Named loc $ internalName ("p" <> show x)
+
+----------------------------------------------------------------
+-- Smart constructors that work with 'Name's
+
+let' :: Name -> Ty Name -> Label -> Expr Name -> Expr Name -> Expr Name
+let' x t l rhs body =
+  Let
+    { mTy = Just t,
+      label = Just l,
+      binder = Nothing,
+      bnd = abstract_ x body,
+      ..
+    }
+
+lets' :: [(Name, Ty Name, Label, Expr Name)] -> Expr Name -> Expr Name
+lets' = flip $ foldr $ uncurry4 let'
+
+pcase' :: Expr Name -> Name -> Name -> Ty Name -> Expr Name -> Expr Name
+pcase' cond xl xr ty body =
+  PCase
+    { retTy = Just ty,
+      lBinder = Nothing,
+      rBinder = Nothing,
+      bnd2 = abstract_ (xl, xr) body,
+      ..
+    }
+
+opcase' :: Expr Name -> Ty Name -> Name -> Name -> Expr Name -> Expr Name
+opcase' cond ty xl xr body =
+  OPCase
+    { oprodTy = Just ty,
+      lBinder = Nothing,
+      rBinder = Nothing,
+      bnd2 = abstract_ (xl, xr) body,
+      ..
+    }
 
 ----------------------------------------------------------------
 -- Pretty printer

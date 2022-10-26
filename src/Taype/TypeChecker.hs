@@ -1307,20 +1307,6 @@ whnf_ e = do
 ----------------------------------------------------------------
 -- Helper functions
 
--- | Build a series of let bindings, given the bindings and body. If the list of
--- bindings is empty, simply return the body.
-lets' :: [(Name, Ty Name, Label, Expr Name)] -> Expr Name -> Expr Name
-lets' = flip $ foldr go
-  where
-    go (x, t, l, rhs) body =
-      Let
-        { mTy = Just t,
-          label = Just l,
-          binder = Nothing,
-          bnd = abstract_ x body,
-          ..
-        }
-
 maybeGV :: MonadReader Env m => Expr Name -> m (Maybe (NamedDef Name))
 maybeGV GV {..} = (ref,) <<$>> lookupGSig ref
 maybeGV Loc {..} = maybeGV expr
@@ -1492,10 +1478,7 @@ checkDefs :: Options -> Defs Name -> ExceptT Err IO (GCtx Name)
 checkDefs options@Options {..} defs = runDcM options $ do
   gsctx <- preCheckDefs defs
   gctx <- go gsctx mempty defs
-  return $
-    if optNoFlattenLets
-      then gctx
-      else mapGCtxDef flattenLets gctx
+  return $ mapGCtxDef optimize gctx
   where
     -- Type checking definitions are done in the order of the given definitions.
     -- They can freely refer to the signatures of all definitions, allowing for
@@ -1512,6 +1495,11 @@ checkDefs options@Options {..} defs = runDcM options $ do
       def' <- lift $ runTcM (initEnv options gsctx gdctx) $ checkDef def
       gdctx' <- extendGCtx1 gdctx name def'
       go gsctx gdctx' defs'
+    optimize def =
+      let def' = if optFlagEarlyTape then earlyTapeDef def else def
+       in if optNoFlattenLets
+            then def'
+            else flattenLets def'
 
 -- | Type check a global definition.
 --
@@ -1761,6 +1749,149 @@ flattenLets = runFreshM . transformBiM go
               }
       _ -> return e
     go e = return e
+
+----------------------------------------------------------------
+-- Optimization
+
+-- | Force taping to avoid exponential blowup.
+--
+-- If the given expression is a function, it should be fully eta-expanded. We
+-- only handle primitive types and pairs at the moment.
+earlyTape :: Expr Name -> Ty Name -> FreshT Maybe (Expr Name)
+earlyTape Lam {..} Pi {binder = _, label = _, bnd = tyBnd} = do
+  (x, body, tBody) <- unbind1With bnd tyBnd
+  body' <- earlyTape body tBody
+  return Lam {bnd = abstract_ x body', ..}
+earlyTape Lam {} _ = fail "Not a function type"
+earlyTape _ Pi {} = fail "Not eta expanded"
+earlyTape e t = do
+  x <- fresh
+  s <- fresh
+  (secExpr, secTy) <- genSection (V x) t
+  (e', _) <- genRetraction (V s) secTy
+  return $
+    lets'
+      [(x, t, LeakyL, e), (s, secTy, SafeL, secExpr)]
+      e'
+
+earlyTapeDef :: Def Name -> Def Name
+earlyTapeDef FunDef {attr = attr@LeakyAttr, label = label@(Just LeakyL), ..} =
+  let res = runFreshT $ earlyTape expr ty
+   in FunDef {expr = res ?: expr, ..}
+earlyTapeDef def = def
+
+-- | Generalized section
+--
+-- This function derives a section function for an expression, given its type.
+-- Both input should be well-typed or well-kinded and in core Taype ANF.
+--
+-- The given type must be leaky, i.e. with 'LeakyL' label, while the returned
+-- expression should be safe. The returned expression must also be well-typed
+-- and in core Taype ANF. The returned type must be obliviously kinded.
+genSection :: Expr Name -> Ty Name -> FreshT Maybe (Expr Name, Ty Name)
+genSection e = \case
+  TInt -> goPrimTy TInt OInt "int"
+  TBool -> goPrimTy TBool OBool "bool"
+  ty@Prod {..} -> do
+    x <- fresh
+    s <- fresh
+    xl <- fresh
+    xr <- fresh
+    xl' <- fresh
+    xr' <- fresh
+    p <- fresh
+    (left', leftTy') <- genSection (V xl) left
+    (right', rightTy') <- genSection (V xr) right
+    let ty' = OProd {left = leftTy', right = rightTy'}
+    return
+      ( lets'
+          [ (x, ty, LeakyL, e),
+            ( s,
+              ty',
+              LeakyL,
+              pcase' (V x) xl xr ty' $
+                lets'
+                  [ (xl', leftTy', SafeL, left'),
+                    (xr', rightTy', SafeL, right'),
+                    (p, ty', SafeL, OPair {left = V xl', right = V xr'})
+                  ]
+                  Promote {expr = V p}
+            )
+          ]
+          Tape {expr = V s},
+        ty'
+      )
+  _ -> fail "Not supported"
+  where
+    goPrimTy ty oty name = do
+      x <- fresh
+      s <- fresh
+      return
+        ( lets'
+            [ (x, ty, LeakyL, e),
+              ( s,
+                oty,
+                LeakyL,
+                App
+                  { appKind = Just BuiltinApp,
+                    fn = GV $ sectionName name,
+                    args = [V x]
+                  }
+              )
+            ]
+            Tape {expr = V s},
+          oty
+        )
+
+-- | Generalized retraction
+--
+-- This function derives a retraction function for an expression, given its type.
+--
+-- The given type must be safe, i.e. with 'SafeL' label, while the returned
+-- expression should be leaky. The returned expression must also be well-typed
+-- and in core Taype ANF.
+genRetraction :: Expr Name -> Ty Name -> FreshT Maybe (Expr Name, Ty Name)
+genRetraction e = \case
+  OInt -> goPrimTy TInt OInt "int"
+  OBool -> goPrimTy TBool OBool "bool"
+  ty@OProd {..} -> do
+    x <- fresh
+    xl <- fresh
+    xr <- fresh
+    xl' <- fresh
+    xr' <- fresh
+    (left', leftTy') <- genRetraction (V xl) left
+    (right', rightTy') <- genRetraction (V xr) right
+    let ty' = Prod {left = leftTy', right = rightTy'}
+    return
+      ( lets'
+          [(x, ty, SafeL, e)]
+          ( opcase' (V x) ty xl xr $
+              lets'
+                [ (xl', leftTy', LeakyL, left'),
+                  (xr', rightTy', LeakyL, right')
+                ]
+                Pair {left = V xl', right = V xr'}
+          ),
+        ty'
+      )
+  _ -> fail "Not supported"
+  where
+    goPrimTy ty oty name = do
+      x <- fresh
+      return
+        ( let'
+            x
+            oty
+            SafeL
+            e
+            App
+              { appKind = Just BuiltinApp,
+                fn = GV $ retractionName name,
+                args = [V x]
+              },
+          ty
+        )
 
 ----------------------------------------------------------------
 -- Error reporting

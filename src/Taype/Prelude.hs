@@ -15,6 +15,8 @@ module Taype.Prelude
   ( oops,
     curry3,
     uncurry3,
+    curry4,
+    uncurry4,
     firstM,
     secondM,
     findAndDel,
@@ -26,11 +28,17 @@ where
 oops :: Text -> a
 oops msg = error $ "Oops! This should not happen:\n" <> msg
 
-curry3 :: ((a, b, c) -> d) -> a -> b -> c -> d
-curry3 f a b c = f (a, b, c)
+curry3 :: ((x1, x2, x3) -> r) -> x1 -> x2 -> x3 -> r
+curry3 f x1 x2 x3 = f (x1, x2, x3)
 
-uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
-uncurry3 f ~(a, b, c) = f a b c
+uncurry3 :: (x1 -> x2 -> x3 -> r) -> (x1, x2, x3) -> r
+uncurry3 f ~(x1, x2, x3) = f x1 x2 x3
+
+curry4 :: ((x1, x2, x3, x4) -> r) -> x1 -> x2 -> x3 -> x4 -> r
+curry4 f x1 x2 x3 x4 = f (x1, x2, x3, x4)
+
+uncurry4 :: (x1 -> x2 -> x3 -> x4 -> r) -> (x1, x2, x3, x4) -> r
+uncurry4 f ~(x1, x2, x3, x4) = f x1 x2 x3 x4
 
 firstM :: Functor m => (a -> m a') -> (a, b) -> m (a', b)
 firstM f ~(a, b) = (,b) <$> f a

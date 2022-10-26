@@ -65,7 +65,7 @@ commonDir = exampleDir </> "common"
 
 taypeCmd :: [String] -> Action ()
 taypeCmd args =
-  command_ [Traced "TAYPE"] "cabal" $ ["run", "taype", "--"] <> args
+  command_ [Traced "TAYPE"] "cabal" $ ["run", "taype", "--", "--fearly-tape"] <> args
 
 runnerCmd :: [String] -> Action ()
 runnerCmd args =

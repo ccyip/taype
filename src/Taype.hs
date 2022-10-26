@@ -153,6 +153,10 @@ opts = do
       long "no-files"
         <> short 'n'
         <> help "Do not generate files"
+  optFlagEarlyTape <-
+    switch $
+      long "fearly-tape"
+        <> help "Enable early tape optimization"
   optGeneratePrelude <-
     optional $
       strOption $
