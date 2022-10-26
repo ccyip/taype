@@ -1,0 +1,109 @@
+data dtree = Leaf int | Node int int dtree dtree
+
+data features = Nil | Cons int features
+
+fn decide : dtree -> features -> int = \t xs ->
+  case t of
+  | Leaf x -> x
+  | Node idx thd lt rt ->
+    let x = lookup xs idx
+     in if x <= thd then decide lt xs else decide rt xs
+  end
+
+fn lookup : features -> int -> int = \xs idx ->
+  case xs of
+  | Nil -> 0
+  | Cons x xs' ->
+    if idx <= 0
+    then x
+    else lookup xs' (idx-1)
+  end
+
+----------------------------------------------------------------
+-- Oblivious types
+
+-- obliv `dtree (k : int) =
+--   if k == 0
+--   then `int
+--   else `int `* `int `* `dtree (k-1) `* `dtree (k-1)
+
+-- In the outsource MPC setting (e.g., FHE), the computing party may own the
+-- decision tree while the feature provider (client) is not able to see this
+-- data.
+obliv `dtree (_ : dtree) = unit
+
+obliv `features (k : int) =
+  if k == 0
+  then unit
+  else `int `* `features (k-1)
+
+-- #[section]
+-- fn s_dtree : (k : int) -> dtree -> `dtree k = \k t ->
+--   if k == 0
+--   then
+--     tape
+--       (case t of
+--        | Leaf x -> tape (s_int x)
+--        | Node _ _ _ _ ->
+--          -- Bogus
+--          s_int 0
+--        end)
+--   else
+--     tape
+--       (case t of
+--        | Leaf _ ->
+--          -- Bogus
+--          tape `(s_int 0, s_int 0, s_dtree (k-1) t, s_dtree (k-1) t)
+--        | Node idx thd lt rt ->
+--          `(tape (s_int idx), tape (s_int thd), s_dtree (k-1) lt, s_dtree (k-1) rt)
+--        end)
+
+-- #[retraction]
+-- fn r_dtree : (k : int) -> `dtree k -> dtree = \k ->
+--   if k == 0
+--   then \t -> Leaf (r_int t)
+--   else \t ->
+--     `case t of
+--     `(idx, thd, l, r) ->
+--       Node (r_int idx) (r_int thd) (r_dtree (k-1) l) (r_dtree (k-1) r)
+--     end
+
+#[section]
+fn s_dtree : (t : dtree) -> dtree -> `dtree t = \_ _ -> ()
+
+#[retraction]
+fn r_dtree : (t : dtree) -> `dtree t -> dtree = \t _ -> t
+
+#[section]
+fn s_features : (k : int) -> features -> `features k = \k xs ->
+  if k == 0
+  then ()
+  else
+    tape (case xs of
+          | Nil ->
+            -- Bogus
+            `(s_int 0, s_features (k-1) xs)
+          | Cons x xs' -> `(tape (s_int x), s_features (k-1) xs')
+          end)
+
+#[retraction]
+fn r_features : (k : int) -> `features k -> features = \k ->
+  if k == 0
+  then \_ -> Nil
+  else \xs ->
+    `case xs of
+    `(x, xs') -> Cons (r_int x) (r_features (k-1) xs')
+    end
+
+----------------------------------------------------------------
+-- Lifted functions
+
+-- #[safe]
+-- fn `decide : (kt : int) -> (k : int) -> `dtree kt -> `features k -> `int =
+--   \kt k t xs ->
+--     tape (s_int (decide (r_dtree kt t) (r_features k xs)))
+
+#[safe]
+fn `decide : (t : dtree) -> (k : int) -> `dtree t -> `features k -> `int =
+  \t k u xs ->
+    tape (s_int (decide (r_dtree t u) (r_features k xs)))

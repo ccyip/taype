@@ -1,0 +1,84 @@
+data tree = Leaf int | Node int tree tree
+
+fn lookup : tree -> int -> bool = \t x ->
+  case t of
+  | Leaf y -> x == y
+  | Node y l r ->
+    x == y || lookup l x || lookup r x
+  end
+
+fn map : (int -> int) -> tree -> tree = \f t ->
+  case t of
+  | Leaf x -> Leaf (f x)
+  | Node x l r -> Node (f x) (map f l) (map f r)
+  end
+
+fn prob : tree -> int -> int = \t x ->
+  case t of
+  | Leaf y -> if x == y then 100 else 0
+  | Node p l r ->
+    (p * (prob l x) + (100 - p) * (prob r x)) / 100
+  end
+
+
+----------------------------------------------------------------
+-- Oblivious types
+
+obliv `tree (k : int) =
+  if k == 0
+  then `int
+  else `int `+ `int `* `tree (k-1) `* `tree (k-1)
+
+#[section]
+fn s_tree : (k : int) -> tree -> `tree k = \k t ->
+  if k == 0
+  then
+    tape
+      (case t of
+       | Leaf x -> tape (s_int x)
+       | Node x l r ->
+         -- Bogus
+         s_int 0
+       end)
+  else
+    tape
+      (case t of
+       | Leaf x -> `inl (tape (s_int x))
+       | Node x l r ->
+         `inr `(tape (s_int x), s_tree (k-1) l, s_tree (k-1) r)
+       end)
+
+#[retraction]
+fn r_tree : (k : int) -> `tree k -> tree = \k ->
+  if k == 0
+  then \t -> Leaf (r_int t)
+  else \t ->
+    `case t of
+    | `inl x -> Leaf (r_int x)
+    | `inr `(x, l, r) -> Node (r_int x) (r_tree (k-1) l) (r_tree (k-1) r)
+    end
+
+----------------------------------------------------------------
+-- Lifted functions
+
+#[safe]
+fn `lookup : (k : int) -> `tree k -> `int -> `bool = \k t x ->
+  tape (s_bool (lookup (r_tree k t) (r_int x)))
+
+#[safe]
+fn `test_map : (k : int) -> `tree k -> `int -> `tree k = \k t y ->
+  s_tree k (map (\x -> x + r_int y) (r_tree k t))
+
+#[safe]
+fn max : int -> int -> int = \x y -> if x <= y then y else x
+
+#[safe]
+fn `node :
+  (k1 : int) -> (k2 : int) -> `tree k1 -> `tree k2 -> `int ->
+  `tree (1 + max k1 k2) =
+  \k1 k2 t1 t2 x ->
+    s_tree (1 + max k1 k2) (Node (r_int x) (r_tree k1 t1) (r_tree k2 t2))
+
+#[safe]
+fn `prob : (k : int) -> `tree k -> `int -> `int = \k t x ->
+  tape (s_int (prob (r_tree k t) (r_int x)))
