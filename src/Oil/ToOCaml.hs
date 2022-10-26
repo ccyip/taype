@@ -341,7 +341,7 @@ isBuiltinTyName x = lookup x builtinTyTable
 
 toValidName_ :: Bool -> Text -> Text
 toValidName_ isTy = \case
-  (T.stripPrefix promPrefix -> Just x) -> "leaky_ret_of_" <> go True x
+  (T.stripPrefix promPrefix -> Just x) -> "leaky_prom_of_" <> go True x
   (T.stripPrefix lIfPrefix -> Just x) -> "leaky_if_of_" <> go True x
   (T.stripPrefix lCasePrefix -> Just x) -> "leaky_case_of_" <> go True x
   (T.stripPrefix (privPrefix <> oblivAccent) -> Just x) ->
@@ -379,14 +379,11 @@ toValidName = toValidName_ False
 toValidCtorName :: Text -> Text
 toValidCtorName = capitalize . toValidName
 
--- A bit sloppy here. It is possible that name crashes happen if there are two
--- type variables that differ only in the leaky accent. This can be easily fixed
--- by replacing the leaky accent with a prefix instead of stripping it. However,
--- we choose to not worry about it for readability. Plus, we only use type
--- variables in OIL prelude which is under our control.
+-- Similar to other naming transformation, we are being a bit sloppy and assume
+-- no type variable starts with the leaky prefix.
 toValidTyVar :: Text -> Text
 toValidTyVar = \case
-  (T.stripPrefix leakyAccent -> Just x) -> go x
+  (T.stripPrefix leakyAccent -> Just x) -> go ("leaky_" <> x)
   x -> go x
   where
     go = ("'" <>)
