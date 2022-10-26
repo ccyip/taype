@@ -565,30 +565,30 @@ toOilProgram Options {..} gctx defs =
   Program
     { mainDefs =
         secondF closedDef $
-          foldMap (simp optNoReadableOil . go False) defs,
+          foldMap (simp optReadableOil . go False) defs,
       ..
     }
   where
     go isCrust =
       runTslM Env {tctx = TCtx [], label = SafeL, ..}
         . toOilDef
-    simp noReadable =
+    simp readable =
       secondF $
-        (if noReadable then id else readableDef) . simpDef
+        (if readable then readableDef else id) . simpDef
     funDefs = [def | def@(_, T.FunDef {}) <- defs]
     concealSet = filterCrust funDefs T.SectionAttr
     revealSet = filterCrust funDefs T.RetractionAttr
-    crustDefs noReadable crustSet rename names =
+    crustDefs readable crustSet rename names =
       secondF closedDef $
         bimapF rename (renameCrustDef (crustSet <> fromList names) rename) $
           foldMap
-            (simp noReadable . go True)
+            (simp readable . go True)
             [def | def@(name, _) <- funDefs, name `member` crustSet]
     -- In the conceal phase, we keep the ANF form because the evaluation order
     -- is crucial.
     concealDefs =
       crustDefs
-        True
+        False
         concealSet
         privName
         [ sectionName "int",
@@ -599,7 +599,7 @@ toOilProgram Options {..} gctx defs =
         ]
     revealDefs =
       crustDefs
-        optNoReadableOil
+        optReadableOil
         revealSet
         unsafeName
         [ retractionName "int",

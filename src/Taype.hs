@@ -195,7 +195,7 @@ opts = do
     switch $
       long "print-source"
         <> help "Whether to print the source code (for internal debugging)"
-  optNoReadableOil <-
+  optReadableOil <-
     switch $
       long "no-readable-oil"
         <> help "Do not make the generated OIL programs more readable"
