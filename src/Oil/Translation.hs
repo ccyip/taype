@@ -1077,11 +1077,24 @@ lBoolBopDef name domi =
             ),
             ( lif_ "bool",
               [o_ "b", l_ "a1", l_ "a2"],
-              lif_ "bool"
-                @@ [ o_ "b",
-                     "$self" @@ [l_ "a1", l_ "b"],
-                     "$self" @@ [l_ "a2", l_ "b"]
-                   ]
+              case_
+                (l_ "b")
+                [ ( prom_ "bool",
+                    ["b"],
+                    ite_
+                      "b"
+                      (if domi then l_ "b" else l_ "a")
+                      (if domi then l_ "a" else l_ "b")
+                  ),
+                  ( lif_ "bool",
+                    [Anon, Anon, Anon],
+                    lif_ "bool"
+                      @@ [ o_ "b",
+                           "$self" @@ [l_ "a1", l_ "b"],
+                           "$self" @@ [l_ "a2", l_ "b"]
+                         ]
+                  )
+                ]
             )
           ]
       )
