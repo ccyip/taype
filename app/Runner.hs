@@ -16,6 +16,7 @@ import qualified Data.Csv as Csv
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified Data.Vector as V
+import Data.List (maximum)
 import Options.Applicative
 import System.IO (hClose, withBinaryFile)
 import System.Process.Typed
@@ -52,8 +53,7 @@ run options@Options {..} = do
               prev
       stats <- forM [1 .. optRounds] $ \j -> do
         log_ $ "Test case " <> show i <> " (round " <> show j <> ")"
-        stat <- run1 options hd fields'
-        return $ fromMaybe (-1) $ readMaybe $ toString stat
+        run1 options hd fields'
       let stat = sum stats `div` length stats
       go hd fields' input (i + 1) $ (show stat : fields') : acc
     filterOutput hd output =
@@ -62,7 +62,7 @@ run options@Options {..} = do
           party == "public" || party == "stat"
       ]
 
-run1 :: Options -> [Text] -> [Text] -> IO Text
+run1 :: Options -> [Text] -> [Text] -> IO Int
 run1 Options {..} hd fields =
   withInput optParties hd fields $ \hs ->
     withManyProcessesWait_ (procs hs) go
@@ -71,15 +71,12 @@ run1 Options {..} hd fields =
       output <- forM ps $ \p ->
         let h = getStdout p
          in (,) <$> TIO.hGetLine h <*> TIO.hGetContents h
-      forM_ output $ \(stat, content) -> do
+      stats <- forM output $ \(stat, content) -> do
         putTextLn stat
         putText content
         when (stat == "failed") $ error "Test failed"
-      -- We only need the first party's statistics. The other parties should be
-      -- the same or similar. In the case of multi-party, the difference should
-      -- be a constant, and I believe it indicates the last round's
-      -- communication cost.
-      return $ maybe "-1" fst $ viaNonEmpty head output
+        return $ readMaybe (toString stat) ?: (-1)
+      return $ maximum stats
     procs = zipWith proc1 optParties
     proc1 party handle =
       setStdout createPipe $
