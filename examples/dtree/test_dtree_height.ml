@@ -11,17 +11,20 @@ let _ =
   parse_options ();
   setup_driver_simple ();
 
-  let t = get_public dtree_of_sexp in
-  let u = private_s_dtree t t in
+  let kt = get_public_int () in
+  let t = get_private
+      (dtree_of_sexp_check_height kt)
+      (private_s_dtree_height kt)
+      (obliv_dtree_height kt) in
   let k = get_public_int () in
   let xs = get_private
-    (features_of_sexp_check k)
-    (private_s_features k)
-    (obliv_features k) in
+      (features_of_sexp_check k)
+      (private_s_features k)
+      (obliv_features k) in
 
   collect_stat ();
 
-  let obliv_res = obliv_decide t k u xs in
+  let obliv_res = obliv_decide_height kt k t xs in
 
   record_stat ();
 
