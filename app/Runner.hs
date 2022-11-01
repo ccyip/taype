@@ -17,8 +17,9 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified Data.Vector as V
 import Options.Applicative
-import System.IO (hClose)
+import System.IO (hClose, withBinaryFile)
 import System.Process.Typed
+import UnliftIO.Temporary (withSystemTempFile)
 
 run :: Options -> IO ()
 run options@Options {..} = do
@@ -62,11 +63,11 @@ run options@Options {..} = do
       ]
 
 run1 :: Options -> [Text] -> [Text] -> IO Text
-run1 Options {..} hd fields = withManyProcessesWait_ procs go
+run1 Options {..} hd fields =
+  withInput optParties hd fields $ \hs ->
+    withManyProcessesWait_ (procs hs) go
   where
     go ps = do
-      zipWithM_ (send ps) hd fields
-      forM_ ps $ hClose . getStdin
       output <- forM ps $ \p ->
         let h = getStdout p
          in (,) <$> TIO.hGetLine h <*> TIO.hGetContents h
@@ -79,23 +80,32 @@ run1 Options {..} hd fields = withManyProcessesWait_ procs go
       -- be a constant, and I believe it indicates the last round's
       -- communication cost.
       return $ maybe "-1" fst $ viaNonEmpty head output
-    procs =
-      optParties <&> \party ->
-        setStdout createPipe $
-          setStdin createPipe $
-            proc optProg $
-              toString party : optArgs
-    send ps owner field = zipWithM_ (send1 owner field) optParties ps
-    send1 owner field party p = do
-      TIO.hPutStrLn (getStdin p) $ mkInput owner field party
-      hFlush $ getStdin p
-    mkInput owner field party
+    procs = zipWith proc1 optParties
+    proc1 party handle =
+      setStdout createPipe $
+        setStdin (useHandleClose handle) $
+          proc optProg $
+            toString party : optArgs
+
+withInput :: [Text] -> [Text] -> [Text] -> ([Handle] -> IO a) -> IO a
+withInput parties owners fields f = go [] parties
+  where
+    go hs [] = f (reverse hs)
+    go hs (party : parties') =
+      withSystemTempFile "input" $ \fp h -> do
+        fillInput h party
+        hClose h
+        withBinaryFile fp ReadMode $ \h' ->
+          go (h' : hs) parties'
+    fillInput h party =
+      zipWithM_ (TIO.hPutStrLn h <<$>> mkInput party) owners fields
+    mkInput party owner field
       | owner == "public"
           || owner == "expected"
           || owner == party
           || party == "public" =
           owner <> ":" <> field
-    mkInput owner _ _ = owner <> ":"
+    mkInput _ owner _ = owner <> ":"
 
 log_ :: Text -> IO ()
 log_ msg = do
@@ -110,7 +120,7 @@ withManyProcessesWait_ ::
 withManyProcessesWait_ configs f = go [] configs
   where
     go ps [] = f (reverse ps)
-    go ps (config : configs') =
+    go ps (config : configs') = do
       withProcessWait_ config $ \p -> go (p : ps) configs'
 
 main :: IO ()
