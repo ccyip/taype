@@ -3,7 +3,7 @@ data list = Nil | Cons int list
 fn elem : int -> list -> bool = \ x xs ->
   case xs of
   | Nil -> False
-  | Cons y xs' -> if x == y then True else elem x xs'
+  | Cons y xs' -> x == y || elem x xs'
   end
 
 fn insert : int -> list -> list = \ x xs ->

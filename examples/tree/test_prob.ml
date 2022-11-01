@@ -14,6 +14,7 @@ let _ =
   let n = get_public_int () in
   let t = get_private (tree_of_sexp_check n) (private_s_tree n) (obliv_tree n) in
   let x = get_private_int () in
+  let expected = get_expected Conv.int_of_sexp in
 
   collect_stat ();
 
@@ -25,5 +26,4 @@ let _ =
 
   finalize_driver ();
 
-  print_stat ();
-  Conv.sexp_of_int res |> print_sexp
+  expected = res |> print_result
