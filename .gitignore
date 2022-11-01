@@ -89,6 +89,7 @@ TAGS
 examples/**/*.ml
 examples/**/test_*
 examples/**/*.output.csv
+examples/common/test
 !examples/common/*.ml
 examples/common/prelude.ml
 !examples/**/*helper.ml
