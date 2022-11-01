@@ -160,7 +160,14 @@ rulesForCommon = do
   bin %> \out -> do
     let mls = [preludeML, out <.> "ml"]
     need mls
-    mlCmd $ ["-o", out] <> mls
+    mlCmd $
+      [ "-o",
+        out,
+        "-linkpkg",
+        "-package",
+        "taype-driver-plaintext"
+      ]
+        <> mls
 
   preludeML %> \out -> do
     taypeCmd ["--generate-prelude", dropExtension out]
