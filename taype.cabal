@@ -101,6 +101,7 @@ executable runner
                      , optparse-applicative
                      , vector
                      , cassava
+                     , unliftio
                      , typed-process
   ghc-options:         -threaded
                        -rtsopts
