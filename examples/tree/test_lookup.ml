@@ -18,14 +18,12 @@ let _ =
 
   collect_stat ();
 
-  (* let obliv_res = obliv_lookup n t x in *)
-  let obliv_res = leaky_ap leaky_if_of_tree (leaky_ap leaky_if_of_arrow r_tree n) t in
+  let obliv_res = obliv_lookup n t x in
 
   record_stat ();
 
-  (* let res = unsafe_r_bool obliv_res in *)
+  let res = unsafe_r_bool obliv_res in
 
   finalize_driver ();
 
-  (* expected = res |> print_result *)
-  expected = expected |> print_result
+  expected = res |> print_result
