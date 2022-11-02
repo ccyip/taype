@@ -15,22 +15,45 @@ fn insert : int -> list -> list = \ x xs ->
 -- The two lists are of the same length.
 fn hamming_distance : list -> list -> int = \xs ys ->
   case xs of
-  | Nil ->
-    case ys of
-    | Nil -> 0
-    | Cons _ _ ->
-      -- Bogus
-      (-1)
-    end
+  | Nil -> 0
   | Cons x xs' ->
     case ys of
-    | Nil ->
-      -- Bogus
-      (-1)
+    | Nil -> 0
     | Cons y ys' ->
       let d = hamming_distance xs' ys'
        in if x == y then d else d + 1
     end
+  end
+
+-- The two lists have the same length.
+fn dot_prod : list -> list -> int = \xs ys ->
+  case xs of
+  | Nil -> 0
+  | Cons x xs' ->
+    case ys of
+    | Nil -> 0
+    | Cons y ys' ->
+      x * y + dot_prod xs' ys'
+    end
+  end
+
+fn min_euclidean_distance_with : list -> int -> int -> int = \xs y min ->
+  case xs of
+  | Nil -> min
+  | Cons x xs' ->
+    let min' = min_euclidean_distance_with xs' y min
+        d = x - y
+        cur = d * d
+     in if cur <= min' then cur else min'
+  end
+
+fn min_euclidean_distance : list -> int -> int = \xs y ->
+  case xs of
+  | Nil -> (-1)
+  | Cons x xs' ->
+    let d = x - y
+        cur = d * d
+     in min_euclidean_distance_with xs' y cur
   end
 
 fn map : (int -> int) -> list -> list = \f xs ->
@@ -90,6 +113,14 @@ fn `insert : (k : int) -> `int -> `list k -> `list (k+1) = \ k x xs ->
 #[safe]
 fn `hamming_distance : (k : int) -> `list k -> `list k -> `int = \k xs ys ->
   tape (s_int (hamming_distance (r_list k xs) (r_list k ys)))
+
+#[safe]
+fn `dot_prod : (k : int) -> `list k -> `list k -> `int = \k xs ys ->
+  tape (s_int (dot_prod (r_list k xs) (r_list k ys)))
+
+#[safe]
+fn `min_euclidean_distance : (k : int) -> `list k -> `int -> `int = \k xs y ->
+  tape (s_int (min_euclidean_distance (r_list k xs) (r_int y)))
 
 #[safe]
 fn `test_map : (k : int) -> `list k -> `int -> `list k = \k xs y ->
