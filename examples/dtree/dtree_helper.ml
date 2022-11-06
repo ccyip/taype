@@ -80,10 +80,8 @@ let rec dtree_check_spine t = function
     | Leaf _ -> true
     end
 
-let dtree_check_height t k = dtree_depth t = k
 let dtree_check_max t k = dtree_depth t <= k
 
 let dtree_of_sexp_check_spineF = of_sexp_check dtree_of_sexp dtree_check_spineF
 let dtree_of_sexp_check_spine = of_sexp_check dtree_of_sexp dtree_check_spine
-let dtree_of_sexp_check_height = of_sexp_check dtree_of_sexp dtree_check_height
 let dtree_of_sexp_check_max = of_sexp_check dtree_of_sexp dtree_check_max

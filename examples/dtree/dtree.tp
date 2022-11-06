@@ -151,46 +151,6 @@ fn r_dtree_spine : (s : spine) -> `dtree_spine s -> dtree = \s ->
   end
 
 
--- This public view is the exact height of the tree.
-
-obliv `dtree_height (k : int) =
-  if k == 0
-  then `int
-  else `int `* `int `* `dtree_height (k-1) `* `dtree_height (k-1)
-
-#[section]
-fn s_dtree_height : (k : int) -> dtree -> `dtree_height k = \k t ->
-  if k == 0
-  then
-    tape
-      (case t of
-       | Leaf x -> tape (s_int x)
-       | Node _ _ _ _ ->
-         -- Bogus
-         s_int 0
-       end)
-  else
-    tape
-      (case t of
-       | Leaf _ ->
-         -- Bogus
-         `(s_int 0, s_int 0, s_dtree_height (k-1) t, s_dtree_height (k-1) t)
-       | Node idx thd lt rt ->
-         `(tape (s_int idx), tape (s_int thd),
-           s_dtree_height (k-1) lt, s_dtree_height (k-1) rt)
-       end)
-
-#[retraction]
-fn r_dtree_height : (k : int) -> `dtree_height k -> dtree = \k ->
-  if k == 0
-  then \x -> Leaf (r_int x)
-  else \t ->
-    `case t of
-    `(idx, thd, l, r) ->
-      Node (r_int idx) (r_int thd) (r_dtree_height (k-1) l) (r_dtree_height (k-1) r)
-    end
-
-
 -- This public view is the maximum height of the tree.
 
 obliv `dtree_max (k : int) =
@@ -250,12 +210,6 @@ fn `decide_spine
   : (s : spine) -> (k : int) -> `dtree_spine s -> `features k -> `int =
   \s k t xs ->
     tape (s_int (decide (r_dtree_spine s t) (r_features k xs)))
-
-#[safe]
-fn `decide_height
-  : (kt : int) -> (k : int) -> `dtree_height kt -> `features k -> `int =
-  \kt k t xs ->
-    tape (s_int (decide (r_dtree_height kt t) (r_features k xs)))
 
 #[safe]
 fn `decide_max
