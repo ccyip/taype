@@ -791,7 +791,8 @@ prelude =
     adtDef_
       (l_ "bool")
       []
-      [ (prom_ "bool", ["bool"]),
+      [ (r_ "bool", [OArray]),
+        (prom_ "bool", ["bool"]),
         (lif_ "bool", [OArray, "$self", "$self"])
       ],
     -- Section of boolean
@@ -799,15 +800,6 @@ prelude =
     -- We need one for core computation and one for conceal phase.
     sBoolDef True,
     sBoolDef False,
-    funDef_
-      (r_ "bool")
-      []
-      (ar_ [OArray, l_ "bool"])
-      $ lam_
-        (o_ "b")
-        ( lif_ "bool"
-            @@ [o_ "b", prom_ "bool" @@ ["True"], prom_ "bool" @@ ["False"]]
-        ),
     -- The first branch of Boolean case analysis corresponds to @False@ while
     -- the second one to @True@.
     funDef_
@@ -825,7 +817,8 @@ prelude =
         [lif_ "r", l_ "b", l_ "ff", l_ "ft"]
         ( case_
             (l_ "b")
-            [ (prom_ "bool", ["b"], ite_ "b" (l_ "ft") (l_ "ff")),
+            [ (r_ "bool", [o_ "b"], lif_ "r" @@ [o_ "b", l_ "ft", l_ "ff"]),
+              (prom_ "bool", ["b"], ite_ "b" (l_ "ft") (l_ "ff")),
               ( lif_ "bool",
                 [o_ "b", l_ "b1", l_ "b2"],
                 lif_ "r"
@@ -844,7 +837,8 @@ prelude =
         (l_ "b")
         ( case_
             (l_ "b")
-            [ ( prom_ "bool",
+            [ (r_ "bool", [o_ "b"], prom_ aName @@ [o_ "b"]),
+              ( prom_ "bool",
                 ["b"],
                 prom_ aName @@ [s_ "bool" @@ ["b"]]
               ),
@@ -1042,16 +1036,17 @@ lBoolUopDef name =
     []
     (ar_ [l_ "bool", l_ "bool"])
     $ lam_
-      (l_ "a")
+      (l_ "x")
       ( case_
-          (l_ "a")
-          [ (prom_ "bool", ["b"], prom_ "bool" @@ [V name @@ ["b"]]),
+          (l_ "x")
+          [ (r_ "bool", [o_ "x"], r_ "bool" @@ [o_ name @@ [o_ "x"]]),
+            (prom_ "bool", ["x"], prom_ "bool" @@ [V name @@ ["x"]]),
             ( lif_ "bool",
-              [o_ "b", l_ "a1", l_ "a2"],
+              [o_ "b", l_ "x1", l_ "x2"],
               lif_ "bool"
                 @@ [ o_ "b",
-                     "$self" @@ [l_ "a1"],
-                     "$self" @@ [l_ "a2"]
+                     "$self" @@ [l_ "x1"],
+                     "$self" @@ [l_ "x2"]
                    ]
             )
           ]
@@ -1065,33 +1060,66 @@ lBoolBopDef name domi =
     []
     (ar_ [l_ "bool", l_ "bool", l_ "bool"])
     $ lams_
-      [l_ "a", l_ "b"]
+      [l_ "x", l_ "y"]
       ( case_
-          (l_ "a")
-          [ ( prom_ "bool",
-              ["a"],
+          (l_ "x")
+          [ ( r_ "bool",
+              [o_ "x"],
+              case_
+                (l_ "y")
+                [ ( r_ "bool",
+                    [o_ "y"],
+                    r_ "bool" @@ [o_ name @@ [o_ "x", o_ "y"]]
+                  ),
+                  ( prom_ "bool",
+                    ["y"],
+                    ite_
+                      "y"
+                      (if domi then l_ "y" else l_ "x")
+                      (if domi then l_ "x" else l_ "y")
+                  ),
+                  ( lif_ "bool",
+                    [o_ "b", l_ "y1", l_ "y2"],
+                    lif_ "bool"
+                      @@ [ o_ "b",
+                           "$self" @@ [l_ "x", l_ "y1"],
+                           "$self" @@ [l_ "x", l_ "y2"]
+                         ]
+                  )
+                ]
+            ),
+            ( prom_ "bool",
+              ["x"],
               ite_
-                "a"
-                (if domi then l_ "a" else l_ "b")
-                (if domi then l_ "b" else l_ "a")
+                "x"
+                (if domi then l_ "x" else l_ "y")
+                (if domi then l_ "y" else l_ "x")
             ),
             ( lif_ "bool",
-              [o_ "b", l_ "a1", l_ "a2"],
+              [o_ "b", l_ "x1", l_ "x2"],
               case_
-                (l_ "b")
-                [ ( prom_ "bool",
-                    ["b"],
+                (l_ "y")
+                [ ( r_ "bool",
+                    [Anon],
+                    lif_ "bool"
+                      @@ [ o_ "b",
+                           "$self" @@ [l_ "x1", l_ "y"],
+                           "$self" @@ [l_ "x2", l_ "y"]
+                         ]
+                  ),
+                  ( prom_ "bool",
+                    ["y"],
                     ite_
-                      "b"
-                      (if domi then l_ "b" else l_ "a")
-                      (if domi then l_ "a" else l_ "b")
+                      "y"
+                      (if domi then l_ "y" else l_ "x")
+                      (if domi then l_ "x" else l_ "y")
                   ),
                   ( lif_ "bool",
                     [Anon, Anon, Anon],
                     lif_ "bool"
                       @@ [ o_ "b",
-                           "$self" @@ [l_ "a1", l_ "b"],
-                           "$self" @@ [l_ "a2", l_ "b"]
+                           "$self" @@ [l_ "x1", l_ "y"],
+                           "$self" @@ [l_ "x2", l_ "y"]
                          ]
                   )
                 ]
