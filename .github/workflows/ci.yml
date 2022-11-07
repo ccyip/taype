@@ -6,8 +6,8 @@ on:
   push:
     branches: [master]
   schedule:
-    # additionally run once per week (At 00:00 on Sunday) to maintain cache
-    - cron: '0 0 * * 0'
+    # additionally run once per month (At 00:00 at 1st) to maintain cache
+    - cron: '0 0 1 * *'
 
 jobs:
   cabal:
@@ -20,7 +20,7 @@ jobs:
         ghc:
           - "8.10.7"
           - "9.0.2"
-          - "9.2.4"
+          - "9.2.5"
 
     steps:
     - uses: actions/checkout@v3
