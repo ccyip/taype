@@ -230,8 +230,9 @@ toOilExpr T.App {appKind = Just FunApp, ..} =
   where
     go T.Pi {..} (arg : args') fn' = do
       (_, body) <- unbind1 bnd
+      prom <- retInst body
       inst <- lIfInst body
-      go body args' $ GV (leakyName "ap") @@ [inst, fn', toOilVar arg]
+      go body args' $ GV (leakyName "ap") @@ [prom, inst, fn', toOilVar arg]
     go _ [] fn' = return fn'
     go _ _ _ = oops "The arguments do not match the taype function type"
 toOilExpr T.Let {..} = do
@@ -302,10 +303,14 @@ toOilExpr T.PCase {..} = do
           cond'
           [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
     LeakyL -> do
+      lPromInst <- retInst leftTy
+      rPromInst <- retInst rightTy
       inst <- lIfInst $ fromJust retTy
       return $
         GV (lCaseName "*")
-          @@ [ inst,
+          @@ [ lPromInst,
+               rPromInst,
+               inst,
                cond',
                lams' [(xl, lBinder), (xr, rBinder)] body'
              ]
@@ -495,8 +500,9 @@ toOilTy_ _ = return OArray
 toLeakyTy :: Ty a -> Ty a
 toLeakyTy TInt = tGV $ leakyName "int"
 toLeakyTy OArray = tGV $ leakyName aName
-toLeakyTy Arrow {..} = leakyName "->" @@ [dom, toLeakyTy cod]
-toLeakyTy TApp {..} = TApp {tctor = leakyName tctor, args = toLeakyTy <$> args}
+toLeakyTy Arrow {..} = leakyName "->" @@ [dom, toLeakyTy cod, cod]
+toLeakyTy TApp {..} =
+  TApp {tctor = leakyName tctor, args = (toLeakyTy <$> args) <> args}
 -- Local type variables do not appear in type translation.
 toLeakyTy _ = oops "Local type variables appear"
 
@@ -516,8 +522,8 @@ toLeakyTy _ = oops "Local type variables appear"
 retInst_ :: Ty a -> Expr b
 retInst_ TInt = GV (promName "int")
 retInst_ OArray = GV (promName aName)
-retInst_ Arrow {..} = GV (promName "->") @@ [retInst_ cod]
-retInst_ TApp {..} = GV (promName tctor) @@ retInst_ <$> args
+retInst_ Arrow {} = GV (promName "->")
+retInst_ TApp {..} = GV (promName tctor)
 retInst_ _ = oops "Cannot resolve return instance of type variable"
 
 -- | Resolve the return instance of the leaky structure of a taype type.
@@ -647,49 +653,50 @@ toOilDef (name, def) = case def of
         -- Leaky ADT
         adtDef_ (l_ name) [] $
           zipWith ((,) . l_) ctorNames lParaTypess
-            `snoc` (lif_ name, [OArray, "$self", "$self"]),
-        -- Return instance of the leaky type
-        funDef_ (prom_ name) [] (ar_ [TV name, l_ name]) $
-          lam_ "x" $
-            case_ "x" $
-              zipWith retAlt ctorNames sParaTypess,
+            <> [ (prom_ name, [TV name]),
+                 (lif_ name, [OArray, "$self", "$self"])
+               ],
         -- Leaky case analysis
         funDef_
           (lcase_ name)
           [l_ "r"]
           ( ar_ $
               [ar_ [OArray, l_ "r", l_ "r", l_ "r"], l_ name]
-                <> (lParaTypess <&> \ts -> ar_ $ ts <> [l_ "r"])
+                <> [ ar_ $ ts <> [l_ "r"] | ts <- lParaTypess ]
                 `snoc` l_ "r"
           )
-          $ lCaseBody ctorNames lParaTypess
+          $ lCaseBody ctorNames sParaTypess
       ]
   _ -> oops "Translating constructor or builtin definitions"
   where
     vars prefix n = (prefix <>) . show <$> [1 .. n]
-    retAlt ctor paraTypes =
-      let xs = vars "x" $ length paraTypes
-       in ( ctor,
-            toBinder <$> xs,
-            l_ ctor
-              @@ zipWith (\t x -> retInst_ t @@ [V x]) paraTypes xs
-          )
     lCaseBody ctors tss =
       let fs = vars (l_ "f") $ length tss
        in lams_ ([lif_ "r", l_ "x"] <> (toBinder <$> fs)) $
             case_ (l_ "x") $
               zipWith3 lCaseAlt ctors fs tss
-                `snoc` ( lif_ name,
-                         [o_ "b", l_ "x1", l_ "x2"],
-                         lif_ "r"
-                           @@ [ o_ "b",
-                                "$self" @@ [lif_ "r", l_ "x1"] <> (V <$> fs),
-                                "$self" @@ [lif_ "r", l_ "x2"] <> (V <$> fs)
-                              ]
-                       )
+                <> [ ( prom_ name,
+                       ["x"],
+                       case_ "x" $ zipWith3 retAlt ctors fs tss
+                     ),
+                     ( lif_ name,
+                       [o_ "b", l_ "x1", l_ "x2"],
+                       lif_ "r"
+                         @@ [ o_ "b",
+                              "$self" @@ [lif_ "r", l_ "x1"] <> (V <$> fs),
+                              "$self" @@ [lif_ "r", l_ "x2"] <> (V <$> fs)
+                            ]
+                     )
+                   ]
     lCaseAlt ctor f ts =
       let xs = vars (l_ "x") $ length ts
        in (l_ ctor, toBinder <$> xs, V f @@ V <$> xs)
+    retAlt ctor f ts =
+      let xs = vars "x" $ length ts
+       in ( ctor,
+            toBinder <$> xs,
+            V f @@ zipWith (\t x -> retInst_ t @@ [V x]) ts xs
+          )
 
 ----------------------------------------------------------------
 -- Simplification of OIL expressions
@@ -901,56 +908,52 @@ prelude =
       [("(,)", ["a", "b"])],
     adtDef_
       (l_ "*")
-      [l_ "a", l_ "b"]
+      [l_ "a", l_ "b", "a", "b"]
       [ (l_ "(,)", [l_ "a", l_ "b"]),
+        (prom_ "*", ["*" @@ ["a", "b"]]),
         ( lif_ "*",
           [ OArray,
-            l_ "*" @@ [l_ "a", l_ "b"],
-            l_ "*" @@ [l_ "a", l_ "b"]
+            l_ "*" @@ [l_ "a", l_ "b", "a", "b"],
+            l_ "*" @@ [l_ "a", l_ "b", "a", "b"]
           ]
         )
       ],
     funDef_
-      (prom_ "*")
-      ["a", l_ "a", "b", l_ "b"]
+      (lcase_ "*")
+      ["a", l_ "a", "b", l_ "b", l_ "r"]
       ( ar_
           [ ar_ ["a", l_ "a"],
             ar_ ["b", l_ "b"],
-            "*" @@ ["a", "b"],
-            l_ "*" @@ [l_ "a", l_ "b"]
-          ]
-      )
-      $ lams_
-        [prom_ "a", prom_ "b", "p"]
-        ( case_
-            "p"
-            [ ( "(,)",
-                ["x", "y"],
-                l_ "(,)" @@ [prom_ "a" @@ ["x"], prom_ "b" @@ ["y"]]
-              )
-            ]
-        ),
-    funDef_
-      (lcase_ "*")
-      [l_ "a", l_ "b", l_ "r"]
-      ( ar_
-          [ ar_ [OArray, l_ "r", l_ "r", l_ "r"],
-            l_ "*" @@ [l_ "a", l_ "b"],
+            ar_ [OArray, l_ "r", l_ "r", l_ "r"],
+            l_ "*" @@ [l_ "a", l_ "b", "a", "b"],
             ar_ [l_ "a", l_ "b", l_ "r"],
             l_ "r"
           ]
       )
       $ lams_
-        [lif_ "r", l_ "p", l_ "f"]
+        [prom_ "a", prom_ "b", lif_ "r", l_ "p", l_ "f"]
         ( case_
             (l_ "p")
             [ (l_ "(,)", [l_ "x", l_ "y"], l_ "f" @@ [l_ "x", l_ "y"]),
+              ( prom_ "*",
+                ["p"],
+                ( case_
+                    "p"
+                    [ ( "(,)",
+                        ["x", "y"],
+                        l_ "f" @@ [prom_ "a" @@ ["x"], prom_ "b" @@ ["y"]]
+                      )
+                    ]
+                )
+              ),
               ( lif_ "*",
                 [o_ "b", l_ "p1", l_ "p2"],
                 lif_ "r"
                   @@ [ o_ "b",
-                       "$self" @@ [lif_ "r", l_ "p1", l_ "f"],
-                       "$self" @@ [lif_ "r", l_ "p2", l_ "f"]
+                       "$self"
+                         @@ [prom_ "a", prom_ "b", lif_ "r", l_ "p1", l_ "f"],
+                       "$self"
+                         @@ [prom_ "a", prom_ "b", lif_ "r", l_ "p2", l_ "f"]
                      ]
               )
             ]
@@ -958,43 +961,39 @@ prelude =
     -- Function type
     adtDef_
       (l_ "->")
-      ["a", l_ "b"]
+      ["a", l_ "b", "b"]
       [ (l_ "Lam", [ar_ ["a", l_ "b"]]),
+        (prom_ "->", [ar_ ["a", "b"]]),
         ( lif_ "->",
           [ OArray,
-            l_ "->" @@ ["a", l_ "b"],
-            l_ "->" @@ ["a", l_ "b"]
+            l_ "->" @@ ["a", l_ "b", "b"],
+            l_ "->" @@ ["a", l_ "b", "b"]
           ]
         )
       ],
     funDef_
-      (prom_ "->")
-      ["a", "b", l_ "b"]
-      (ar_ [ar_ ["b", l_ "b"], ar_ ["a", "b"], l_ "->" @@ ["a", l_ "b"]])
-      $ lams_
-        [prom_ "b", "f"]
-        (l_ "Lam" @@ [lam_ "x" $ prom_ "b" @@ ["f" @@ ["x"]]]),
-    funDef_
       (l_ "ap")
-      ["a", l_ "b"]
+      ["a", l_ "b", "b"]
       ( ar_
-          [ ar_ [OArray, l_ "b", l_ "b", l_ "b"],
-            l_ "->" @@ ["a", l_ "b"],
+          [ ar_ ["b", l_ "b"],
+            ar_ [OArray, l_ "b", l_ "b", l_ "b"],
+            l_ "->" @@ ["a", l_ "b", "b"],
             "a",
             l_ "b"
           ]
       )
       $ lams_
-        [lif_ "b", l_ "f", "x"]
+        [prom_ "b", lif_ "b", l_ "f", "x"]
         ( case_
             (l_ "f")
             [ (l_ "Lam", ["f"], "f" @@ ["x"]),
+              (prom_ "->", ["f"], prom_ "b" @@ ["f" @@ ["x"]]),
               ( lif_ "->",
                 [o_ "b", l_ "f1", l_ "f2"],
                 lif_ "b"
                   @@ [ o_ "b",
-                       "$self" @@ [lif_ "b", l_ "f1", "x"],
-                       "$self" @@ [lif_ "b", l_ "f2", "x"]
+                       "$self" @@ [prom_ "b", lif_ "b", l_ "f1", "x"],
+                       "$self" @@ [prom_ "b", lif_ "b", l_ "f2", "x"]
                      ]
               )
             ]

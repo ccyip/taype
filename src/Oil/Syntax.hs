@@ -442,7 +442,7 @@ instance Cute (Ty Text) where
     domDoc <- cuteSub e dom
     codDoc <- cute cod
     return $ group domDoc <+> "->" <> line <> codDoc
-  cute t@TApp {args = [left, right], ..}
+  cute t@TApp {args = left:right:_, ..}
     | isInfix tctor = cuteInfix t tctor left right
   cute TApp {..} = cuteApp_ (pretty tctor) args
 
