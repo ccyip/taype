@@ -230,9 +230,9 @@ toOilExpr T.App {appKind = Just FunApp, ..} =
   where
     go T.Pi {..} (arg : args') fn' = do
       (_, body) <- unbind1 bnd
-      prom <- retInst body
-      inst <- lIfInst body
-      go body args' $ GV (leakyName "ap") @@ [prom, inst, fn', toOilVar arg]
+      prom <- promInst body
+      lIf <- lIfInst body
+      go body args' $ GV (leakyName "ap") @@ [prom, lIf, fn', toOilVar arg]
     go _ [] fn' = return fn'
     go _ _ _ = oops "The arguments do not match the taype function type"
 toOilExpr T.Let {..} = do
@@ -250,11 +250,11 @@ toOilExpr T.Ite {..} = do
   case condLabel of
     SafeL -> return $ ite_ cond' left' right'
     LeakyL -> do
-      inst <- lIfInst $ fromJust retTy
+      lIf <- lIfInst $ fromJust retTy
       -- Recall that the first branch of Boolean case analysis corresponds to
       -- @False@ while the second one to @True@, unlike the if-then-else
       -- construct.
-      return $ GV (lCaseName "bool") @@ [inst, cond', right', left']
+      return $ GV (lCaseName "bool") @@ [lIf, cond', right', left']
 toOilExpr T.Case {..} = do
   (adtName, paraTypess, condLabel) <- lookupADT cond
   alts' <- zipWithM (go condLabel) (toList alts) paraTypess
@@ -262,10 +262,10 @@ toOilExpr T.Case {..} = do
   case condLabel of
     SafeL -> return $ case' cond' alts'
     LeakyL -> do
-      inst <- lIfInst $ fromJust retTy
+      lIf <- lIfInst $ fromJust retTy
       return $
         GV (lCaseName adtName)
-          @@ ( [inst, cond']
+          @@ ( [lIf, cond']
                  <> [lams' xs body | (_, xs, body) <- alts']
              )
   where
@@ -277,8 +277,8 @@ toOilExpr T.Case {..} = do
 toOilExpr T.OIte {..} = do
   -- The right branch should have the same type.
   (ty, _) <- lookupTy left
-  inst <- lIfInstMayCrust ty
-  return $ inst @@ (toOilVar <$> [cond, left, right])
+  lIf <- lIfInstMayCrust ty
+  return $ lIf @@ (toOilVar <$> [cond, left, right])
 toOilExpr T.Pair {..} = do
   ref <- toMayLeakyGV "(,)"
   return $ ref @@ (toOilVar <$> [left, right])
@@ -303,14 +303,14 @@ toOilExpr T.PCase {..} = do
           cond'
           [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
     LeakyL -> do
-      lPromInst <- retInst leftTy
-      rPromInst <- retInst rightTy
-      inst <- lIfInst $ fromJust retTy
+      lProm <- promInst leftTy
+      rProm <- promInst rightTy
+      lIf <- lIfInst $ fromJust retTy
       return $
         GV (lCaseName "*")
-          @@ [ lPromInst,
-               rPromInst,
-               inst,
+          @@ [ lProm,
+               rProm,
+               lIf,
                cond',
                lams' [(xl, lBinder), (xr, rBinder)] body'
              ]
@@ -361,10 +361,10 @@ toOilExpr T.OCase {..} = do
   lBody' <- extendCtx1 xl leftTy SafeL $ toOilExpr lBody
   rBody' <- extendCtx1 xr rightTy SafeL $ toOilExpr rBody
   let cond' = toOilVar cond
-  inst <- lIfInstMayCrust (fromJust retTy)
+  lIf <- lIfInstMayCrust (fromJust retTy)
   -- The tag is at the end of the payload.
   return $
-    inst
+    lIf
       @@ [ GV aSlice
              @@ [ cond',
                   GV (internalName "max") @@ [lSize, rSize],
@@ -388,8 +388,8 @@ toOilExpr T.Promote {..} =
       then return $ toOilVar expr
       else do
         (ty, _) <- lookupTy expr
-        inst <- retInst ty
-        return $ inst @@ [toOilVar expr]
+        prom <- promInst ty
+        return $ prom @@ [toOilVar expr]
 toOilExpr T.Tape {..} =
   getIsCrust >>= \b ->
     if b
@@ -519,16 +519,16 @@ toLeakyTy _ = oops "Local type variables appear"
 --
 -- The given OIL type is nonleaky. In addition, it is a concrete type, i.e. not
 -- a type variable.
-retInst_ :: Ty a -> Expr b
-retInst_ TInt = GV (promName "int")
-retInst_ OArray = GV (promName aName)
-retInst_ Arrow {} = GV (promName "->")
-retInst_ TApp {..} = GV (promName tctor)
-retInst_ _ = oops "Cannot resolve return instance of type variable"
+promInst_ :: Ty a -> Expr b
+promInst_ TInt = GV (promName "int")
+promInst_ OArray = GV (promName aName)
+promInst_ Arrow {} = GV (promName "->")
+promInst_ TApp {..} = GV (promName tctor)
+promInst_ _ = oops "Cannot resolve return instance of type variable"
 
 -- | Resolve the return instance of the leaky structure of a taype type.
-retInst :: T.Ty Name -> TslM (Expr b)
-retInst = (retInst_ <$>) . toOilTy_
+promInst :: T.Ty Name -> TslM (Expr b)
+promInst = (promInst_ <$>) . toOilTy_
 
 -- | Resolve the leaky if instance of the leaky structure of an OIL type.
 --
@@ -677,7 +677,7 @@ toOilDef (name, def) = case def of
               zipWith3 lCaseAlt ctors fs tss
                 <> [ ( prom_ name,
                        ["x"],
-                       case_ "x" $ zipWith3 retAlt ctors fs tss
+                       case_ "x" $ zipWith3 promAlt ctors fs tss
                      ),
                      ( lif_ name,
                        [o_ "b", l_ "x1", l_ "x2"],
@@ -691,11 +691,11 @@ toOilDef (name, def) = case def of
     lCaseAlt ctor f ts =
       let xs = vars (l_ "x") $ length ts
        in (l_ ctor, toBinder <$> xs, V f @@ V <$> xs)
-    retAlt ctor f ts =
+    promAlt ctor f ts =
       let xs = vars "x" $ length ts
        in ( ctor,
             toBinder <$> xs,
-            V f @@ zipWith (\t x -> retInst_ t @@ [V x]) ts xs
+            V f @@ zipWith (\t x -> promInst_ t @@ [V x]) ts xs
           )
 
 ----------------------------------------------------------------
