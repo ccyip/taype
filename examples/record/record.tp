@@ -197,34 +197,44 @@ fn decide : dtree -> patient -> bool = \t p ->
 -- Oblivious types, sections and retractions
 
 data patient_view
-  -- Height is public.
-  = Know_height int
-  -- Weight is public.
-  | Know_weight int
+  -- Reveal ID
+  = Know_id int
+  -- Or medical data
+  | Know_data int int
 
--- In this case, the oblivious type does not care about the public view because
--- the oblivious structures are the same regardless. But the public view is
--- still important in section and retraction functions.
-obliv `patient (_ : patient_view) = `int `* `int `* `int
+obliv `patient (v : patient_view) =
+  case v of
+  | Know_id _ -> `int `* `int `* `int
+  | Know_data _ _ -> `int `* `int
+  end
 
 #[section]
 fn s_patient : (v : patient_view) -> patient -> `patient v = \v p ->
-  tape
-    (case p of
-     | Patient id age h w ->
-         case v of
-         | Know_height _ -> `(tape (s_int id), tape (s_int age), tape (s_int w))
-         | Know_weight _ -> `(tape (s_int id), tape (s_int age), tape (s_int h))
-         end
-     end)
+  case v of
+  | Know_id _ ->
+    tape
+      (case p of
+       | Patient _ age h w ->
+         `(tape (s_int age), tape (s_int h), tape (s_int w))
+       end)
+  | Know_data _ _ ->
+    tape
+      (case p of
+       | Patient id age _ _ ->
+         `(tape (s_int id), tape (s_int age))
+       end)
+  end
 
 #[retraction]
-fn r_patient : (v : patient_view) -> `patient v -> patient = \v p ->
-  `case p of
-  `(id, age, w_or_h) ->
-    case v of
-    | Know_height h -> Patient (r_int id) (r_int age) h (r_int w_or_h)
-    | Know_weight w -> Patient (r_int id) (r_int age) (r_int w_or_h) w
+fn r_patient : (v : patient_view) -> `patient v -> patient = \v ->
+  case v of
+  | Know_id id -> \p ->
+    `case p of
+    `(age, h, w) -> Patient id (r_int age) (r_int h) (r_int w)
+    end
+  | Know_data h w -> \p ->
+    `case p of
+    `(id, age) -> Patient (r_int id) (r_int age) h w
     end
   end
 
@@ -254,7 +264,11 @@ fn s_db : (vs : db_view) -> db -> `db vs = \vs ps ->
       (case ps of
        | Db_Empty ->
          -- Bogus
-         `(`(s_int 0, s_int 0, s_int 0), s_db vs' Db_Empty)
+         `(case v of
+           | Know_id _ -> `(s_int 0, s_int 0, s_int 0)
+           | Know_data _ _ -> `(s_int 0, s_int 0)
+           end,
+           s_db vs' Db_Empty)
        | Db_More p ps' -> `(s_patient v p, s_db vs' ps')
        end)
   end

@@ -10,9 +10,9 @@ let patient_of_sexp s =
   | [id; age; h; w] -> Patient (id, age, h, w)
   | _ -> oops "Cannot parse as patient"
 
-let patient_check (Patient (_, _, h, w)) = function
-  | Know_height h' -> h = h'
-  | Know_weight w' -> w = w'
+let patient_check (Patient (id, _, h, w)) = function
+  | Know_id id' -> id = id'
+  | Know_data (h', w') -> h = h' && w = w'
 
 let patient_of_sexp_check = of_sexp_check patient_of_sexp patient_check
 
@@ -65,12 +65,14 @@ let bmi_db_check bmis k = List.length (bmi_db_to_list bmis) = k
 let bmi_db_of_sexp_check = of_sexp_check bmi_db_of_sexp bmi_db_check
 
 let patient_view_to_sexp = function
-  | Know_height h -> Sexp.List [ Sexp.Atom "h"; Conv.sexp_of_int h ]
-  | Know_weight w -> Sexp.List [ Sexp.Atom "w"; Conv.sexp_of_int w ]
+  | Know_id id -> Sexp.List [ Sexp.Atom "i"; Conv.sexp_of_int id ]
+  | Know_data (h, w) -> Sexp.List [ Sexp.Atom "d";
+                                    Conv.sexp_of_int h; Conv.sexp_of_int w ]
 
 let patient_view_of_sexp = function
-  | Sexp.List [ Sexp.Atom "h"; h ] -> Know_height (Conv.int_of_sexp h)
-  | Sexp.List [ Sexp.Atom "w"; w ] -> Know_weight (Conv.int_of_sexp w)
+  | Sexp.List [ Sexp.Atom "i"; id ] -> Know_id (Conv.int_of_sexp id)
+  | Sexp.List [ Sexp.Atom "d"; h; w ] ->
+    Know_data (Conv.int_of_sexp h, Conv.int_of_sexp w)
   | _ -> oops "Cannot parse as patient view"
 
 let rec db_view_to_list = function
@@ -124,14 +126,14 @@ let rec dtree_view_of_sexp = function
 let rec dtree_check t = function
   | Node_View (f, lv, rv) ->
     begin match t with
-    | Node (f', _, lt, rt) ->
-      f = f' && dtree_check lt lv && dtree_check rt rv
-    | Leaf _ -> false
+      | Node (f', _, lt, rt) ->
+        f = f' && dtree_check lt lv && dtree_check rt rv
+      | Leaf _ -> false
     end
   | Leaf_View ->
     begin match t with
-    | Node _ -> false
-    | Leaf _ -> true
+      | Node _ -> false
+      | Leaf _ -> true
     end
 
 let dtree_of_sexp_check = of_sexp_check dtree_of_sexp dtree_check

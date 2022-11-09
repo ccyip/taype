@@ -1,3 +1,4 @@
 public,alice,public,bob,expected
-(a (h (w () ()) (w () ())) (a () ())),(a 10 (h 100 (w 20 true false) (w 40 false true)) (a 3 false true)),(h 120),(1 9 120 40),false
+(a (h (w () ()) (w () ())) (a () ())),(a 10 (h 100 (w 20 true false) (w 40 false true)) (a 3 false true)),(i 1),(1 9 120 40),false
 ^,^,^,(1 10 120 50),true
+^,^,(d 120 50),^,^
