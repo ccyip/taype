@@ -378,10 +378,7 @@ toOilExpr T.OCase {..} = do
              rBody'
          ]
 toOilExpr T.Mux {..} = do
-  -- The right branch should have the same type.
-  (ty, _) <- lookupTy left
-  size <- toOilSize ty
-  return $ GV aMux @@ (size : (toOilVar <$> [cond, left, right]))
+  return $ GV aMux @@ (toOilVar <$> [cond, left, right])
 toOilExpr T.Promote {..} =
   getIsCrust >>= \b ->
     if b
@@ -394,10 +391,7 @@ toOilExpr T.Tape {..} =
   getIsCrust >>= \b ->
     if b
       then return $ toOilVar expr
-      else do
-        (ty, _) <- lookupTy expr
-        size <- toOilSize ty
-        return $ GV (leakyName "tape") @@ [size, toOilVar expr]
+      else return $ GV (leakyName "tape") @@ [toOilVar expr]
 toOilExpr _ = oops "Not a term in core taype ANF"
 
 -- | Translate a taype oblivious type to the OIL expression representing its
@@ -1002,19 +996,18 @@ prelude =
     funDef_
       (l_ "tape")
       []
-      (ar_ [sizeTy, l_ aName, OArray])
+      (ar_ [l_ aName, OArray])
       $ lams_
-        ["n", l_ "a"]
+        [l_ "a"]
         ( case_
             (l_ "a")
             [ (prom_ aName, [o_ "a"], o_ "a"),
               ( lif_ aName,
                 [o_ "b", l_ "a1", l_ "a2"],
                 V aMux
-                  @@ [ "n",
-                       o_ "b",
-                       "$self" @@ ["n", l_ "a1"],
-                       "$self" @@ ["n", l_ "a2"]
+                  @@ [ o_ "b",
+                       "$self" @@ [l_ "a1"],
+                       "$self" @@ [l_ "a2"]
                      ]
               )
             ]
