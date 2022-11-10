@@ -201,8 +201,8 @@ opts = do
         <> help "Whether to print the source code (for internal debugging)"
   optReadableOil <-
     switch $
-      long "no-readable-oil"
-        <> help "Do not make the generated OIL programs more readable"
+      long "readable-oil"
+        <> help "Make the generated OIL programs more readable (for debugging)"
   optWidth <-
     optional $
       option auto $
