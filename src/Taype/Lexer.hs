@@ -178,7 +178,7 @@ reserved =
     "let",
     "in",
     "if",
-    "~if",
+    oblivName "if",
     "then",
     "else",
     "mux",
