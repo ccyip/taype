@@ -656,7 +656,7 @@ toOilDef (name, def) = case def of
           [l_ "r"]
           ( ar_ $
               [ar_ [OArray, l_ "r", l_ "r", l_ "r"], l_ name]
-                <> [ ar_ $ ts <> [l_ "r"] | ts <- lParaTypess ]
+                <> [ar_ $ ts <> [l_ "r"] | ts <- lParaTypess]
                 `snoc` l_ "r"
           )
           $ lCaseBody ctorNames sParaTypess
@@ -931,14 +931,13 @@ prelude =
             [ (l_ "(,)", [l_ "x", l_ "y"], l_ "f" @@ [l_ "x", l_ "y"]),
               ( prom_ "*",
                 ["p"],
-                ( case_
-                    "p"
-                    [ ( "(,)",
-                        ["x", "y"],
-                        l_ "f" @@ [prom_ "a" @@ ["x"], prom_ "b" @@ ["y"]]
-                      )
-                    ]
-                )
+                case_
+                  "p"
+                  [ ( "(,)",
+                      ["x", "y"],
+                      l_ "f" @@ [prom_ "a" @@ ["x"], prom_ "b" @@ ["y"]]
+                    )
+                  ]
               ),
               ( lif_ "*",
                 [o_ "b", l_ "p1", l_ "p2"],
