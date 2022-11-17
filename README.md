@@ -12,7 +12,7 @@ To build the `taype` type checker and compiler, we need the Haskell toolchain,
 which can be easily installed with [ghcup](https://www.haskell.org/ghcup/).
 Cabal will take care of the Haskell dependencies for us. Currently the
 best-tested GHC version is 9.2.4. However, if you use macOS Ventura, you need
-version 9.2.5, which unfortunately does not support HLS yet.
+version 9.2.5, and compile HLS from source if you use it.
 
 To build and run the examples, we need the OCaml toolchain which can be
 installed with [opam](https://opam.ocaml.org/), and taype drivers (implementing
