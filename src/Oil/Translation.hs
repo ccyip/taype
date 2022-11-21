@@ -212,29 +212,13 @@ toOilExpr T.Lam {..} = do
       binderTy = fromJust mTy
   (x, body) <- unbind1 bnd
   body' <- extendCtx1 x binderTy binderLabel $ toOilExpr body
-  l <- getLabel
-  let e = lam' x binder body'
-  return $ case l of
-    SafeL -> e
-    LeakyL -> GV (leakyName "Lam") @@ [e]
+  return $ lam' x binder body'
 toOilExpr T.App {fn = T.GV {..}, ..}
   | appKind == Just BuiltinApp || appKind == Just CtorApp = do
       ref' <- toMayLeakyGV ref
       return $ ref' @@ toOilVar <$> args
 toOilExpr T.App {appKind = Just FunApp, ..} =
-  getLabel >>= \case
-    SafeL -> return $ toOilVar fn @@ toOilVar <$> args
-    LeakyL -> do
-      (ty, _) <- lookupTy fn
-      go ty args $ toOilVar fn
-  where
-    go T.Pi {..} (arg : args') fn' = do
-      (_, body) <- unbind1 bnd
-      prom <- promInst body
-      lIf <- lIfInst body
-      go body args' $ GV (leakyName "ap") @@ [prom, lIf, fn', toOilVar arg]
-    go _ [] fn' = return fn'
-    go _ _ _ = oops "The arguments do not match the taype function type"
+  return $ toOilVar fn @@ toOilVar <$> args
 toOilExpr T.Let {..} = do
   let rhsLabel = fromJust label
       ty = fromJust mTy
@@ -494,7 +478,7 @@ toOilTy_ _ = return OArray
 toLeakyTy :: Ty a -> Ty a
 toLeakyTy TInt = tGV $ leakyName "int"
 toLeakyTy OArray = tGV $ leakyName aName
-toLeakyTy Arrow {..} = leakyName "->" @@ [dom, toLeakyTy cod, cod]
+toLeakyTy Arrow {..} = Arrow {cod = toLeakyTy cod, ..}
 toLeakyTy TApp {..} =
   TApp {tctor = leakyName tctor, args = (toLeakyTy <$> args) <> args}
 -- Local type variables do not appear in type translation.
@@ -516,7 +500,7 @@ toLeakyTy _ = oops "Local type variables appear"
 promInst_ :: Ty a -> Expr b
 promInst_ TInt = GV (promName "int")
 promInst_ OArray = GV (promName aName)
-promInst_ Arrow {} = GV (promName "->")
+promInst_ Arrow {..} = GV (promName "->") @@ [promInst_ cod]
 promInst_ TApp {..} = GV (promName tctor)
 promInst_ _ = oops "Cannot resolve return instance of type variable"
 
@@ -536,7 +520,7 @@ promInst = (promInst_ <$>) . toOilTy_
 lIfInst_ :: Ty a -> Expr b
 lIfInst_ TInt = GV (lIfName "int")
 lIfInst_ OArray = GV (lIfName aName)
-lIfInst_ Arrow {} = GV (lIfName "->")
+lIfInst_ Arrow {..} = GV (lIfName "->") @@ [lIfInst_ cod]
 lIfInst_ TApp {..} = GV (lIfName tctor)
 lIfInst_ _ = oops "Cannot resolve leaky if instance of type variable"
 
@@ -951,46 +935,29 @@ prelude =
               )
             ]
         ),
-    -- Function type
-    adtDef_
-      (l_ "->")
-      ["a", l_ "b", "b"]
-      [ (l_ "Lam", [ar_ ["a", l_ "b"]]),
-        (prom_ "->", [ar_ ["a", "b"]]),
-        ( lif_ "->",
-          [ OArray,
-            l_ "->" @@ ["a", l_ "b", "b"],
-            l_ "->" @@ ["a", l_ "b", "b"]
-          ]
-        )
-      ],
+    -- Instances of function type
     funDef_
-      (l_ "ap")
-      ["a", l_ "b", "b"]
+      (prom_ "->")
+      ["a", "b", l_ "b"]
+      (ar_ [ar_ ["b", l_ "b"], ar_ ["a", "b"], "a", l_ "b"])
+      $ lams_
+        [prom_ "b", "f", "x"]
+        (prom_ "b" @@ ["f" @@ ["x"]]),
+    funDef_
+      (lif_ "->")
+      ["a", l_ "b"]
       ( ar_
-          [ ar_ ["b", l_ "b"],
-            ar_ [OArray, l_ "b", l_ "b", l_ "b"],
-            l_ "->" @@ ["a", l_ "b", "b"],
+          [ ar_ [OArray, l_ "b", l_ "b", l_ "b"],
+            OArray,
+            ar_ ["a", l_ "b"],
+            ar_ ["a", l_ "b"],
             "a",
             l_ "b"
           ]
       )
       $ lams_
-        [prom_ "b", lif_ "b", l_ "f", "x"]
-        ( case_
-            (l_ "f")
-            [ (l_ "Lam", ["f"], "f" @@ ["x"]),
-              (prom_ "->", ["f"], prom_ "b" @@ ["f" @@ ["x"]]),
-              ( lif_ "->",
-                [o_ "b", l_ "f1", l_ "f2"],
-                lif_ "b"
-                  @@ [ o_ "b",
-                       "$self" @@ [prom_ "b", lif_ "b", l_ "f1", "x"],
-                       "$self" @@ [prom_ "b", lif_ "b", l_ "f2", "x"]
-                     ]
-              )
-            ]
-        ),
+        [lif_ "b", o_ "b", "f1", "f2", "x"]
+        (lif_ "b" @@ [o_ "b", "f1" @@ ["x"], "f2" @@ ["x"]]),
     -- Tape
     funDef_
       (l_ "tape")
