@@ -212,7 +212,7 @@ toOilExpr T.Lam {..} = do
       binderTy = fromJust mTy
   (x, body) <- unbind1 bnd
   body' <- extendCtx1 x binderTy binderLabel $ toOilExpr body
-  return $ lam' x binder body'
+  return $ lamB x binder body'
 toOilExpr T.App {fn = T.GV {..}, ..}
   | appKind == Just BuiltinApp || appKind == Just CtorApp = do
       ref' <- toMayLeakyGV ref
@@ -225,7 +225,7 @@ toOilExpr T.Let {..} = do
   rhs' <- withLabel rhsLabel $ toOilExpr rhs
   (x, body) <- unbind1 bnd
   body' <- extendCtx1 x ty rhsLabel $ toOilExpr body
-  return $ let' x binder rhs' body'
+  return $ letB x binder rhs' body'
 toOilExpr T.Ite {..} = do
   (_, condLabel) <- lookupTy cond
   left' <- toOilExpr left
@@ -244,13 +244,13 @@ toOilExpr T.Case {..} = do
   alts' <- zipWithM (go condLabel) (toList alts) paraTypess
   let cond' = toOilVar cond
   case condLabel of
-    SafeL -> return $ case' cond' alts'
+    SafeL -> return $ caseB cond' alts'
     LeakyL -> do
       lIf <- lIfInst $ fromJust retTy
       return $
         GV (lCaseName adtName)
           @@ ( [lIf, cond']
-                 <> [lams' xs body | (_, xs, body) <- alts']
+                 <> [lamsB xs body | (_, xs, body) <- alts']
              )
   where
     go condLabel CaseAlt {..} paraTypes = do
@@ -283,7 +283,7 @@ toOilExpr T.PCase {..} = do
   case condLabel of
     SafeL ->
       return $
-        case'
+        caseB
           cond'
           [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
     LeakyL -> do
@@ -296,7 +296,7 @@ toOilExpr T.PCase {..} = do
                rProm,
                lIf,
                cond',
-               lams' [(xl, lBinder), (xr, rBinder)] body'
+               lamsB [(xl, lBinder), (xr, rBinder)] body'
              ]
 toOilExpr T.OPair {..} =
   return $ GV aConcat @@ (toOilVar <$> [left, right])
@@ -316,7 +316,7 @@ toOilExpr T.OPCase {..} = do
       $ toOilExpr body
   let cond' = toOilVar cond
   return $
-    lets'
+    letsB
       [ (xl, lBinder, GV aSlice @@ [cond', ILit 0, leftSize]),
         (xr, rBinder, GV aSlice @@ [cond', leftSize, rightSize])
       ]
@@ -354,10 +354,10 @@ toOilExpr T.OCase {..} = do
                   GV (internalName "max") @@ [lSize, rSize],
                   tagSize
                 ],
-           lets'
+           letsB
              [(xl, lBinder, GV aSlice @@ [cond', ILit 0, lSize])]
              lBody',
-           lets'
+           letsB
              [(xr, rBinder, GV aSlice @@ [cond', ILit 0, rSize])]
              rBody'
          ]
@@ -410,7 +410,7 @@ toOilSize T.Let {..} = do
   rhs' <- withLabel SafeL $ toOilExpr rhs
   (x, body) <- unbind1 bnd
   body' <- extendCtx1 x (fromJust mTy) SafeL $ toOilSize body
-  return $ let' x binder rhs' body'
+  return $ letB x binder rhs' body'
 toOilSize T.Ite {..} = do
   left' <- toOilSize left
   right' <- toOilSize right
@@ -418,7 +418,7 @@ toOilSize T.Ite {..} = do
 toOilSize T.Case {..} = do
   (_, paraTypess, _) <- lookupADT cond
   alts' <- zipWithM go (toList alts) paraTypess
-  return $ case' (toOilVar cond) alts'
+  return $ caseB (toOilVar cond) alts'
   where
     go CaseAlt {..} paraTypes = do
       (xs, body) <- unbindMany (length paraTypes) bnd
@@ -618,7 +618,7 @@ toOilDef (name, def) = case def of
           FunDef
             { binders = [],
               tyBnd = abstract_ [] $ Arrow ty' sizeTy,
-              expr = lam' x binder body'
+              expr = lamB x binder body'
             }
         )
   T.ADTDef {..} -> do
@@ -695,7 +695,7 @@ simpDef = runFreshM . transformBiM go
       Let {binder = binderN, rhs = rhsN, bnd = bndN} -> do
         (x, bodyN) <- unbind1 bndN
         body' <- go Let {rhs = bodyN, ..}
-        return $ let' x binderN rhsN body'
+        return $ letB x binderN rhsN body'
       _ -> return e
     go e = return e
 

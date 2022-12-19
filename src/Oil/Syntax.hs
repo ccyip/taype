@@ -41,11 +41,13 @@ module Oil.Syntax
     case_,
     ite_,
     tGV,
-    lam',
-    lams',
+    lamB,
+    lamsB,
+    letB,
+    letsB,
+    caseB,
     let',
     lets',
-    case',
 
     -- * Array operations
     aName,
@@ -368,29 +370,35 @@ instance Apply (Ty a) Text where
 ----------------------------------------------------------------
 -- Smart constructors that work with 'Name's
 
-lam' :: Name -> Maybe Binder -> Expr Name -> Expr Name
-lam' x binder body =
+lamB :: Name -> Maybe Binder -> Expr Name -> Expr Name
+lamB x binder body =
   Lam
     { bnd = abstract_ x body,
       ..
     }
 
-lams' :: [(Name, Maybe Binder)] -> Expr Name -> Expr Name
-lams' = flip $ foldr $ uncurry lam'
+lamsB :: [(Name, Maybe Binder)] -> Expr Name -> Expr Name
+lamsB = flip $ foldr $ uncurry lamB
 
-let' :: Name -> Maybe Binder -> Expr Name -> Expr Name -> Expr Name
-let' x binder rhs body =
+letB :: Name -> Maybe Binder -> Expr Name -> Expr Name -> Expr Name
+letB x binder rhs body =
   Let {bnd = abstract_ x body, ..}
 
-lets' :: [(Name, Maybe Binder, Expr Name)] -> Expr Name -> Expr Name
-lets' = flip $ foldr $ uncurry3 let'
+letsB :: [(Name, Maybe Binder, Expr Name)] -> Expr Name -> Expr Name
+letsB = flip $ foldr $ uncurry3 letB
 
-case' :: Expr Name -> [(Text, [(Name, Maybe Binder)], Expr Name)] -> Expr Name
-case' cond alts = Case {alts = go <$> alts, ..}
+caseB :: Expr Name -> [(Text, [(Name, Maybe Binder)], Expr Name)] -> Expr Name
+caseB cond alts = Case {alts = go <$> alts, ..}
   where
     go (ctor, namedBinders, body) =
       let (xs, binders) = unzip namedBinders
        in CaseAlt {bnd = abstract_ xs body, ..}
+
+let' :: Name -> Expr Name -> Expr Name -> Expr Name
+let' x = letB x Nothing
+
+lets' :: [(Name, Expr Name)] -> Expr Name -> Expr Name
+lets' = flip $ foldr $ uncurry let'
 
 ----------------------------------------------------------------
 -- Pretty printer
@@ -442,7 +450,7 @@ instance Cute (Ty Text) where
     domDoc <- cuteSub e dom
     codDoc <- cute cod
     return $ group domDoc <+> "->" <> line <> codDoc
-  cute t@TApp {args = left:right:_, ..}
+  cute t@TApp {args = left : right : _, ..}
     | isInfix tctor = cuteInfix t tctor left right
   cute TApp {..} = cuteApp_ (pretty tctor) args
 
