@@ -44,6 +44,7 @@ import Data.HashSet (member)
 import Data.List (lookup)
 import Data.Maybe (fromJust)
 import GHC.List (zipWith3)
+import Oil.Optimization
 import Oil.Syntax
 import Relude.Extra.Bifunctor
 import Taype.Binder
@@ -546,10 +547,17 @@ lIfInstMayCrust t =
 -- phase.
 toOilProgram :: Options -> GCtx Name -> T.Defs Name -> IO (Program Name)
 toOilProgram Options {..} gctx defs = do
-  let mainDefs =
-        simp optReadableOil $
-          foldMap (go False) defs
-  return Program {..}
+  mainDefs' <- optimize mainDefs
+  concealDefs' <- optimize concealDefs
+  revealDefs' <- optimize revealDefs
+  return
+    Program
+      { mainDefs = simp optReadableOil mainDefs',
+        -- In the conceal phase, we keep the ANF form because the evaluation
+        -- order is crucial.
+        concealDefs = simp False concealDefs',
+        revealDefs = simp optReadableOil revealDefs'
+      }
   where
     go isCrust =
       runTslM Env {tctx = TCtx [], label = SafeL, ..}
@@ -560,17 +568,14 @@ toOilProgram Options {..} gctx defs = do
     funDefs = [def | def@(_, T.FunDef {}) <- defs]
     concealSet = filterCrust funDefs T.SectionAttr
     revealSet = filterCrust funDefs T.RetractionAttr
-    crustDefs readable crustSet rename names =
+    crustDefs crustSet rename names =
       bimapF rename (renameCrustDef (crustSet <> fromList names) rename) $
-        simp readable $
-          foldMap
-            (go True)
-            [def | def@(name, _) <- funDefs, name `member` crustSet]
-    -- In the conceal phase, we keep the ANF form because the evaluation order
-    -- is crucial.
+        foldMap
+          (go True)
+          [def | def@(name, _) <- funDefs, name `member` crustSet]
+    mainDefs = foldMap (go False) defs
     concealDefs =
       crustDefs
-        False
         concealSet
         privName
         [ sectionName "int",
@@ -581,7 +586,6 @@ toOilProgram Options {..} gctx defs = do
         ]
     revealDefs =
       crustDefs
-        optReadableOil
         revealSet
         unsafeName
         [ retractionName "int",

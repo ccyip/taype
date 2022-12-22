@@ -62,6 +62,7 @@ library
                        Taype.TypeChecker
                        Oil.Syntax
                        Oil.Translation
+                       Oil.Optimization
                        Oil.ToOCaml
   mixins:              base hiding (Prelude)
                      , relude (Relude as Prelude)

@@ -258,6 +258,9 @@ instance BiplateM (Def Name) (Expr Name) where
     return FunDef {expr = expr', ..}
   biplateM _ def = return def
 
+instance BiplateM (Defs Name) (Expr Name) where
+  biplateM f = mapM $ secondM $ biplateM f
+
 -- | A specialized 'Bound' instance
 --
 -- Similar to '>>>=', but handle both variable classes (one for expressions and
