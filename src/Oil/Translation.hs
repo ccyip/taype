@@ -544,14 +544,12 @@ lIfInstMayCrust t =
 -- definitions, the section functions with their dependencies for the conceal
 -- phase, and the retraction functions with their dependencies for the reveal
 -- phase.
-toOilProgram :: Options -> GCtx Name -> T.Defs Name -> Program b a
-toOilProgram Options {..} gctx defs =
-  Program
-    { mainDefs =
-        secondF closedDef $
-          foldMap (simp optReadableOil . go False) defs,
-      ..
-    }
+toOilProgram :: Options -> GCtx Name -> T.Defs Name -> IO (Program Name)
+toOilProgram Options {..} gctx defs = do
+  let mainDefs =
+        simp optReadableOil $
+          foldMap (go False) defs
+  return Program {..}
   where
     go isCrust =
       runTslM Env {tctx = TCtx [], label = SafeL, ..}
@@ -563,10 +561,10 @@ toOilProgram Options {..} gctx defs =
     concealSet = filterCrust funDefs T.SectionAttr
     revealSet = filterCrust funDefs T.RetractionAttr
     crustDefs readable crustSet rename names =
-      secondF closedDef $
-        bimapF rename (renameCrustDef (crustSet <> fromList names) rename) $
+      bimapF rename (renameCrustDef (crustSet <> fromList names) rename) $
+        simp readable $
           foldMap
-            (simp readable . go True)
+            (go True)
             [def | def@(name, _) <- funDefs, name `member` crustSet]
     -- In the conceal phase, we keep the ANF form because the evaluation order
     -- is crucial.
@@ -594,7 +592,7 @@ toOilProgram Options {..} gctx defs =
 --
 -- The ADT definition is translated to multiple OIL definitions, so this
 -- function returns a list of OIL definitions.
-toOilDef :: T.NamedDef Name -> TslM [NamedDef Name Name]
+toOilDef :: T.NamedDef Name -> TslM (Defs Name)
 toOilDef (name, def) = case def of
   T.FunDef {..} -> withLabel (fromJust label) $ do
     ty' <- toOilTy ty
@@ -683,7 +681,7 @@ toOilDef (name, def) = case def of
 --
 -- This function performs various simplifcation such as let flattening and
 -- application collapsing.
-simpDef :: Def Name Name -> Def Name Name
+simpDef :: Def Name -> Def Name
 simpDef = runFreshM . transformBiM go
   where
     go App {args = [], ..} = return fn
@@ -702,7 +700,7 @@ simpDef = runFreshM . transformBiM go
 -- | Make the generated OIL programs more readable.
 --
 -- This function subsitutes all let bindings that do not have a named binder.
-readableDef :: Def Name Name -> Def Name Name
+readableDef :: Def Name -> Def Name
 readableDef = runFreshM . transformBiM go
   where
     go :: Expr Name -> FreshM (Expr Name)
@@ -739,7 +737,7 @@ mkDepGraph defs =
     go _ = return []
 
 renameCrustDef ::
-  HashSet Text -> (Text -> Text) -> Def Name Name -> Def Name Name
+  HashSet Text -> (Text -> Text) -> Def Name -> Def Name
 renameCrustDef renameSet rename = runFreshM . transformBiM go
   where
     go :: Expr Name -> FreshM (Expr Name)
@@ -756,7 +754,7 @@ renameCrustDef renameSet rename = runFreshM . transformBiM go
 -- Because we do not type check these definitions, we need to be careful and
 -- make sure all definitions are well-typed and in the right form. Specifically,
 -- the alternatives in case analysis are in the canonical order.
-prelude :: Defs b a
+prelude :: Defs a
 prelude =
   [ -- Array
     adtDef_
@@ -987,7 +985,7 @@ prelude =
     oblivInjDef False False
   ]
 
-lBoolUopDef :: Text -> NamedDef b a
+lBoolUopDef :: Text -> NamedDef a
 lBoolUopDef name =
   funDef_
     (l_ name)
@@ -1011,7 +1009,7 @@ lBoolUopDef name =
       )
 
 -- | Build a leaky definition for binary boolean operator, e.g., '&&'.
-lBoolBopDef :: Text -> Bool -> NamedDef b a
+lBoolBopDef :: Text -> Bool -> NamedDef a
 lBoolBopDef name domi =
   funDef_
     (l_ name)
@@ -1087,7 +1085,7 @@ lBoolBopDef name domi =
 
 -- | Build a leaky definition for binary integer operator, e.g., '+'.
 lIntBopDef_ ::
-  Text -> Text -> (Expr Text -> Expr Text -> Expr Text) -> NamedDef b a
+  Text -> Text -> (Expr Text -> Expr Text -> Expr Text) -> NamedDef a
 lIntBopDef_ name cod mkExpr =
   funDef_
     (l_ name)
@@ -1156,14 +1154,14 @@ lIntBopDef_ name cod mkExpr =
           ]
       )
 
-lIntBopDef :: Text -> Text -> NamedDef b a
+lIntBopDef :: Text -> Text -> NamedDef a
 lIntBopDef name cod = lIntBopDef_ name cod $ \m n -> V name @@ [m, n]
 
 -- | Build a boolean section function.
 --
 -- The first argument is 'True' if this section is used in the core computation
 -- phase, or it is used in the conceal phase.
-sBoolDef :: Bool -> NamedDef b a
+sBoolDef :: Bool -> NamedDef a
 sBoolDef isCompPhase =
   funDef_
     (prefix <> s_ "bool")
@@ -1184,7 +1182,7 @@ sBoolDef isCompPhase =
 -- The first argument indicates whether it is left or right injection. The
 -- second argument is 'True' if it is used in the core computation phase,
 -- otherwise in the conceal phase.
-oblivInjDef :: Bool -> Bool -> NamedDef b a
+oblivInjDef :: Bool -> Bool -> NamedDef a
 oblivInjDef tag isCompPhase =
   funDef_
     name

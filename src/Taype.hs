@@ -61,8 +61,9 @@ process options@Options {optFile = file, optCode = code, ..} = do
       coreDoc = cuteDefs options coreDefs
   when optPrintCore $ printDoc options coreDoc
   printToFile (file -<.> "tpc") coreDoc
+  prog <- lift $ toOilProgram options gctx coreDefs
   let (preludeOil, preludeML) = preludeDocs options
-      Oil.Program {..} = toOilProgram options gctx coreDefs
+      Oil.Program {..} = fromClosed prog
       mainOil = Oil.cuteDefs options mainDefs
       concealOil = Oil.cuteDefs options concealDefs
       revealOil = Oil.cuteDefs options revealDefs

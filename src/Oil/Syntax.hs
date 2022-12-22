@@ -26,7 +26,6 @@ module Oil.Syntax
     Def (..),
     NamedDef,
     Defs,
-    closedDef,
     Program (..),
 
     -- * Smart constructors
@@ -128,30 +127,34 @@ sizeTy :: Ty a
 sizeTy = TInt
 
 -- | Global definition
-data Def b a
+--
+-- Technically, 'Ty' and 'Expr' should take different type variables, but here
+-- they take the same type variable for simplicity.
+data Def a
   = -- | Function
     FunDef
       { binders :: [Maybe Binder],
-        tyBnd :: Scope Int Ty b,
+        tyBnd :: Scope Int Ty a,
         expr :: Expr a
       }
   | -- | Algebraic data type
     ADTDef
       { binders :: [Maybe Binder],
-        ctors :: [(Text, [Scope Int Ty b])]
+        ctors :: [(Text, [Scope Int Ty a])]
       }
   deriving stock (Functor, Foldable, Traversable)
 
-type NamedDef b a = (Text, Def b a)
+type NamedDef a = (Text, Def a)
 
-type Defs b a = [NamedDef b a]
+type Defs a = [NamedDef a]
 
 -- | OIL program
-data Program b a = Program
-  { mainDefs :: Defs b a,
-    concealDefs :: Defs b a,
-    revealDefs :: Defs b a
+data Program a = Program
+  { mainDefs :: Defs a,
+    concealDefs :: Defs a,
+    revealDefs :: Defs a
   }
+  deriving stock (Functor, Foldable, Traversable)
 
 ----------------------------------------------------------------
 -- Array operations
@@ -249,7 +252,7 @@ instance PlateM (Ty Name) where
     return TApp {args = args', ..}
   plateM _ t = return t
 
-instance BiplateM (Def b Name) (Expr Name) where
+instance BiplateM (Def Name) (Expr Name) where
   biplateM f FunDef {..} = do
     expr' <- f expr
     return FunDef {expr = expr', ..}
@@ -259,7 +262,7 @@ instance BiplateM (Def b Name) (Expr Name) where
 --
 -- Similar to '>>>=', but handle both variable classes (one for expressions and
 -- one for types). Perhaps we should introduce a @Bibound@ class.
-boundDef :: (a -> Expr c) -> (b -> Ty d) -> Def b a -> Def d c
+boundDef :: (a -> Expr b) -> (a -> Ty b) -> Def a -> Def b
 boundDef f g FunDef {..} =
   FunDef
     { tyBnd = tyBnd >>>= g,
@@ -272,16 +275,6 @@ boundDef _ g ADTDef {..} =
       ..
     }
 
--- | Make sure a definition is closed, i.e. there is no free variable.
---
--- This is similar to 'fromClosed', but don't bother defining a 'Bitraversable'
--- instance and a @biclosed@ function corresponding to 'closed' in the bound
--- library.
-closedDef :: Def b a -> Def d c
-closedDef = boundDef go go
-  where
-    go = oops "Definition is not closed"
-
 ----------------------------------------------------------------
 -- Smart constructors
 
@@ -290,7 +283,7 @@ class Apply a b | a -> b where
 
 infixl 2 @@
 
-adtDef_ :: Text -> [Binder] -> [(Text, [Ty Text])] -> NamedDef b a
+adtDef_ :: Text -> [Binder] -> [(Text, [Ty Text])] -> NamedDef a
 adtDef_ name binders ctors = (name, boundDef GV close def)
   where
     def =
@@ -301,7 +294,7 @@ adtDef_ name binders ctors = (name, boundDef GV close def)
     close "$self" = tGV name
     close x = tGV x
 
-funDef_ :: Text -> [Binder] -> Ty Text -> Expr Text -> NamedDef b a
+funDef_ :: Text -> [Binder] -> Ty Text -> Expr Text -> NamedDef a
 funDef_ name binders ty expr = (name, boundDef close tGV def)
   where
     def =
@@ -455,7 +448,7 @@ instance Cute (Ty Text) where
   cute TApp {..} = cuteApp_ (pretty tctor) args
 
 -- | Pretty printer for a definition
-instance Cute (NamedDef Text Text) where
+instance Cute (NamedDef Text) where
   cute (name, def) = case def of
     FunDef {..} -> do
       (xs, ty) <- unbindManyNamesOrBinders binders tyBnd
@@ -488,7 +481,7 @@ instance Cute (NamedDef Text Text) where
       tyVarsDoc xs = softline <> brackets (sep $ pretty <$> xs)
 
 -- | Pretty printer for OIL definitions
-cuteDefs :: Options -> Defs Text Text -> Doc
+cuteDefs :: Options -> Defs Text -> Doc
 cuteDefs options =
   foldMap $ \def -> runCuteM options (cute def) <> hardline2
 

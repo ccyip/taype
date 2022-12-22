@@ -189,7 +189,7 @@ toOCamlTy TApp {..} = do
 -- Translate definitions
 
 -- | Translate definitions into OCaml and open modules, with comments.
-toOCaml :: Options -> Text -> [Text] -> (forall b a. Defs b a) -> Doc
+toOCaml :: Options -> Text -> [Text] -> (forall a. Defs a) -> Doc
 toOCaml options header mods defs =
   headerDoc <> openDoc <> doc
   where
@@ -200,7 +200,7 @@ toOCaml options header mods defs =
 data OCamlDefKind = NonRecDef | RecDef | AndDef
 
 -- | Translate all given OIL definitions into OCaml.
-toOCamlDefs :: (forall b a. Defs b a) -> CuteM Doc
+toOCamlDefs :: (forall a. Defs a) -> CuteM Doc
 toOCamlDefs defs = do
   let defs' = [def | def <- defs, isNothing $ isBuiltin def]
       edges = mkDepGraph defs'
@@ -212,7 +212,7 @@ toOCamlDefs defs = do
     isBuiltin (name, ADTDef {}) = isBuiltinTyName name
 
 -- | Translate a set of (mutually) recursively defined definitions.
-toOCamlSCCDef :: SCC (NamedDef Text Text) -> CuteM [Doc]
+toOCamlSCCDef :: SCC (NamedDef Text) -> CuteM [Doc]
 toOCamlSCCDef (AcyclicSCC def) = do
   (doc, docs) <- toOCamlDef NonRecDef def
   return $ doc : docs
@@ -230,7 +230,7 @@ toOCamlSCCDef (CyclicSCC (def : defs)) = do
 --
 -- This function returns the translated definition and extra definitions
 -- associated with it.
-toOCamlDef :: OCamlDefKind -> NamedDef Text Text -> CuteM (Doc, [Doc])
+toOCamlDef :: OCamlDefKind -> NamedDef Text -> CuteM (Doc, [Doc])
 toOCamlDef k (name, FunDef {..}) = do
   xs <- withTyNamePrefix $ toValidTyVar <<$>> mapM freshNameOrBinder binders
   tyDoc <- toOCamlTy $ instantiateName xs tyBnd
@@ -458,9 +458,9 @@ toOCamlTyArgs args = do
 -- order. It is also possibly quite inefficient. However, we still want to keep
 -- the user-given order as much as possible for readability.
 sortSCCs ::
-  [(NamedDef Text Text, DefKey, [DefKey])] ->
-  [SCC (NamedDef Text Text)] ->
-  [SCC (NamedDef Text Text)]
+  [(NamedDef Text, DefKey, [DefKey])] ->
+  [SCC (NamedDef Text)] ->
+  [SCC (NamedDef Text)]
 sortSCCs edges sccs =
   sortBy sccCmp $ sortCyclic <$> sccs
   where
@@ -488,12 +488,12 @@ sortSCCs edges sccs =
 --
 -- This function returns the edges of the computed dependency graph. The return
 -- type is in accordance with the container library APIs.
-mkDepGraph :: (forall b a. Defs b a) -> [(NamedDef Text Text, DefKey, [DefKey])]
+mkDepGraph :: (forall a. Defs a) -> [(NamedDef Text, DefKey, [DefKey])]
 mkDepGraph defs =
   let deps = runFreshM $ mapM (go . snd) defs
    in zipWith (\def dep -> (def, toDefKey def, dep)) defs deps
   where
-    go :: Def Name Name -> FreshM [DefKey]
+    go :: Def Name -> FreshM [DefKey]
     go FunDef {..} = do
       (_, ty) <- unbindMany (length binders) tyBnd
       tDeps <- universeM ty <&> \es -> [TyKey x | TApp x _ <- es]
@@ -512,6 +512,6 @@ instance Hashable DefKey where
   hashWithSalt salt (TyKey s) = hashWithSalt salt s
   hashWithSalt salt (FunKey s) = hashWithSalt salt s
 
-toDefKey :: NamedDef b a -> DefKey
+toDefKey :: NamedDef a -> DefKey
 toDefKey (name, FunDef {}) = FunKey name
 toDefKey (name, ADTDef {}) = TyKey name
