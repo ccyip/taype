@@ -17,18 +17,6 @@ import Taype.Common
 import Taype.Name
 import Taype.Plate
 
-data Env = Env
-  { -- | Global definition context
-    gctx :: HashMap Text (Def Name),
-    -- | Local definition (binding) context
-    dctx :: [(Name, Expr Name)]
-  }
-
-type OptM = FreshT (ReaderT Env IO)
-
-runOptM :: Env -> OptM a -> IO a
-runOptM env m = runReaderT (runFreshT m) env
-
 -- | Optimize OIL programs.
 --
 -- All definitions must be closed.
@@ -57,13 +45,14 @@ simplify = return
 --     in this case, they have to be applications on empty arguments.
 toANF :: MonadFresh m => Expr Name -> m (Expr Name)
 toANF = \case
-  e@V {} -> go $ e @@ []
-  e@GV {} -> go $ e @@ []
+  e@V {} -> go e
+  e@GV {} -> go e
   e@ILit {} -> go e
   Lam {..} -> do
     (x, body) <- unbind1 bnd
     body' <- toANF body
-    return $ lamB x binder body'
+    y <- fresh
+    return $ let' y (lamB x binder body') (V y)
   App {..} -> do
     fn' <- toANF fn
     args' <- mapM toANF args
@@ -81,7 +70,8 @@ toANF = \case
     cond' <- toANF cond
     x <- fresh
     alts' <- mapM goAlt alts
-    return $ let' x cond' Case {cond = V x, alts = alts'}
+    y <- fresh
+    return $ lets' [(x, cond'), (y, Case {cond = V x, alts = alts'})] (V y)
   where
     go e = do
       x <- fresh
@@ -90,3 +80,18 @@ toANF = \case
       (xs, body) <- unbindMany (length binders) bnd
       body' <- toANF body
       return CaseAlt {bnd = abstract_ xs body', ..}
+
+----------------------------------------------------------------
+-- Optimizer monad
+
+data Env = Env
+  { -- | Global definition context
+    gctx :: HashMap Text (Def Name),
+    -- | Local definition (binding) context
+    dctx :: [(Name, Expr Name)]
+  }
+
+type OptM = FreshT (ReaderT Env IO)
+
+runOptM :: Env -> OptM a -> IO a
+runOptM env m = runReaderT (runFreshT m) env
