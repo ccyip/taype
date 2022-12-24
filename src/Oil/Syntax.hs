@@ -6,6 +6,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -62,6 +63,7 @@ where
 
 import Bound
 import Control.Monad (ap)
+import Data.Functor.Classes
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -204,6 +206,21 @@ instance Monad Expr where
         ..
       }
   Case {..} >>= f = Case {cond = cond >>= f, alts = alts <&> (>>>= f)}
+
+instance Eq1 Expr where
+  liftEq eq V {name} V {name = name'} = eq name name'
+  liftEq _ GV {ref} GV {ref = ref'} = ref == ref'
+  liftEq _ ILit {iLit} ILit {iLit = iLit'} = iLit == iLit'
+  liftEq eq Lam {bnd} Lam {bnd = bnd'} = liftEq eq bnd bnd'
+  liftEq eq App {fn, args} App {fn = fn', args = args'} =
+    liftEq eq fn fn' && liftEq (liftEq eq) args args'
+  liftEq eq Let {rhs, bnd} Let {rhs = rhs', bnd = bnd'} =
+    liftEq eq rhs rhs' && liftEq eq bnd bnd'
+  liftEq eq Case {cond, alts} Case {cond = cond', alts = alts'} =
+    liftEq eq cond cond' && liftEq (liftEq eq) alts alts'
+  liftEq _ _ _ = False
+
+instance Eq a => Eq (Expr a) where (==) = eq1
 
 instance PlateM (Expr Name) where
   plateM f Lam {..} = do

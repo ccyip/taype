@@ -1,5 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
 -- |
@@ -12,10 +14,13 @@
 -- Optimize OIL programs.
 module Oil.Optimization (optimize) where
 
+import qualified Bound.Scope as B
+import Data.List (lookup)
 import Oil.Syntax
 import Taype.Common
 import Taype.Name
 import Taype.Plate
+import Taype.Prelude
 
 -- | Optimize OIL programs.
 --
@@ -30,7 +35,69 @@ optimize defs = runOptM Env {dctx = [], ..} $ biplateM simplify defsANF
 --
 -- This function only simplifies the root let.
 simplify :: Expr Name -> OptM (Expr Name)
-simplify = return
+simplify = go <=< simplify1
+  where
+    go Let {..} = do
+      rhs' <- deep rhs
+      -- Common subexpression elimination
+      matchCtx rhs' >>= \case
+        Just x -> simplify $ instantiateName x bnd
+        _ -> do
+          (x, body) <- unbind1 bnd
+          body' <- extendCtx1 x rhs' $ simplify body
+          -- Dead code elimination
+          return $
+            if x `elem` body'
+              then letB x binder rhs' body'
+              else body'
+    go e = return e
+    deep Lam {..} = do
+      (x, body) <- unbind1 bnd
+      body' <- simplify body
+      return $ lamB x binder body'
+    deep Case {..} = do
+      alts' <- mapM goAlt alts
+      return Case {alts = alts', ..}
+    deep e = return e
+    goAlt CaseAlt {..} = do
+      (xs, body) <- unbindMany (length binders) bnd
+      body' <- simplify body
+      return CaseAlt {bnd = abstract_ xs body', ..}
+
+-- | Simplify one let binding.
+simplify1 :: Expr Name -> OptM (Expr Name)
+simplify1 Let {..} = do
+  -- We try dead code elimination first before simplification to avoid
+  -- doing unnecessary work.
+  if null (B.bindings bnd)
+    then simplify1 $ instantiate_ (oops "Instantiating nothing") bnd
+    else go rhs
+  where
+    go e@V {} = go $ e @@ []
+    go e@GV {} = go $ e @@ []
+    go Let {binder = binderN, rhs = rhsN, bnd = bndN} = do
+      (x, bodyN) <- unbind1 bndN
+      simplify1 $ letB x binderN rhsN Let {rhs = bodyN, ..}
+    go App {fn = V {..}, args = []} = simplify1 $ instantiateName name bnd
+    go e@App {fn = V {..}, args = arg : args} =
+      lookupCtx name >>= \case
+        Just (Lam {bnd = bndN}) -> do
+          x <- fresh
+          go $ let' x (instantiate_ arg bndN) Let {rhs = V x @@ args, ..}
+        Just (App {fn = fnN, args = argsN}) ->
+          return Let {rhs = fnN @@ argsN <> (arg : args), ..}
+        _ -> fallback e
+    go e@Case {cond = V {..}, ..} =
+      lookupCtx name >>= \case
+        Just (App {fn = GV {..}, ..}) ->
+          case find (\CaseAlt {ctor} -> ctor == ref) alts of
+            Just CaseAlt {bnd = bndN} ->
+              go $ Let {rhs = instantiate_ args bndN, ..}
+            _ -> fallback e
+        _ -> fallback e
+    go e = fallback e
+    fallback rhs' = return Let {rhs = rhs', ..}
+simplify1 e = return e
 
 -- | Transform a OIL expression to its ANF.
 --
@@ -40,12 +107,9 @@ simplify = return
 --
 --   - All arguments in an application must be local variables, where in taype
 --     ANF they can be global names.
---
---   - The right hand side of a let binding is never local or global variables:
---     in this case, they have to be applications on empty arguments.
 toANF :: MonadFresh m => Expr Name -> m (Expr Name)
 toANF = \case
-  e@V {} -> go e
+  e@V {} -> return e
   e@GV {} -> go e
   e@ILit {} -> go e
   Lam {..} -> do
@@ -88,6 +152,10 @@ data Env = Env
   { -- | Global definition context
     gctx :: HashMap Text (Def Name),
     -- | Local definition (binding) context
+    --
+    -- All expressions are in ANF and simplified (deep or shallow). If the
+    -- expression is a global variable, it must be in application form (with
+    -- empty arguments).
     dctx :: [(Name, Expr Name)]
   }
 
@@ -95,3 +163,18 @@ type OptM = FreshT (ReaderT Env IO)
 
 runOptM :: Env -> OptM a -> IO a
 runOptM env m = runReaderT (runFreshT m) env
+
+lookupCtx :: MonadReader Env m => Name -> m (Maybe (Expr Name))
+lookupCtx x = do
+  dctx <- asks dctx
+  return $ lookup x dctx
+
+matchCtx :: MonadReader Env m => Expr Name -> m (Maybe Name)
+matchCtx e = do
+  dctx <- asks dctx
+  return $ fst <$> find ((e ==) . snd) dctx
+
+extendCtx1 :: MonadReader Env m => Name -> Expr Name -> m a -> m a
+extendCtx1 x e = local go
+  where
+    go Env {..} = Env {dctx = (x, e) : dctx, ..}
