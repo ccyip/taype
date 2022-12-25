@@ -30,7 +30,6 @@ module Taype.Syntax
     Defs,
     getDefLoc,
     closeDefs,
-    Attribute (..),
     LabelPolyStrategy (..),
     Pat (..),
 
@@ -301,21 +300,6 @@ getDefLoc = \case
 
 closeDefs :: Defs Text -> Defs a
 closeDefs = (second (>>>= GV) <$>)
-
--- | Every function has an attribute that can be specified by the users. By
--- default the attribute is 'LeakyAttr'. Attributes are used for label inference
--- and oblivious program lifting.
-data Attribute = SectionAttr | RetractionAttr | SafeAttr | LeakyAttr
-  deriving stock (Eq)
-
-instance Show Attribute where
-  show SectionAttr = "section"
-  show RetractionAttr = "retraction"
-  show SafeAttr = "safe"
-  show LeakyAttr = "leaky"
-
-instance Pretty Attribute where
-  pretty = show
 
 -- | A simple label polymorphism mechanism for builtin functions and
 -- constructors. Taype does not support general label polymorphism yet.

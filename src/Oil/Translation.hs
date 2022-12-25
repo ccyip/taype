@@ -566,8 +566,8 @@ toOilProgram Options {..} gctx defs = do
       secondF $
         (if readable then readableDef else id) . simpDef
     funDefs = [def | def@(_, T.FunDef {}) <- defs]
-    concealSet = filterCrust funDefs T.SectionAttr
-    revealSet = filterCrust funDefs T.RetractionAttr
+    concealSet = filterCrust funDefs isSectionAttr
+    revealSet = filterCrust funDefs isRetractionAttr
     crustDefs crustSet rename names =
       bimapF rename (renameCrustDef (crustSet <> fromList names) rename) $
         foldMap
@@ -720,11 +720,11 @@ toMayLeakyGV x = go <$> getLabel
     go SafeL = GV x
     go LeakyL = GV $ leakyName x
 
-filterCrust :: T.Defs Name -> T.Attribute -> HashSet Text
-filterCrust defs a = crustSet
+filterCrust :: T.Defs Name -> (Attribute -> Bool) -> HashSet Text
+filterCrust defs p = crustSet
   where
     (graph, fromVertex, toVertex) = graphFromEdges $ mkDepGraph defs
-    crustDefs = [name | (name, T.FunDef {..}) <- defs, attr == a]
+    crustDefs = [name | (name, T.FunDef {..}) <- defs, p attr]
     crustSet1 name =
       fromList $ maybe [] (toNames . reachable graph) $ toVertex name
     toNames vs = [name | (_, name, _) <- fromVertex <$> vs]

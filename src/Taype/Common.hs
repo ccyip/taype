@@ -19,6 +19,9 @@ module Taype.Common
   ( Options (..),
     Label (..),
     AppKind (..),
+    Attribute (..),
+    isSectionAttr,
+    isRetractionAttr,
     CaseAlt (..),
     caseAlt_,
     fromClosed,
@@ -46,12 +49,11 @@ import Algebra.Lattice
 import Bound
 import Data.Functor.Classes
 import Data.Maybe (fromJust)
-import Prettyprinter (Pretty)
-import qualified Prettyprinter as PP
+import Prettyprinter
 import Taype.Binder
 import Taype.Name
 import Taype.Plate
-import Text.Show
+import qualified Text.Show
 
 -- | Command line options
 data Options = Options
@@ -97,6 +99,43 @@ instance Lattice Label where
 -- | Application kinds
 data AppKind = FunApp | CtorApp | BuiltinApp | TypeApp
   deriving stock (Eq, Show)
+
+-- | Every function has an attribute that can be specified by the users. By
+-- default the attribute is 'LeakyAttr'. Attributes are used for label inference
+-- and oblivious program lifting.
+data Attribute
+  = SectionAttr {pubRef :: Text, oblivRef :: Text}
+  | RetractionAttr {pubRef :: Text, oblivRef :: Text}
+  | SafeAttr
+  | LeakyAttr
+  deriving stock (Eq)
+
+instance Show Attribute where
+  show SectionAttr {} = "section"
+  show RetractionAttr {} = "retraction"
+  show SafeAttr = "safe"
+  show LeakyAttr = "leaky"
+
+instance Pretty Attribute where
+  pretty SectionAttr {..} =
+    "section" <> prettySecRetArgs pubRef oblivRef
+  pretty RetractionAttr {..} =
+    "retraction" <> prettySecRetArgs pubRef oblivRef
+  pretty SafeAttr = "safe"
+  pretty LeakyAttr = "leaky"
+
+prettySecRetArgs :: Text -> Text -> Doc a
+prettySecRetArgs "" "" = ""
+prettySecRetArgs pubRef oblivRef =
+  parens (pretty pubRef <> comma <+> pretty oblivRef)
+
+isSectionAttr :: Attribute -> Bool
+isSectionAttr SectionAttr {} = True
+isSectionAttr _ = False
+
+isRetractionAttr :: Attribute -> Bool
+isRetractionAttr RetractionAttr {} = True
+isRetractionAttr _ = False
 
 -- | Case alternatives
 data CaseAlt f a = CaseAlt

@@ -1510,8 +1510,8 @@ checkDef :: Def Name -> TcM (Def Name)
 checkDef FunDef {..} = do
   -- Guess a label for inference.
   let l = case attr of
-        SectionAttr -> LeakyL
-        RetractionAttr -> SafeL
+        SectionAttr {} -> LeakyL
+        RetractionAttr {} -> SafeL
         SafeAttr -> SafeL
         LeakyAttr -> LeakyL
   expr' <- withLabel l $ check expr ty (fromJust label)
@@ -1630,17 +1630,17 @@ preCheckName (defName, def) = do
 -- | Pre-check a global definition signature.
 preCheckDef :: Def Name -> TcM (Def Name)
 preCheckDef FunDef {..} = do
-  ty' <- go
+  (ty', attr') <- go
   checkLabel label label'
-  return FunDef {ty = ty', label = Just label', ..}
+  return FunDef {attr = attr', ty = ty', label = Just label', ..}
   where
     go = case attr of
-      SectionAttr -> preCheckSecRetType True ty
-      RetractionAttr -> preCheckSecRetType False ty
-      _ -> withLabel label' $ kinded ty
+      SectionAttr {} -> preCheckSecRetType True ty
+      RetractionAttr {} -> preCheckSecRetType False ty
+      _ -> (,attr) <$> withLabel label' (kinded ty)
     label' = case attr of
-      SectionAttr -> SafeL
-      RetractionAttr -> LeakyL
+      SectionAttr {} -> SafeL
+      RetractionAttr {} -> LeakyL
       SafeAttr -> SafeL
       LeakyAttr -> LeakyL
 preCheckDef ADTDef {..} = do
@@ -1658,7 +1658,7 @@ preCheckDef _ = oops "Pre-checking constructor or builtin definitions"
 
 -- NOTE: be careful! The location information for the two outermost pi-types is
 -- erased.
-preCheckSecRetType :: Bool -> Ty Name -> TcM (Ty Name)
+preCheckSecRetType :: Bool -> Ty Name -> TcM (Ty Name, Attribute)
 preCheckSecRetType b t = do
   -- A section/retraction must be a function type with two arguments.
   (ty1, label1, binder1, bnd1) <- isPi t
@@ -1669,31 +1669,41 @@ preCheckSecRetType b t = do
   (ty2, label2, binder2, bnd2) <- isPi body1
   -- The second argument of a section must be public with leaky label, while
   -- that of a retraction must be oblivious with safe label.
-  let l = if b then LeakyL else SafeL
   ty2' <-
     extendCtx1 x1 ty1' SafeL binder1 $
       checkKind ty2 (if b then PublicK else OblivK)
+  ref1 <- getRef ty2'
+  let l = if b then LeakyL else SafeL
   checkLabel label2 l
   (x2, body2) <- unbind1 bnd2
   -- The result of a section function must be oblivious, while that of a
   -- retraction must be public.
-  bnd2' <-
+  body2' <-
     extendCtx [(x1, ty1', SafeL, binder1), (x2, ty2', l, binder2)] $
       checkKind body2 (if b then OblivK else PublicK)
-  return
-    Pi
-      { ty = ty1',
-        label = Just SafeL,
-        binder = binder1,
-        bnd =
-          abstract_ x1 $
-            Pi
-              { ty = ty2',
-                label = Just l,
-                binder = binder2,
-                bnd = abstract_ x2 bnd2'
-              }
-      }
+  ref2 <- getRef body2'
+  let ty =
+        Pi
+          { ty = ty1',
+            label = Just SafeL,
+            binder = binder1,
+            bnd =
+              abstract_ x1 $
+                Pi
+                  { ty = ty2',
+                    label = Just l,
+                    binder = binder2,
+                    bnd = abstract_ x2 body2'
+                  }
+          }
+  return (ty, if b then SectionAttr ref1 ref2 else RetractionAttr ref2 ref1)
+  where
+    getRef ty = do
+      ty' <- whnf ty
+      return $ case ty' of
+        GV {..} -> ref
+        App {fn = GV {..}} -> ref
+        _ -> ""
 
 extendGCtx1 ::
   (MonadError Err m, MonadReader Options m) =>

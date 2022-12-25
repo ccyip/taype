@@ -150,8 +150,8 @@ grammar = mdo
                   pToken L.LAttr
                   attr <-
                     choice
-                      [ SectionAttr <$ pToken (L.Ident "section"),
-                        RetractionAttr <$ pToken (L.Ident "retraction"),
+                      [ SectionAttr "" "" <$ pToken (L.Ident "section"),
+                        RetractionAttr "" "" <$ pToken (L.Ident "retraction"),
                         SafeAttr <$ pToken (L.Ident "safe"),
                         LeakyAttr <$ pToken (L.Ident "leaky")
                       ]
