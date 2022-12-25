@@ -26,7 +26,8 @@ import Taype.Prelude
 --
 -- All definitions must be closed.
 optimize :: Defs Name -> IO (Defs Name)
-optimize defs = runOptM Env {dctx = [], ..} $ biplateM simplify defsANF
+optimize defs =
+  runOptM Env {dctx = [], deepSimp = True, ..} $ biplateM simplify defsANF
   where
     defsANF = runFreshM $ biplateM toANF defs
     gctx = fromList defsANF
@@ -38,7 +39,7 @@ simplify :: Expr Name -> OptM (Expr Name)
 simplify = go <=< simplify1
   where
     go Let {..} = do
-      rhs' <- deep rhs
+      rhs' <- ifM (asks deepSimp) (deep rhs) (return rhs)
       -- Common subexpression elimination
       matchCtx rhs' >>= \case
         Just x -> simplify $ instantiateName x bnd
@@ -156,7 +157,9 @@ data Env = Env
     -- All expressions are in ANF and simplified (deep or shallow). If the
     -- expression is a global variable, it must be in application form (with
     -- empty arguments).
-    dctx :: [(Name, Expr Name)]
+    dctx :: [(Name, Expr Name)],
+    -- | Whether to recursively simplify under binders
+    deepSimp :: Bool
   }
 
 type OptM = FreshT (ReaderT Env IO)
