@@ -18,6 +18,7 @@ import qualified Bound.Scope as B
 import Data.HashMap.Strict (union, (!?))
 import Data.List (lookup)
 import Oil.Syntax
+import Taype.Binder
 import Taype.Common
 import Taype.Name
 import Taype.Plate
@@ -131,7 +132,13 @@ optimizeTupled f g h = go
           (xs, bodyN) <- unbindMany (length binders) bndN
           bodyN' <-
             extendCtx1 x (GV ctor @@ V <$> xs) $ go Let {rhs = bodyN, ..}
-          return CaseAlt {bnd = abstract_ xs bodyN', ..}
+          -- Even if the binders are not used in current case, they may get used
+          -- in a follow-up expression which is pushed into the alternatives.
+          let binders' =
+                binders <&> \case
+                  Just Anon -> Nothing
+                  b -> b
+          return CaseAlt {bnd = abstract_ xs bodyN', binders = binders', ..}
     go1 Let {rhs = App {fn = GV {..}, args = arg : args}, ..}
       | ref == f || ref == g = do
           xh <- fresh
