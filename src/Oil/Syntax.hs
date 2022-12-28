@@ -40,6 +40,8 @@ module Oil.Syntax
     lets_,
     case_,
     ite_,
+    prod_,
+    pair_,
     tGV,
     lamB,
     lamsB,
@@ -374,6 +376,12 @@ ite_ cond left right =
         ],
       ..
     }
+
+prod_ :: Ty a -> Ty a -> Ty a
+prod_ a b = "*" @@ [a, b]
+
+pair_ :: Expr a -> Expr a -> Expr a
+pair_ a b = GV "(,)" @@ [a, b]
 
 -- | Global type, i.e. type constructor without argument
 tGV :: Text -> Ty a

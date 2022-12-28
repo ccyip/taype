@@ -415,7 +415,7 @@ toOilTy_ :: T.Ty Name -> TslM (Ty b)
 toOilTy_ T.TBool = return $ tGV "bool"
 toOilTy_ T.TInt = return TInt
 toOilTy_ T.GV {..} = return $ tGV ref
-toOilTy_ T.Prod {..} = ("*" @@) <$> mapM toOilTy_ [left, right]
+toOilTy_ T.Prod {..} = prod_ <$> toOilTy_ left <*> toOilTy_ right
 toOilTy_ T.Pi {..} = do
   dom <- withLabel (fromJust label) $ toOilTy ty
   (_, body) <- unbind1 bnd
@@ -655,11 +655,16 @@ simpDef = runFreshM . transformBiM go
     go e@Let {..} = case rhs of
       V {..} -> return $ instantiateName name bnd
       GV {..} -> return $ instantiate_ GV {..} bnd
+      ILit {..} -> return $ instantiate_ ILit {..} bnd
       Let {binder = binderN, rhs = rhsN, bnd = bndN} -> do
         (x, bodyN) <- unbind1 bndN
         body' <- go Let {rhs = bodyN, ..}
         return $ letB x binderN rhsN body'
-      _ -> return e
+      _ -> do
+        (x, body) <- unbind1 bnd
+        case body of
+          V y | y == x -> return rhs
+          _ -> return e
     go e = return e
 
 -- | Make the generated OIL programs more readable.
@@ -1186,7 +1191,7 @@ projDef b =
   funDef_
     (projName b)
     ["a", "b"]
-    (ar_ ["*" @@ ["a", "b"], if b then "a" else "b"])
+    (ar_ [prod_ "a" "b", if b then "a" else "b"])
     $ lam_
       "p"
       ( case_

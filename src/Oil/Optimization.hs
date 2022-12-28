@@ -78,7 +78,7 @@ tupling f g h = do
                 (xg, gExpr),
                 (xl, V xf @@ [V x]),
                 (xr, V xg @@ [V x]),
-                (xp, GV "(,)" @@ [V xl, V xr])
+                (xp, pair_ (V xl) (V xr))
               ]
               (V xp)
         )
@@ -100,7 +100,7 @@ tupling f g h = do
         _ -> oops "Invalid tupling source"
     tupledType (Arrow dom1 cod1) (Arrow dom2 cod2)
       | dom1 == dom2 =
-          Arrow {dom = dom1, cod = "*" @@ [cod1, cod2]}
+          Arrow {dom = dom1, cod = prod_ cod1 cod2}
     tupledType _ _ = oops "Invalid tupling source types"
     projFun b =
       fromClosed $
