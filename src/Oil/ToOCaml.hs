@@ -51,7 +51,6 @@ import Data.Graph
 import Data.List (lookup)
 import qualified Data.Text as T
 import Oil.Syntax
-import Oil.Translation
 import Prettyprinter.Util (reflow)
 import Taype.Common
 import Taype.Cute
@@ -315,7 +314,9 @@ builtinExprTable :: [(Text, Text)]
 builtinExprTable =
   [ ("True", "true"),
     ("False", "false"),
-    ("$max", "max"),
+    (internalName "max", "max"),
+    (projName True, "fst"),
+    (projName False, "snd"),
     ("<=", "<="),
     ("==", "=="),
     ("+", "+"),
@@ -341,17 +342,19 @@ isBuiltinTyName x = lookup x builtinTyTable
 
 toValidName_ :: Bool -> Text -> Text
 toValidName_ isTy = \case
-  (T.stripPrefix promPrefix -> Just x) -> "leaky_prom_of_" <> go True x
-  (T.stripPrefix lIfPrefix -> Just x) -> "leaky_if_of_" <> go True x
-  (T.stripPrefix lCasePrefix -> Just x) -> "leaky_case_of_" <> go True x
-  (T.stripPrefix (privPrefix <> oblivAccent) -> Just x) ->
-    "private_obliv_" <> go isTy x
-  (T.stripPrefix privPrefix -> Just x) -> "private_" <> go isTy x
-  (T.stripPrefix unsafePrefix -> Just x) -> "unsafe_" <> go isTy x
-  (T.stripPrefix oblivAccent -> Just x) -> "obliv_" <> go isTy x
-  (T.stripPrefix leakyAccent -> Just x) -> "leaky_" <> go isTy x
-  (T.stripPrefix internalPrefix -> Just x) -> "internal_" <> go isTy x
-  x -> go isTy x
+  (T.stripPrefix promPrefix -> Just x) -> "leaky_prom_of_" <> toValidName_ True x
+  (T.stripPrefix lIfPrefix -> Just x) -> "leaky_if_of_" <> toValidName_ True x
+  (T.stripPrefix lCasePrefix -> Just x) -> "leaky_case_of_" <> toValidName_ True x
+  (T.stripPrefix privPrefix -> Just x) -> "private_" <> toValidName_ isTy x
+  (T.stripPrefix unsafePrefix -> Just x) -> "unsafe_" <> toValidName_ isTy x
+  (T.stripPrefix oblivAccent -> Just x) -> "obliv_" <> toValidName_ isTy x
+  (T.stripPrefix leakyAccent -> Just x) -> "leaky_" <> toValidName_ isTy x
+  (T.stripPrefix internalPrefix -> Just x) -> "internal_" <> toValidName_ isTy x
+  "" -> ""
+  x ->
+    let (x0, rest) = T.break (== '_') x
+        (u, x') = T.span (== '_') rest
+     in go isTy x0 <> u <> toValidName_ isTy x'
   where
     go True "*" = "prod"
     go False "*" = "int_mul"

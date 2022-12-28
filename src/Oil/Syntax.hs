@@ -46,6 +46,8 @@ module Oil.Syntax
     letB,
     letsB,
     caseB,
+    lam',
+    lams',
     let',
     lets',
 
@@ -119,7 +121,7 @@ data Ty a
     Arrow {dom :: Ty a, cod :: Ty a}
   | -- | Type application
     TApp {tctor :: Text, args :: [Ty a]}
-  deriving stock (Functor, Foldable, Traversable)
+  deriving stock (Functor, Foldable, Traversable, Eq)
 
 -- | The type of data size
 --
@@ -406,6 +408,12 @@ caseB cond alts = Case {alts = go <$> alts, ..}
     go (ctor, namedBinders, body) =
       let (xs, binders) = unzip namedBinders
        in CaseAlt {bnd = abstract_ xs body, ..}
+
+lam' :: Name -> Expr Name -> Expr Name
+lam' x = lamB x Nothing
+
+lams' :: [Name] -> Expr Name -> Expr Name
+lams' = flip $ foldr lam'
 
 let' :: Name -> Expr Name -> Expr Name -> Expr Name
 let' x = letB x Nothing

@@ -19,19 +19,7 @@
 -- lookup table. The generated names contain characters that are illegal in the
 -- taype identifiers to avoid name conflicts.
 module Oil.Translation
-  ( -- * Naming
-    promPrefix,
-    lIfPrefix,
-    lCasePrefix,
-    unsafePrefix,
-    privPrefix,
-    promName,
-    lIfName,
-    lCaseName,
-    unsafeName,
-    privName,
-
-    -- * Translation
+  ( -- * Translation
     toOilProgram,
 
     -- * Prelude
@@ -40,6 +28,7 @@ module Oil.Translation
 where
 
 import Data.Graph (graphFromEdges, reachable)
+import qualified Data.HashMap.Strict as M
 import Data.HashSet (member)
 import Data.List (lookup)
 import Data.Maybe (fromJust)
@@ -54,39 +43,6 @@ import Taype.Name
 import Taype.Plate
 import Taype.Prelude
 import qualified Taype.Syntax as T
-
-----------------------------------------------------------------
--- Naming
-
-promPrefix :: Text
-promPrefix = leakyName "prom#"
-
-lIfPrefix :: Text
-lIfPrefix = leakyName "if#"
-
-lCasePrefix :: Text
-lCasePrefix = leakyName "case#"
-
-unsafePrefix :: Text
-unsafePrefix = "unsafe!"
-
-privPrefix :: Text
-privPrefix = "private!"
-
-promName :: Text -> Text
-promName = (promPrefix <>)
-
-lIfName :: Text -> Text
-lIfName = (lIfPrefix <>)
-
-lCaseName :: Text -> Text
-lCaseName = (lCasePrefix <>)
-
-unsafeName :: Text -> Text
-unsafeName = (unsafePrefix <>)
-
-privName :: Text -> Text
-privName = (privPrefix <>)
 
 ----------------------------------------------------------------
 -- Environment for translation
@@ -546,10 +502,10 @@ lIfInstMayCrust t =
 -- phase, and the retraction functions with their dependencies for the reveal
 -- phase.
 toOilProgram :: Options -> GCtx Name -> T.Defs Name -> IO (Program Name)
-toOilProgram Options {..} gctx defs = do
-  mainDefs' <- optimize mainDefs
-  concealDefs' <- optimize concealDefs
-  revealDefs' <- optimize revealDefs
+toOilProgram options@Options {..} gctx defs = do
+  mainDefs' <- optimize options actx [] mainDefs
+  concealDefs' <- optimize options concealACtx mainDefs' concealDefs
+  revealDefs' <- optimize options revealACtx mainDefs' revealDefs
   return
     Program
       { mainDefs = simp optReadableOil mainDefs',
@@ -569,12 +525,14 @@ toOilProgram Options {..} gctx defs = do
     concealSet = filterCrust funDefs isSectionAttr
     revealSet = filterCrust funDefs isRetractionAttr
     crustDefs crustSet rename names =
-      bimapF rename (renameCrustDef (crustSet <> fromList names) rename) $
-        foldMap
-          (go True)
-          [def | def@(name, _) <- funDefs, name `member` crustSet]
+      ( bimapF rename (renameCrustDef (crustSet <> fromList names) rename) $
+          foldMap
+            (go True)
+            [def | def@(name, _) <- funDefs, name `member` crustSet],
+        M.mapKeys rename actx
+      )
     mainDefs = foldMap (go False) defs
-    concealDefs =
+    (concealDefs, concealACtx) =
       crustDefs
         concealSet
         privName
@@ -584,13 +542,16 @@ toOilProgram Options {..} gctx defs = do
           oblivName "inr",
           aNew
         ]
-    revealDefs =
+    (revealDefs, revealACtx) =
       crustDefs
         revealSet
         unsafeName
         [ retractionName "int",
           retractionName "bool"
         ]
+    actx = flip M.mapMaybe (unGCtx gctx) $ \case
+      T.FunDef {..} -> Just attr
+      _ -> Nothing
 
 -- | Translate a taype definition to the corresponding OIL definition.
 --
@@ -937,6 +898,8 @@ prelude =
               )
             ]
         ),
+    projDef True,
+    projDef False,
     -- Instances of function type
     funDef_
       (prom_ "->")
@@ -1216,6 +1179,20 @@ oblivInjDef tag isCompPhase =
     sBool =
       GV $ if isCompPhase then s_ "bool" else privName $ sectionName "bool"
     aNew' = GV $ if isCompPhase then aNew else privName aNew
+
+-- | Build a projection function for product type.
+projDef :: Bool -> NamedDef a
+projDef b =
+  funDef_
+    (projName b)
+    ["a", "b"]
+    (ar_ ["*" @@ ["a", "b"], if b then "a" else "b"])
+    $ lam_
+      "p"
+      ( case_
+          "p"
+          [("(,)", if b then ["v", Anon] else [Anon, "v"], "v")]
+      )
 
 ----------------------------------------------------------------
 -- Smart constructors

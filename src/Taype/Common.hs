@@ -37,6 +37,18 @@ module Taype.Common
     retractionName,
     internalPrefix,
     internalName,
+    promPrefix,
+    promName,
+    lIfPrefix,
+    lIfName,
+    lCasePrefix,
+    lCaseName,
+    unsafePrefix,
+    unsafeName,
+    privPrefix,
+    privName,
+    projName,
+
     infixes,
     oblivInfixes,
     leakyInfixes,
@@ -111,8 +123,10 @@ data Attribute
   deriving stock (Eq)
 
 instance Show Attribute where
-  show SectionAttr {} = "section"
-  show RetractionAttr {} = "retraction"
+  show SectionAttr {..} =
+    "section(" <> show pubRef <> ", " <> show oblivRef <> ")"
+  show RetractionAttr {..} =
+    "retraction(" <> show pubRef <> ", " <> show oblivRef <> ")"
   show SafeAttr = "safe"
   show LeakyAttr = "leaky"
 
@@ -212,6 +226,45 @@ internalPrefix = "$"
 
 internalName :: Text -> Text
 internalName = (internalPrefix <>)
+
+-- | Promotion
+promPrefix :: Text
+promPrefix = leakyName "prom#"
+
+promName :: Text -> Text
+promName = (promPrefix <>)
+
+-- | Leaky if
+lIfPrefix :: Text
+lIfPrefix = leakyName "if#"
+
+lIfName :: Text -> Text
+lIfName = (lIfPrefix <>)
+
+-- | Leaky case
+lCasePrefix :: Text
+lCasePrefix = leakyName "case#"
+
+lCaseName :: Text -> Text
+lCaseName = (lCasePrefix <>)
+
+-- | Unsafe name
+unsafePrefix :: Text
+unsafePrefix = "unsafe!"
+
+unsafeName :: Text -> Text
+unsafeName = (unsafePrefix <>)
+
+-- | Private name
+privPrefix :: Text
+privPrefix = "private!"
+
+privName :: Text -> Text
+privName = (privPrefix <>)
+
+-- | Projection name
+projName :: Bool -> Text
+projName b = internalName $ if b then "pi0" else "pi1"
 
 -- | The infix operators
 infixes :: [Text]

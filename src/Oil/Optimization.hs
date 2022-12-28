@@ -15,6 +15,7 @@
 module Oil.Optimization (optimize) where
 
 import qualified Bound.Scope as B
+import Data.HashMap.Strict (union, (!?))
 import Data.List (lookup)
 import Oil.Syntax
 import Taype.Common
@@ -25,12 +26,149 @@ import Taype.Prelude
 -- | Optimize OIL programs.
 --
 -- All definitions must be closed.
-optimize :: Defs Name -> IO (Defs Name)
-optimize defs =
-  runOptM Env {dctx = [], deepSimp = True, ..} $ biplateM simplify defsANF
+optimize ::
+  Options -> HashMap Text Attribute -> Defs Name -> Defs Name -> IO (Defs Name)
+optimize options actx deps defs = do
+  simplified <-
+    runOptM Env {gctx = mempty, dctx = [], deepSimp = True, ..} $
+      biplateM (simplify <=< toANF) defs
+  foldMapM (go (fromList deps `union` fromList simplified)) simplified
   where
-    defsANF = runFreshM $ biplateM toANF defs
-    gctx = fromList defsANF
+    go gctx (name, def) =
+      runOptM Env {dctx = [], deepSimp = False, ..} $
+        lookupAttr name >>= \case
+          Just (SectionAttr {..}) -> goTuple oblivRef name
+          Just (RetractionAttr {..}) -> goTuple oblivRef name
+          _ -> return [(name, def)]
+    goTuple oblivRef name = do
+      let tgtName = internalName $ oblivRef <> "_" <> name
+      (tgtDef, _, def) <- tupling oblivRef name tgtName
+      return [(tgtName, tgtDef), (name, def)]
+
+-- | Perform tupling on two functions.
+--
+-- The first argument is the name of the target tupled function. The next two
+-- arguments are the names of the two source functions.
+--
+-- Given source functions 'f' and 'g' of types 'A -> B' and 'A -> C'
+-- respectively, this function returns the definition of the tupled function 'h'
+-- of type 'A -> B * C', along with the new definitions of 'f' and 'g' as the
+-- projections from 'h'. The tupled function 'h' should have property:
+--
+-- @h x = (f x, g x)@
+tupling :: Text -> Text -> Text -> OptM (Def Name, Def Name, Def Name)
+tupling f g h = do
+  (fTy, fExpr) <- lookupFun f
+  (gTy, gExpr) <- lookupFun g
+  xlam <- fresh
+  xf <- fresh
+  xg <- fresh
+  xl <- fresh
+  xr <- fresh
+  xp <- fresh
+  x <- fresh
+  hExpr <-
+    optimizeTupled f g h $
+      let'
+        xlam
+        ( lam' x $
+            lets'
+              [ (xf, fExpr),
+                (xg, gExpr),
+                (xl, V xf @@ [V x]),
+                (xr, V xg @@ [V x]),
+                (xp, GV "(,)" @@ [V xl, V xr])
+              ]
+              (V xp)
+        )
+        (V xlam)
+  hExpr' <- fixProj hExpr
+  return
+    ( FunDef
+        { binders = [],
+          tyBnd = abstract_ [] (tupledType fTy gTy),
+          expr = hExpr'
+        },
+      FunDef {binders = [], tyBnd = abstract_ [] fTy, expr = projFun True},
+      FunDef {binders = [], tyBnd = abstract_ [] gTy, expr = projFun False}
+    )
+  where
+    lookupFun x =
+      lookupGDef x >>= \case
+        Just (FunDef {binders = [], ..}) -> return (instantiate_ [] tyBnd, expr)
+        _ -> oops "Invalid tupling source"
+    tupledType (Arrow dom1 cod1) (Arrow dom2 cod2)
+      | dom1 == dom2 =
+          Arrow {dom = dom1, cod = "*" @@ [cod1, cod2]}
+    tupledType _ _ = oops "Invalid tupling source types"
+    projFun b =
+      fromClosed $
+        lam_ "x" $
+          GV (projName b) @@ [GV h @@ ["x"]]
+    fixProj = transformM $ \case
+      App {fn = fn@GV {..}, args = _ : args}
+        | ref == projName True || ref == projName False ->
+            return $ App {..}
+      e -> return e
+
+optimizeTupled :: Text -> Text -> Text -> Expr Name -> OptM (Expr Name)
+optimizeTupled f g h = go
+  where
+    go = go1 <=< simplify
+    go1 Let {rhs = Lam {bnd = bndN}, ..} = do
+      (x, bodyN) <- unbind1 bndN
+      bodyN' <- go bodyN
+      (bindings, v) <- hoisting x bodyN'
+      body' <- extendCtx bindings $ go $ instantiateName v bnd
+      return $ lets' bindings body'
+    go1 Let {rhs = Case {..}, ..} = do
+      let x = fromV cond
+      alts' <- mapM (goAlt x) alts
+      v <- fresh
+      return $ let' v Case {alts = alts', ..} (V v)
+      where
+        goAlt x CaseAlt {bnd = bndN, ..} = do
+          (xs, bodyN) <- unbindMany (length binders) bndN
+          bodyN' <-
+            extendCtx1 x (GV ctor @@ V <$> xs) $ go Let {rhs = bodyN, ..}
+          return CaseAlt {bnd = abstract_ xs bodyN', ..}
+    go1 Let {rhs = App {fn = GV {..}, args = arg : args}, ..}
+      | ref == f || ref == g = do
+          xh <- fresh
+          xf <- fresh
+          x <- fresh
+          let rhs' =
+                lets'
+                  [ (xh, GV h @@ [arg]),
+                    (xf, GV (projName (ref == f)) @@ [arg, V xh]),
+                    (x, V xf @@ args)
+                  ]
+                  (V x)
+          (bindings, v) <- simplify rhs' >>= toBindings
+          body' <- extendCtx bindings $ go $ instantiateName v bnd
+          return $ lets' bindings body'
+    go1 Let {..} = do
+      (v, body) <- unbind1 bnd
+      body' <- extendCtx1 v rhs $ go body
+      return $ letB v binder rhs body'
+    go1 e = return e
+
+hoisting :: MonadFresh m => Name -> Expr Name -> m ([(Name, Expr Name)], Name)
+hoisting x e = do
+  (bindings, y) <- toBindings e
+  let (hoisted, remain) = go [x] bindings
+  v <- fresh
+  return (snoc hoisted (v, lam' x $ lets' remain (V y)), v)
+  where
+    go _ [] = ([], [])
+    go xs ((v, rhs) : bindings) =
+      if any (`elem` rhs) xs
+        then
+          let (hoisted, remain) = go (v : xs) bindings
+           in (hoisted, (v, rhs) : remain)
+        else
+          let (hoisted, remain) = go xs bindings
+           in ((v, rhs) : hoisted, remain)
 
 -- | Simplifier
 --
@@ -41,7 +179,7 @@ simplify = go <=< simplify1
     go Let {..} = do
       rhs' <- ifM (asks deepSimp) (deep rhs) (return rhs)
       -- Common subexpression elimination
-      matchCtx rhs' >>= \case
+      matchDef rhs' >>= \case
         Just x -> simplify $ instantiateName x bnd
         _ -> do
           (x, body) <- unbind1 bnd
@@ -81,19 +219,19 @@ simplify1 Let {..} = do
       simplify1 $ letB x binderN rhsN Let {rhs = bodyN, ..}
     go App {fn = V {..}, args = []} = simplify1 $ instantiateName name bnd
     go e@App {fn = V {..}, args = arg : args} =
-      lookupCtx name >>= \case
+      lookupDef name >>= \case
         Just (Lam {bnd = bndN}) -> do
           x <- fresh
-          go $ let' x (instantiate_ arg bndN) Let {rhs = V x @@ args, ..}
+          simplify1 $ let' x (instantiate_ arg bndN) Let {rhs = V x @@ args, ..}
         Just (App {fn = fnN, args = argsN}) ->
           return Let {rhs = fnN @@ argsN <> (arg : args), ..}
         _ -> fallback e
     go e@Case {cond = V {..}, ..} =
-      lookupCtx name >>= \case
+      lookupDef name >>= \case
         Just (App {fn = GV {..}, ..}) ->
           case find (\CaseAlt {ctor} -> ctor == ref) alts of
             Just CaseAlt {bnd = bndN} ->
-              go $ Let {rhs = instantiate_ args bndN, ..}
+              simplify1 $ Let {rhs = instantiate_ args bndN, ..}
             _ -> fallback e
         _ -> fallback e
     go e = fallback e
@@ -146,11 +284,25 @@ toANF = \case
       body' <- toANF body
       return CaseAlt {bnd = abstract_ xs body', ..}
 
+fromV :: Expr a -> a
+fromV V {..} = name
+fromV _ = oops "Not a local variable"
+
+toBindings :: MonadFresh m => Expr Name -> m ([(Name, Expr Name)], Name)
+toBindings Let {..} = do
+  (x, body) <- unbind1 bnd
+  (bindings, y) <- toBindings body
+  return ((x, rhs) : bindings, y)
+toBindings V {..} = return ([], name)
+toBindings _ = oops "Not a valid let list in ANF"
+
 ----------------------------------------------------------------
 -- Optimizer monad
 
 data Env = Env
-  { -- | Global definition context
+  { -- | Commandline options
+    options :: Options,
+    -- | Global definition context
     gctx :: HashMap Text (Def Name),
     -- | Local definition (binding) context
     --
@@ -158,6 +310,8 @@ data Env = Env
     -- expression is a global variable, it must be in application form (with
     -- empty arguments).
     dctx :: [(Name, Expr Name)],
+    -- | Attribute context
+    actx :: HashMap Text Attribute,
     -- | Whether to recursively simplify under binders
     deepSimp :: Bool
   }
@@ -167,17 +321,30 @@ type OptM = FreshT (ReaderT Env IO)
 runOptM :: Env -> OptM a -> IO a
 runOptM env m = runReaderT (runFreshT m) env
 
-lookupCtx :: MonadReader Env m => Name -> m (Maybe (Expr Name))
-lookupCtx x = do
+lookupDef :: MonadReader Env m => Name -> m (Maybe (Expr Name))
+lookupDef x = do
   dctx <- asks dctx
   return $ lookup x dctx
 
-matchCtx :: MonadReader Env m => Expr Name -> m (Maybe Name)
-matchCtx e = do
+lookupGDef :: MonadReader Env m => Text -> m (Maybe (Def Name))
+lookupGDef x = do
+  gctx <- asks gctx
+  return $ gctx !? x
+
+lookupAttr :: MonadReader Env m => Text -> m (Maybe Attribute)
+lookupAttr x = do
+  actx <- asks actx
+  return $ actx !? x
+
+matchDef :: MonadReader Env m => Expr Name -> m (Maybe Name)
+matchDef e = do
   dctx <- asks dctx
   return $ fst <$> find ((e ==) . snd) dctx
 
-extendCtx1 :: MonadReader Env m => Name -> Expr Name -> m a -> m a
-extendCtx1 x e = local go
+extendCtx :: MonadReader Env m => [(Name, Expr Name)] -> m a -> m a
+extendCtx bindings = local go
   where
-    go Env {..} = Env {dctx = (x, e) : dctx, ..}
+    go Env {..} = Env {dctx = bindings <> dctx, ..}
+
+extendCtx1 :: MonadReader Env m => Name -> Expr Name -> m a -> m a
+extendCtx1 x e = extendCtx [(x, e)]
