@@ -158,6 +158,10 @@ opts = do
     switch $
       long "fno-early-tape"
         <> help "Disable early tape optimization"
+  optFlagNoTupling <-
+    switch $
+      long "fno-tupling"
+        <> help "Disable tupling optimization"
   optGeneratePrelude <-
     optional $
       strOption $
