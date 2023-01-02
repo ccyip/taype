@@ -29,7 +29,7 @@ import Taype.Prelude
 -- All definitions must be closed.
 optimize ::
   Options -> HashMap Text Attribute -> Defs Name -> Defs Name -> IO (Defs Name)
-optimize options@Options{..} actx deps defs = do
+optimize options@Options {..} actx deps defs = do
   simplified <-
     runOptM Env {gctx = mempty, dctx = [], deepSimp = True, ..} $
       biplateM (simplify <=< toANF) defs
@@ -85,7 +85,10 @@ tupling f g h = do
               (V xp)
         )
         (V xlam)
-  hExpr' <- fixProj hExpr
+  -- Before removing the extra argument from the projections, we do one final
+  -- simplification, although technically we only need to do dead code
+  -- elimination.
+  hExpr' <- withDeepSimp True (simplify hExpr) >>= fixProj
   return
     ( FunDef
         { binders = [],
@@ -357,3 +360,6 @@ extendCtx bindings = local go
 
 extendCtx1 :: MonadReader Env m => Name -> Expr Name -> m a -> m a
 extendCtx1 x e = extendCtx [(x, e)]
+
+withDeepSimp :: MonadReader Env m => Bool -> m a -> m a
+withDeepSimp b = local $ \Env {..} -> Env {deepSimp = b, ..}
