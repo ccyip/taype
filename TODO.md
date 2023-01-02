@@ -1,5 +1,4 @@
 - `AppKind` can be deprecated?
-- Consider checking labels in type equivalence
 - Add program context for better inference
 - Error messages for `isProd` / `isOProd` / `isPi` could be confusing in
   introduction form
@@ -12,11 +11,11 @@
 - Unordered oblivious case?
 - Support nondeterministic oblivious value (of any oblivious type)?
   + May need to support bottom in the public computation, as a correspondence
-
-- Performance
-  + `test_healthy_rate`
-    * express boolean operators, including retraction, using MUX is a bad idea.
-    * perform section earlier (for every iteration) can reduce the exponential
-      MUX to linear.
-  + `test_min_euclidean_distance`
-    * Going from 5 to 6 is like day and night.
+- Option for name sanitization
+- Option to runner to only run the first few test cases
+- Parser for Oil
+- Oil EDSL using Template Haskell
+- `unsafe!if` -> `if` and `unsafe!r_bool`
+- Remove unnecessary dead code elimination?
+- Need to rename section / retraction functions before tupling?
+- More partial evaluation on numbers and booleans?
