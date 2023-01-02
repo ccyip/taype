@@ -95,6 +95,9 @@ data Env = Env
     label :: Label
   }
 
+instance HasOptions Env where
+  getOptions Env {..} = options
+
 -- | Make an initial environment.
 --
 -- Some fields are intantiated arbitrarily, because they will be replaced later.

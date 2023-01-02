@@ -1,8 +1,9 @@
-{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -1906,70 +1907,33 @@ genRetraction e = \case
 ----------------------------------------------------------------
 -- Error reporting
 
-data D
-  = -- | Display a document.
-    DD Doc
-  | -- | Display a document followed by a colon and possibly new line.
-    DH Doc
-  | -- | Display a 'Cutie' instance.
-    forall a. Cutie a => DC a
-  | -- | Display a quoted 'Cutie' instance.
-    forall a. Cutie a => DQ a
+type D = Disp TcM
 
-class Cutie a where
-  cutie :: a -> TcM Doc
-  default cutie :: Cute a => a -> TcM Doc
-  cutie a = do
-    Env {..} <- ask
-    n <- getFresh
-    return $ contCuteM options n $ cute a
+instance MonadCute TcM Int
 
-instance Cutie Int
+instance MonadCute TcM Text
 
-instance Cutie Text
-
-instance Cutie Kind where
+instance MonadCute TcM Kind where
   cutie k = return $ show k <+> parens (pretty k)
 
-instance Cutie Label where
+instance MonadCute TcM Label where
   cutie l = return $ show l <+> parens (pretty l)
 
-instance Cutie (Expr Text)
+instance MonadCute TcM (Expr Text)
 
-instance Cutie (TCtx Text)
+instance MonadCute TcM (TCtx Text)
 
-instance Cutie (Expr Name) where
+instance MonadCute TcM (Expr Name) where
   cutie =
     withOptPrintLabels . cutie
       <=< mapM renderName
       <=< readableExpr
 
-instance Cutie (TCtx Int) where
+instance MonadCute TcM (TCtx Int) where
   cutie =
     withOptPrintLabels . cutie
       <=< mapM renderName
       <=< biplateM readableExpr
-
-instance Cutie D where
-  cutie (DD doc) = return doc
-  cutie (DH doc) = return $ doc <> colon
-  cutie (DC e) = cutie e
-  cutie (DQ e) = dquotes <$> cutie e
-
-instance Cutie [D] where
-  cutie [] = return mempty
-  cutie (d : ds) = do
-    doc <- cutie d
-    rest <- cutie ds
-    return $
-      case d of
-        DH _ -> hang $ doc <> sep1 rest
-        _ -> doc <> softline <> rest
-
-instance Cutie [[D]] where
-  cutie dss = do
-    docs <- mapM cutie dss
-    return $ sepWith hardline docs
 
 err_ :: (MonadError Err m) => Int -> Doc -> m a
 err_ errLoc errMsg =
@@ -1982,21 +1946,14 @@ err_ errLoc errMsg =
 err :: [[D]] -> TcM a
 err dss = do
   Env {..} <- ask
-  doc <- displayMsg dss
+  doc <- reportDoc dss
   err_ loc doc
 
-_debug :: [[D]] -> TcM ()
-_debug dss = do
-  Env {..} <- ask
-  doc <- displayMsg dss
-  printDoc options $ "Debug" <> colon <> hardline <> doc <> hardline <> hardline
-{-# WARNING _debug "'_debug' remains in code" #-}
-
-displayMsg :: [[D]] -> TcM Doc
-displayMsg dss = do
+reportDoc :: [[D]] -> TcM Doc
+reportDoc dss = do
   Env {..} <- ask
   doc <- cutie dss
-  curDoc <- cutie $ DC cur
+  curDoc <- cutie (DC cur :: D)
   tctxDoc <- cutie tctx
   return $
     doc
@@ -2059,7 +2016,16 @@ runDcM :: Options -> DcM a -> ExceptT Err IO a
 runDcM = usingReaderT
 
 -- | The type checking monad
-type TcM = FreshT (ReaderT Env (ExceptT Err IO))
+newtype TcM a = TcM (FreshT (ReaderT Env (ExceptT Err IO)) a)
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadFresh,
+      MonadReader Env,
+      MonadError Err,
+      MonadIO
+    )
 
 runTcM :: Env -> TcM a -> ExceptT Err IO a
-runTcM env m = runReaderT (runFreshT m) env
+runTcM env (TcM m) = runReaderT (runFreshT m) env

@@ -17,6 +17,7 @@
 -- Common data types and utilities.
 module Taype.Common
   ( Options (..),
+    HasOptions (..),
     Label (..),
     AppKind (..),
     Attribute (..),
@@ -48,7 +49,6 @@ module Taype.Common
     privPrefix,
     privName,
     projName,
-
     infixes,
     oblivInfixes,
     leakyInfixes,
@@ -88,6 +88,12 @@ data Options = Options
     optWidth :: Maybe Int
   }
   deriving stock (Eq, Show)
+
+-- | We can project 'Options' from a.
+--
+-- We may use 'HasField' from Haskell, but don't bother.
+class HasOptions a where
+  getOptions :: a -> Options
 
 -- | A leakage label is isomorphic to a Boolean.
 data Label = SafeL | LeakyL

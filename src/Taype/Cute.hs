@@ -2,7 +2,9 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -35,6 +37,10 @@ module Taype.Cute
     runCuteM,
     contCuteM,
     HasPLevel (..),
+    MonadCute (..),
+    Disp (..),
+    debugDoc,
+    debug,
 
     -- * Binder related utilities
     nameOrBinder,
@@ -143,6 +149,32 @@ class Cute a where
 class HasPLevel a where
   plevel :: a -> Int
 
+-- | Similar to 'Cute', but it allows monads other than 'CuteM'.
+--
+-- Technically we can define 'Cute' in terms of 'MonadCute', but it introduces
+-- heavier syntax for most cases.
+class MonadCute m a where
+  cutie :: a -> m Doc
+  default cutie ::
+    (MonadReader r m, HasOptions r, MonadFresh m, Cute a) => a -> m Doc
+  cutie a = do
+    options <- asks getOptions
+    n <- getFresh
+    return $ contCuteM options n $ cute a
+
+-- | Display things.
+--
+-- Mostly used in error reporting and debugging.
+data Disp m
+  = -- | Display a document.
+    DD Doc
+  | -- | Display a document followed by a colon and possibly new line.
+    DH Doc
+  | -- | Display a 'MonadCute' instance.
+    forall a. MonadCute m a => DC a
+  | -- | Display a quoted 'MonadCute' instance.
+    forall a. MonadCute m a => DQ a
+
 ----------------------------------------------------------------
 -- Pretty printing instances
 
@@ -162,6 +194,38 @@ instance (Monad f, Cute (f Text)) => Cute (CaseAlt f Text) where
     (xs, body) <- unbindManyNamesOrBinders binders bnd
     bodyDoc <- cute body
     return $ cuteAltDoc ctor xs bodyDoc
+
+instance Monad m => MonadCute m (Disp m) where
+  cutie (DD doc) = return doc
+  cutie (DH doc) = return $ doc <> colon
+  cutie (DC e) = cutie e
+  cutie (DQ e) = dquotes <$> cutie e
+
+instance Monad m => MonadCute m [Disp m] where
+  cutie [] = return mempty
+  cutie (d : ds) = do
+    doc <- cutie d
+    rest <- cutie ds
+    return $
+      case d of
+        DH _ -> hang $ doc <> sep1 rest
+        _ -> doc <> softline <> rest
+
+instance Monad m => MonadCute m [[Disp m]] where
+  cutie dss = do
+    docs <- mapM cutie dss
+    return $ sepWith hardline docs
+
+debugDoc :: Monad m => [[Disp m]] -> m Doc
+debugDoc dss = do
+  doc <- cutie dss
+  return $ "Debug" <> colon <> hardline <> doc <> hardline <> hardline
+
+debug :: (MonadIO m, MonadReader r m, HasOptions r) => [[Disp m]] -> m ()
+debug dss = do
+  options <- asks getOptions
+  doc <- debugDoc dss
+  printDoc options doc
 
 ----------------------------------------------------------------
 -- Binder related utilities
