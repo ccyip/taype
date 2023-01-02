@@ -11,6 +11,7 @@
 -- Build system.
 module Main (main) where
 
+import qualified Data.String as S
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Development.Shake
@@ -64,8 +65,10 @@ commonDir :: FilePath
 commonDir = exampleDir </> "common"
 
 taypeCmd :: [String] -> Action ()
-taypeCmd args =
-  command_ [Traced "TAYPE"] "cabal" $ ["run", "taype", "--", "--fearly-tape"] <> args
+taypeCmd args = do
+  flags <- getEnv "TAYPE_FLAGS"
+  command_ [Traced "TAYPE"] "cabal" $
+    ["run", "taype", "--"] <> maybe [] S.words flags <> args
 
 runnerCmd :: [String] -> Action ()
 runnerCmd args =
