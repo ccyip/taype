@@ -75,7 +75,7 @@ data Options = Options
     optNoFlattenLets :: Bool,
     optNamePrefix :: Text,
     optNoFiles :: Bool,
-    optFlagEarlyTape :: Bool,
+    optFlagNoEarlyTape :: Bool,
     optGeneratePrelude :: Maybe FilePath,
     optPrintCore :: Bool,
     optPrintPrelude :: Bool,

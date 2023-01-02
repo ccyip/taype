@@ -1497,7 +1497,7 @@ checkDefs options@Options {..} defs = runDcM options $ do
       gdctx' <- extendGCtx1 gdctx name def'
       go gsctx gdctx' defs'
     optimize def =
-      let def' = if optFlagEarlyTape then earlyTapeDef def else def
+      let def' = if optFlagNoEarlyTape then def else earlyTapeDef def
        in if optNoFlattenLets
             then def'
             else flattenLets def'
