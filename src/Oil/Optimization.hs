@@ -63,7 +63,6 @@ tupling :: Text -> Text -> Text -> OptM (Def Name, Def Name, Def Name)
 tupling f g h = do
   (fTy, fExpr) <- lookupFun f
   (gTy, gExpr) <- lookupFun g
-  xlam <- fresh
   xf <- fresh
   xg <- fresh
   xl <- fresh
@@ -72,19 +71,15 @@ tupling f g h = do
   x <- fresh
   hExpr <-
     optimizeTupled f g h $
-      let'
-        xlam
-        ( lam' x $
-            lets'
-              [ (xf, fExpr),
-                (xg, gExpr),
-                (xl, V xf @@ [V x]),
-                (xr, V xg @@ [V x]),
-                (xp, pair_ (V xl) (V xr))
-              ]
-              (V xp)
-        )
-        (V xlam)
+      lets'
+        [ (xf, fExpr),
+          (xg, gExpr),
+          (xl, V xf @@ [V x]),
+          (xr, V xg @@ [V x]),
+          (xp, pair_ (V xl) (V xr))
+        ]
+        (V xp)
+
   -- Before removing the extra argument from the projections, we do one final
   -- simplification, although technically we only need to do dead code
   -- elimination.
@@ -93,7 +88,7 @@ tupling f g h = do
     ( FunDef
         { binders = [],
           tyBnd = abstract_ [] (tupledType fTy gTy),
-          expr = hExpr'
+          expr = lam' x hExpr'
         },
       FunDef {binders = [], tyBnd = abstract_ [] fTy, expr = projFun True},
       FunDef {binders = [], tyBnd = abstract_ [] gTy, expr = projFun False}
