@@ -187,6 +187,8 @@ toOilExpr T.Ite {..} = do
   (_, condLabel) <- lookupTy cond
   left' <- toOilExpr left
   right' <- toOilExpr right
+  dummy1 <- fresh
+  dummy2 <- fresh
   let cond' = toOilVar cond
   case condLabel of
     SafeL -> return $ ite_ cond' left' right'
@@ -195,7 +197,13 @@ toOilExpr T.Ite {..} = do
       -- Recall that the first branch of Boolean case analysis corresponds to
       -- @False@ while the second one to @True@, unlike the if-then-else
       -- construct.
-      return $ GV (lCaseName "bool") @@ [lIf, cond', right', left']
+      return $
+        GV (lCaseName "bool")
+          @@ [ lIf,
+               cond',
+               lamB dummy1 (Just Anon) right',
+               lamB dummy2 (Just Anon) left'
+             ]
 toOilExpr T.Case {..} = do
   (adtName, paraTypess, condLabel) <- lookupADT cond
   alts' <- zipWithM (go condLabel) (toList alts) paraTypess
@@ -733,6 +741,11 @@ prelude =
       [ (prom_ aName, [OArray]),
         (lif_ aName, [OArray, "$self", "$self"])
       ],
+    -- Unit
+    adtDef_
+      "unit"
+      []
+      [("()", [])],
     -- Boolean
     --
     -- It is defined similarly to that in Haskell: the first constructor is
@@ -761,8 +774,8 @@ prelude =
       ( ar_
           [ ar_ [OArray, l_ "r", l_ "r", l_ "r"],
             l_ "bool",
-            l_ "r",
-            l_ "r",
+            ar_ ["unit", l_ "r"],
+            ar_ ["unit", l_ "r"],
             l_ "r"
           ]
       )
@@ -770,8 +783,14 @@ prelude =
         [lif_ "r", l_ "b", l_ "ff", l_ "ft"]
         ( case_
             (l_ "b")
-            [ (r_ "bool", [o_ "b"], lif_ "r" @@ [o_ "b", l_ "ft", l_ "ff"]),
-              (prom_ "bool", ["b"], ite_ "b" (l_ "ft") (l_ "ff")),
+            [ ( r_ "bool",
+                [o_ "b"],
+                lif_ "r" @@ [o_ "b", l_ "ft" @@ ["()"], l_ "ff" @@ ["()"]]
+              ),
+              ( prom_ "bool",
+                ["b"],
+                ite_ "b" (l_ "ft" @@ ["()"]) (l_ "ff" @@ ["()"])
+              ),
               ( lif_ "bool",
                 [o_ "b", l_ "b1", l_ "b2"],
                 lif_ "r"

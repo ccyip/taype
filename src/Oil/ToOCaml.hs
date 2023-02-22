@@ -314,6 +314,7 @@ builtinExprTable :: [(Text, Text)]
 builtinExprTable =
   [ ("True", "true"),
     ("False", "false"),
+    ("()", "()"),
     (internalName "max", "max"),
     (projName True, "fst"),
     (projName False, "snd"),
@@ -331,6 +332,7 @@ builtinExprTable =
 builtinTyTable :: [(Text, Text)]
 builtinTyTable =
   [ ("bool", "bool"),
+    ("unit", "unit"),
     ("*", "*")
   ]
 
