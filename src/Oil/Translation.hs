@@ -380,6 +380,24 @@ toOilSize T.Ite {..} = do
   left' <- toOilSize left
   right' <- toOilSize right
   return $ ite_ (toOilVar cond) left' right'
+toOilSize T.PCase {..} = do
+  (condTy, _) <- lookupTy cond
+  let (leftTy, rightTy) =
+        case condTy of
+          T.Prod {..} -> (left, right)
+          _ -> oops "Not a product"
+  ((xl, xr), body) <- unbind2 bnd2
+  body' <-
+    extendCtx
+      [ (xl, leftTy, SafeL),
+        (xr, rightTy, SafeL)
+      ]
+      $ toOilSize body
+  let cond' = toOilVar cond
+  return $
+    caseB
+      cond'
+      [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
 toOilSize T.Case {..} = do
   (_, paraTypess, _) <- lookupADT cond
   alts' <- zipWithM go (toList alts) paraTypess
