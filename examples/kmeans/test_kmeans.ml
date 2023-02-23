@@ -2,10 +2,10 @@ open Driver
 open Prelude
 open Common
 open Sexplib
-open Kmean
-open Kmean_conceal
-open Kmean_reveal
-open Kmean_helper
+open Kmeans
+open Kmeans_conceal
+open Kmeans_reveal
+open Kmeans_helper
 
 let _ =
   parse_options ();
@@ -25,7 +25,7 @@ let _ =
 
   collect_stat ();
 
-  let obliv_res = obliv_kmean n_iter n_clusters dim k1 k2 obliv_xs1 obliv_xs2 in
+  let obliv_res = obliv_kmeans n_iter n_clusters dim k1 k2 obliv_xs1 obliv_xs2 in
 
   record_stat ();
 

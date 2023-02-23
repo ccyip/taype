@@ -1,5 +1,5 @@
 open Sexplib
-open Kmean
+open Kmeans
 open Common
 
 let rec vec_to_list = function

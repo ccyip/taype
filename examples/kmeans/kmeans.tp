@@ -133,22 +133,22 @@ fn update : int -> vlist -> vec -> vlist -> vlist =
 
 -- Repeatedly assign clusters and update centroids, according to the given
 -- number of iteration.
-fn kmean_loop : int -> int -> vlist -> vlist -> vec -> vlist * vec =
+fn kmeans_loop : int -> int -> vlist -> vlist -> vec -> vlist * vec =
   \n dim xs centroids clus ->
     if n == 0
     then (centroids, clus)
     else let centroids' = update dim xs clus centroids
              clus' = assign centroids xs in
-         kmean_loop (n-1) dim xs centroids' clus'
+         kmeans_loop (n-1) dim xs centroids' clus'
 
 -- The entry point of the k-mean algorithm.
-fn kmean : int -> int -> int -> vlist -> vec =
+fn kmeans : int -> int -> int -> vlist -> vec =
   \n_iter n_clusters dim xs ->
     let len = vlength xs
         stride = len / n_clusters
         centroids = init_centroids n_clusters stride (stride-1) xs
         clus = assign centroids xs in
-        case kmean_loop n_iter dim xs centroids clus of
+        case kmeans_loop n_iter dim xs centroids clus of
         | (_, clus) -> clus
         end
 
@@ -222,10 +222,10 @@ fn r_vlist : (p : int * int) -> `vlist p -> vlist = \p ->
 -- Lifted functions
 
 #[safe]
-fn `kmean : int -> int -> (dim : int) ->
+fn `kmeans : int -> int -> (dim : int) ->
             (k1 : int) -> (k2 : int) ->
             `vlist (dim, k1) -> `vlist (dim, k2) -> `vec (k1+k2) =
   \n_iter n_clusters dim k1 k2 xs1 xs2 ->
     s_vec (k1+k2)
-          (kmean n_iter n_clusters dim
+          (kmeans n_iter n_clusters dim
                  (vappend (r_vlist (dim, k1) xs1) (r_vlist (dim, k2) xs2)))
