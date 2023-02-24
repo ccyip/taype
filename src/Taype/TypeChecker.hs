@@ -348,17 +348,24 @@ typing Ite {..} mt ml = do
   left'' <- mayPromote l' leftTy' leftLabel left'
   right'' <- mayPromote l' rightTy' rightLabel right'
   x <- fresh
+  y <- fresh
   return
     ( t',
       l',
       lets'
-        [(x, TBool, condLabel, cond')]
-        Ite
-          { retTy = Just t',
-            cond = V x,
-            left = left'',
-            right = right''
-          }
+        [ (x, TBool, condLabel, cond'),
+          ( y,
+            t',
+            l',
+            Ite
+              { retTy = Just t',
+                cond = V x,
+                left = left'',
+                right = right''
+              }
+          )
+        ]
+        (V y)
     )
 typing Pair {..} mt ml = do
   (mLeftTy, mRightTy) <- mapM isProd mt <&> NE.unzip
@@ -530,16 +537,23 @@ typing Case {..} mt ml = do
   checkLabel (Just (condLabel \/ l')) l'
   alts' <- NE.zipWith3M (promoteAlt l') ctorNames argss altRes
   x <- fresh
+  y <- fresh
   return
     ( t',
       l',
       lets'
-        [(x, GV ref, condLabel, cond')]
-        Case
-          { retTy = Just t',
-            cond = V x,
-            alts = alts'
-          }
+        [ (x, GV ref, condLabel, cond'),
+          ( y,
+            t',
+            l',
+            Case
+              { retTy = Just t',
+                cond = V x,
+                alts = alts'
+              }
+          )
+        ]
+        (V y)
     )
   where
     mkCaseAlt ctor args body =
@@ -1768,27 +1782,29 @@ flattenLets = runFreshM . transformBiM go
 --
 -- If the given expression is a function, it should be fully eta-expanded. We
 -- only handle primitive types and pairs at the moment.
-earlyTape :: Expr Name -> Ty Name -> FreshT Maybe (Expr Name)
-earlyTape Lam {..} Pi {binder = _, label = _, bnd = tyBnd} = do
-  (x, body, tBody) <- unbind1With bnd tyBnd
-  body' <- earlyTape body tBody
-  return Lam {bnd = abstract_ x body', ..}
-earlyTape Lam {} _ = fail "Not a function type"
-earlyTape _ Pi {} = fail "Not eta expanded"
-earlyTape e t = do
-  x <- fresh
-  s <- fresh
-  (secExpr, secTy) <- genSection (V x) t
-  (e', _) <- genRetraction (V s) secTy
-  return $
-    lets'
-      [(x, t, LeakyL, e), (s, secTy, SafeL, secExpr)]
-      e'
+earlyTape :: Expr Name -> Ty Name -> FreshM (Expr Name)
+earlyTape expr ty = do
+  expr' <- transformM go expr
+  forceTape expr' ty
+  where
+    go Let {..} = do
+      rhs' <- mayTape rhs $ fromJust mTy
+      return Let {rhs = rhs', ..}
+    go e = return e
+    mayTape e t = case e of
+      Ite {} -> forceTape e t
+      Case {} -> forceTape e t
+      _ -> return e
+    forceTape e t = fromMaybe e <$> runMaybeT (tryTape e t)
+    tryTape e t = do
+      (secExpr, secTy) <- genSection e t
+      (e', _) <- genRetraction secExpr secTy
+      return e'
 
 earlyTapeDef :: Def Name -> Def Name
 earlyTapeDef FunDef {attr = attr@LeakyAttr, label = label@(Just LeakyL), ..} =
-  let res = runFreshT $ earlyTape expr ty
-   in FunDef {expr = res ?: expr, ..}
+  let expr' = runFreshM $ earlyTape expr ty
+   in FunDef {expr = expr', ..}
 earlyTapeDef def = def
 
 -- | Generalized section
@@ -1799,7 +1815,7 @@ earlyTapeDef def = def
 -- The given type must be leaky, i.e. with 'LeakyL' label, while the returned
 -- expression should be safe. The returned expression must also be well-typed
 -- and in core Taype ANF. The returned type must be obliviously kinded.
-genSection :: Expr Name -> Ty Name -> FreshT Maybe (Expr Name, Ty Name)
+genSection :: Expr Name -> Ty Name -> MaybeT FreshM (Expr Name, Ty Name)
 genSection e = \case
   TInt -> goPrimTy TInt OInt "int"
   TBool -> goPrimTy TBool OBool "bool"
@@ -1861,7 +1877,7 @@ genSection e = \case
 -- The given type must be safe, i.e. with 'SafeL' label, while the returned
 -- expression should be leaky. The returned expression must also be well-typed
 -- and in core Taype ANF.
-genRetraction :: Expr Name -> Ty Name -> FreshT Maybe (Expr Name, Ty Name)
+genRetraction :: Expr Name -> Ty Name -> MaybeT FreshM (Expr Name, Ty Name)
 genRetraction e = \case
   OInt -> goPrimTy TInt OInt "int"
   OBool -> goPrimTy TBool OBool "bool"
