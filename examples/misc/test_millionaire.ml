@@ -2,9 +2,9 @@ open Driver
 open Common
 open Sexplib
 open Prelude
-open Millionaire
-open Millionaire_conceal
-open Millionaire_reveal
+open Misc
+open Misc_conceal
+open Misc_reveal
 
 let _ =
   parse_options ();
@@ -16,7 +16,7 @@ let _ =
 
   collect_stat ();
 
-  let obliv_res = obliv_compare a b in
+  let obliv_res = obliv_le a b in
 
   record_stat ();
 

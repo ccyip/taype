@@ -1,4 +1,7 @@
 (executables
- (names "test_millionaire")
+ (names
+   "test_millionaire"
+   "test_voting1"
+   "test_voting2")
  (flags (:standard -w -27-33))
  (libraries taype-driver-plaintext common sexplib))
