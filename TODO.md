@@ -14,8 +14,11 @@
 - Option for name sanitization
 - Option to runner to only run the first few test cases
 - Parser for Oil
-- Oil EDSL using Template Haskell
 - `unsafe!if` -> `if` and `unsafe!r_bool`
 - Remove unnecessary dead code elimination?
 - Need to rename section / retraction functions before tupling?
 - More partial evaluation on numbers and booleans?
+
+- Known bug: early-tape optimization can cause non-termination in some cases.
+  This can be fixed by keeping the public values (until we can't) in the
+  oblivious array backends.
