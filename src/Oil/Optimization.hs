@@ -29,13 +29,16 @@ import Taype.Prelude
 -- All definitions must be closed.
 optimize ::
   Options -> HashMap Text Attribute -> Defs Name -> Defs Name -> IO (Defs Name)
-optimize options@Options {..} actx deps defs = do
-  simplified <-
-    runOptM Env {gctx = mempty, dctx = [], deepSimp = True, ..} $
-      biplateM (simplify <=< toANF) defs
-  if optFlagNoTupling
-    then return simplified
-    else foldMapM (go (fromList deps `union` fromList simplified)) simplified
+optimize options@Options {..} actx deps defs =
+  if optFlagNoOptimization
+    then return defs
+    else do
+      simplified <-
+        runOptM Env {gctx = mempty, dctx = [], deepSimp = True, ..} $
+          biplateM (simplify <=< toANF) defs
+      if optFlagNoTupling
+        then return simplified
+        else foldMapM (go (fromList deps `union` fromList simplified)) simplified
   where
     go gctx (name, def) =
       runOptM Env {dctx = [], deepSimp = False, ..} $

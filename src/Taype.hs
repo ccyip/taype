@@ -154,6 +154,10 @@ opts = do
       long "no-files"
         <> short 'n'
         <> help "Do not generate files"
+  optFlagNoOptimization <-
+    switch $
+      long "fno-opt"
+        <> help "Disable all optimization"
   optFlagNoEarlyTape <-
     switch $
       long "fno-early-tape"

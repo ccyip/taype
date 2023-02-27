@@ -75,6 +75,7 @@ data Options = Options
     optNoFlattenLets :: Bool,
     optNamePrefix :: Text,
     optNoFiles :: Bool,
+    optFlagNoOptimization :: Bool,
     optFlagNoEarlyTape :: Bool,
     optFlagNoTupling :: Bool,
     optGeneratePrelude :: Maybe FilePath,
