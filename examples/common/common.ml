@@ -8,18 +8,16 @@ let my_party : int ref = ref (-1)
 let switch : string ref = ref ""
 let stat : int ref = ref (-1)
 
-let oops s = raise (Failure s)
-
 let party_of_string = function
   | "public" -> party_public
   | "alice" -> party_alice
   | "bob" -> party_bob
-  | _ -> oops "Unknown party: only supports public, alice, and bob"
+  | _ -> failwith "Unknown party: only supports public, alice, and bob"
 
 (* Parse the commandline options. The first options is the party name, and the
    optional second one is the oblivious type selector. *)
 let parse_options () =
-  if Array.length Sys.argv < 2 then oops "Not enough arguments";
+  if Array.length Sys.argv < 2 then failwith "Not enough arguments";
   my_party := party_of_string Sys.argv.(1);
   if Array.length Sys.argv > 2 then switch := Sys.argv.(2)
 
@@ -36,7 +34,7 @@ let scan_line () =
    data. *)
 let get_public conv =
   let (party, s) = scan_line () in
-  if party <> party_public then oops "Input party is not public";
+  if party <> party_public then failwith "Input party is not public";
   Sexp.of_string_conv_exn s conv
 
 (* Get a private data from input. [conv] is used to convert the sexp to the data
@@ -72,5 +70,5 @@ let print_sexp s =
 
 let of_sexp_check of_sexp check v s =
   let d = of_sexp s in
-  if (not (check d v)) then oops "input data is invalid";
+  if (not (check d v)) then failwith "input data is invalid";
   d
