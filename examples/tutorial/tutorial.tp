@@ -8,7 +8,7 @@
 -- type polymorphism at the moment.
 --
 -- The ADT name should start with a lower-case letter, and constructors should
--- start with a upper-case letter.
+-- start with an upper-case letter.
 data list = Nil | Cons int list
 
 -- We can write a simple function over list that checks if an integer is an
@@ -23,9 +23,8 @@ fn elem : int -> list -> bool = \x xs ->
   | Cons y xs' -> if x == y then True else elem x xs'
   end
 
--- Here is an insertion function that inserts the new element to the right place
--- of a sorted list. For simplicity, the lookup function we just defined does
--- not take advantage of the sorted list.
+-- Here is an insertion function that inserts a new element to the right place
+-- of a sorted list.
 fn insert : int -> list -> list = \x xs ->
   case xs of
   | Nil -> Cons x Nil
@@ -38,16 +37,28 @@ fn insert : int -> list -> list = \x xs ->
 -- Here the public view [k] is the maximum length of the list.
 obliv `list (k : int) =
   if k == 0
+  -- If the maximum length is 0, the list can only be a Nil (with no
+  -- information attached to it), so we return a unit type.
   then unit
+  -- Otherwise, this list can be either a Nil (unit type) or a Cons (with its
+  -- payload and the remaining list of maximum length (k-1)). These two
+  -- alternatives are connected by `+, the oblivious sum former. On the other
+  -- hand, the payload `int and the remaining list in the Cons case are
+  -- connected by `*, the oblivious product former.
   else unit `+ `int `* `list (k-1)
 
--- We need to define the corresponding section and retraction functions. We also
--- add "attributes" before the functions to indicate their roles. We will use
--- builtin section and retraction functions "s_int" and "r_int".
+-- We define the corresponding section and retraction functions, with
+-- "attributes" before the definition to indicate their roles. We will use the
+-- builtin section and retraction functions for integers, "s_int" and "r_int".
 #[section]
 fn s_list : (k : int) -> list -> `list k = \k xs ->
   if k == 0
+  -- In this case, the oblivious list is simply a unit type, with the only
+  -- inhabitant ().
   then ()
+  -- We return the left or right oblivious injection (`inl and `inr), depending
+  -- on if the list is a Nil or a Cons. Note that we insert tape when the
+  -- expression is oblivious but leaky.
   else tape (case xs of
              | Nil -> `inl ()
              | Cons x xs' -> `inr `(tape (s_int x), s_list (k-1) xs')
@@ -55,13 +66,23 @@ fn s_list : (k : int) -> list -> `list k = \k xs ->
 
 #[retraction]
 fn r_list : (k : int) -> `list k -> list = \k ->
+  -- Note that, unlike s_list, we do pattern matching and return a function
+  -- inside, instead of pattern matching in a lambda abstraction. This is a
+  -- well-known trick we apply to please the dependent type checker (and the
+  -- only trick we need in all our examples), so that the type of argument
+  -- (`list k) can take the condition (k==0) into account. For example, the type
+  -- of argument xs in the second branch is equivalent to (unit `+ `int `* `list
+  -- (k-1)), only under the assumption that (k==0) is False.
   if k == 0
+  -- In this case, the list can only be a Nil.
   then \_ -> Nil
+  -- In this case, we return Nil or Cons depending on if the oblivious sum is
+  -- left or right injection. We support some very *limited* form of general
+  -- pattern matching, so we can also destruct the oblivious product type in
+  -- place. But don't expect too much from it.
   else \xs -> `case xs of
               | `inl _ -> Nil
-              | `inr p -> `case p of
-                          `(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
-                          end
+              | `inr `(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
               end
 
 -- Finally, we can simply lift the public functions to the oblivious
@@ -75,3 +96,15 @@ fn `elem : (k : int) -> `int -> `list k -> `bool = \k x xs ->
 #[safe]
 fn `insert : (k : int) -> `int -> `list k -> `list (k+1) = \k x xs ->
   s_list (k+1) (insert (r_int x) (r_list k xs))
+
+
+-- All these functions will be compiled to an OCaml library eventually, with
+-- functions of the same names and prefix "`" translated to "obliv_". For
+-- example, we may call "obliv_elem" in a main OCaml file to perform oblivious
+-- membership query. Besides "s_list" and "r_list", two analogous functions
+-- "private_s_list" and "unsafe_r_list" are also exposed in the OCaml library.
+-- The former is used by the party owning the list to turn their private list
+-- into an oblivious one (unlike s_list which "encrypts" a public list). The
+-- latter is used to actually "decrypt" an oblivious list (unlike r_list which
+-- does not reveal information). See "test_elem.ml" for an example of how the
+-- generated library can be used.
