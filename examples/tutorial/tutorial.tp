@@ -17,10 +17,10 @@ data list = Nil | Cons int list
 -- standard functional languages, with slightly different syntax. The function
 -- name should start with a lower-case letter, possibly prefixed by "`" for
 -- oblivious functions.
-fn elem : int -> list -> bool = \x xs ->
+fn elem : int -> list -> bool = \y xs ->
   case xs of
   | Nil -> False
-  | Cons y xs' -> if x == y then True else elem x xs'
+  | Cons x xs' -> if x == y then True else elem y xs'
   end
 
 -- Here is an insertion function that inserts a new element to the right place
