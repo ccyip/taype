@@ -65,7 +65,7 @@
 --     ANF.
 --
 -- Other invariants for each procedure are documented in that procedure.
-module Taype.TypeChecker (checkDefs) where
+module Taype.TypeChecker (checkDefs, readableDefs) where
 
 import Algebra.Lattice
 import Algebra.PartialOrd
@@ -75,6 +75,7 @@ import Data.Char
 import Data.List (lookup, partition, zip4, zipWith3)
 import Data.Maybe (fromJust)
 import qualified Data.Text as T
+import Relude.Extra.Bifunctor
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -2011,13 +2012,19 @@ errArity appKind ref actual expected =
 
 -- | Make the taype expressions more readable.
 --
--- This is only used for error reporting, as the resulting expression is not in
--- core taype ANF.
+-- This is only used for error reporting and printing, as the resulting
+-- expression is not in core taype ANF.
 readableExpr :: MonadFresh m => Expr Name -> m (Expr Name)
 readableExpr = transformM go
   where
     go Let {binder = Nothing, ..} = return $ instantiate_ rhs bnd
     go e = return e
+
+-- | Make all definitions readable.
+--
+-- The result can only be used for printing, as the definitions are not in ANF.
+readableDefs :: Defs Name -> Defs Name
+readableDefs = secondF (runFreshM . biplateM readableExpr)
 
 andList :: [Text] -> [D]
 andList [] = []

@@ -77,6 +77,7 @@ data Options = Options
     optNoFiles :: Bool,
     optFlagNoOptimization :: Bool,
     optFlagNoEarlyTape :: Bool,
+    optFlagNoSimplify :: Bool,
     optFlagNoTupling :: Bool,
     optGeneratePrelude :: Maybe FilePath,
     optPrintCore :: Bool,
@@ -86,7 +87,7 @@ data Options = Options
     optPrintLabels :: Bool,
     optPrintTokens :: Bool,
     optPrintSource :: Bool,
-    optReadableOil :: Bool,
+    optReadable :: Bool,
     optWidth :: Maybe Int
   }
   deriving stock (Eq, Show)

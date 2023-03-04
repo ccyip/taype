@@ -534,11 +534,11 @@ toOilProgram options@Options {..} gctx defs = do
   revealDefs' <- optimize options revealACtx mainDefs' revealDefs
   return
     Program
-      { mainDefs = simp optReadableOil mainDefs',
+      { mainDefs = simp optReadable mainDefs',
         -- In the conceal phase, we keep the ANF form because the evaluation
         -- order is crucial.
         concealDefs = simp False concealDefs',
-        revealDefs = simp optReadableOil revealDefs'
+        revealDefs = simp optReadable revealDefs'
       }
   where
     go isCrust =

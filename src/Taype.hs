@@ -57,8 +57,10 @@ process options@Options {optFile = file, optCode = code, ..} = do
       srcDoc = cuteDefs options srcDefs
   when optPrintSource $ printDoc options srcDoc
   gctx <- checkDefs options srcDefs
-  let coreDefs = defsFromGCtx (fromClosed gctx) names
-      coreDoc = cuteDefs options coreDefs
+  let coreDefs = defsFromGCtx gctx names
+      coreDefs' = if optReadable then readableDefs coreDefs else coreDefs
+      coreDoc =
+        cuteDefs options {optPrintLabels = True} (fromClosedDefs coreDefs')
   when optPrintCore $ printDoc options coreDoc
   printToFile (file -<.> "tpc") coreDoc
   prog <- lift $ toOilProgram options gctx coreDefs
@@ -162,6 +164,10 @@ opts = do
     switch $
       long "fno-early-tape"
         <> help "Disable early tape optimization"
+  optFlagNoSimplify <-
+    switch $
+      long "fno-simplify"
+        <> help "Disable simplifier"
   optFlagNoTupling <-
     switch $
       long "fno-tupling"
@@ -198,7 +204,6 @@ opts = do
   optPrintLabels <-
     switch $
       long "print-labels"
-        <> short 'l'
         <> help "Whether to print the leakage labels"
   optPrintTokens <-
     switch $
@@ -208,14 +213,21 @@ opts = do
     switch $
       long "print-source"
         <> help "Whether to print the source code (for internal debugging)"
-  optReadableOil <-
+  optReadable <-
     switch $
-      long "readable-oil"
-        <> help "Make the generated OIL programs more readable (for debugging)"
+      long "readable"
+        <> help "Make the generated programs more readable (for debugging)"
   optWidth <-
     optional $
       option auto $
         long "width"
           <> short 'w'
           <> help "Window width (for debugging pretty printer)"
-  return Options {optCode = "", ..}
+  return
+    Options
+      { optCode = "",
+        optFlagNoEarlyTape = optFlagNoEarlyTape || optFlagNoOptimization,
+        optFlagNoSimplify = optFlagNoSimplify || optFlagNoOptimization,
+        optFlagNoTupling = optFlagNoTupling || optFlagNoOptimization,
+        ..
+      }

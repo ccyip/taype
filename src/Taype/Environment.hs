@@ -25,6 +25,7 @@ module Taype.Environment
     -- * Contexts
     GCtx (..),
     defsFromGCtx,
+    fromClosedDefs,
     TCtx (..),
     BCtx (..),
 
@@ -58,6 +59,7 @@ import Data.HashMap.Strict ((!?))
 import qualified Data.HashMap.Strict as M
 import Data.List (lookup)
 import qualified GHC.Exts as E
+import Relude.Extra.Bifunctor
 import Relude.Extra.Tuple
 import Taype.Binder
 import Taype.Common
@@ -129,6 +131,9 @@ defsFromGCtx :: GCtx a -> [Text] -> Defs a
 defsFromGCtx (GCtx gctx) = fmapToSnd go
   where
     go name = fromMaybe (oops "Definition not in context") (gctx !? name)
+
+fromClosedDefs :: Defs a -> Defs b
+fromClosedDefs = secondF fromClosed
 
 newtype TCtx a = TCtx {unTCtx :: [(a, (Ty a, Label))]}
   deriving stock (Functor, Foldable, Traversable)
@@ -220,7 +225,7 @@ withOption :: MonadReader Env m => (Options -> Options) -> m a -> m a
 withOption f = local $ \Env {..} -> Env {options = f options, ..}
 
 withOptPrintLabels :: MonadReader Env m => m a -> m a
-withOptPrintLabels = withOption $ \opt -> opt { optPrintLabels = True }
+withOptPrintLabels = withOption $ \opt -> opt {optPrintLabels = True}
 
 ----------------------------------------------------------------
 -- Prelude context
