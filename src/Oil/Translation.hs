@@ -610,31 +610,38 @@ toOilDef (name, def) = case def of
               expr = lamB x binder body'
             }
         )
-  T.ADTDef {..} -> do
-    let (ctorNames, paraTypess) = unzip $ toList ctors
-    sParaTypess <- withLabel SafeL $ mapM (mapM toOilTy) paraTypess
-    lParaTypess <- withLabel LeakyL $ mapM (mapM toOilTy) paraTypess
-    return
-      [ -- ADT
-        adtDef_ name [] $ zip ctorNames sParaTypess,
-        -- Leaky ADT
-        adtDef_ (l_ name) [] $
-          zipWith ((,) . l_) ctorNames lParaTypess
-            <> [ (prom_ name, [TV name]),
-                 (lif_ name, [OArray, "$self", "$self"])
-               ],
-        -- Leaky case analysis
-        funDef_
-          (lcase_ name)
-          [l_ "r"]
-          ( ar_ $
-              [ar_ [OArray, l_ "r", l_ "r", l_ "r"], l_ name]
-                <> [ar_ $ ts <> [l_ "r"] | ts <- lParaTypess]
-                `snoc` l_ "r"
-          )
-          $ lCaseBody ctorNames sParaTypess
-      ]
+  T.ADTDef {..} -> toOilADTDef name ctors
   _ -> oops "Translating constructor or builtin definitions"
+
+-- | Translate a taype ADT definition to multiple OIL definitions.
+--
+-- The result consists of the corresponding ADT definition, the leaky type
+-- definition, and the case analysis function.
+toOilADTDef :: Text -> NonEmpty (Text, [T.Expr Name]) -> TslM (Defs Name)
+toOilADTDef name ctors' = do
+  let (ctorNames, paraTypess) = unzip $ toList ctors'
+  sParaTypess <- withLabel SafeL $ mapM (mapM toOilTy) paraTypess
+  lParaTypess <- withLabel LeakyL $ mapM (mapM toOilTy) paraTypess
+  return
+    [ -- ADT
+      adtDef_ name [] $ zip ctorNames sParaTypess,
+      -- Leaky ADT
+      adtDef_ (l_ name) [] $
+        zipWith ((,) . l_) ctorNames lParaTypess
+          <> [ (prom_ name, [TV name]),
+               (lif_ name, [OArray, "$self", "$self"])
+             ],
+      -- Leaky case analysis
+      funDef_
+        (lcase_ name)
+        [l_ "r"]
+        ( ar_ $
+            [ar_ [OArray, l_ "r", l_ "r", l_ "r"], l_ name]
+              <> [ar_ $ ts <> [l_ "r"] | ts <- lParaTypess]
+              `snoc` l_ "r"
+        )
+        $ lCaseBody ctorNames sParaTypess
+    ]
   where
     vars prefix n = (prefix <>) . show <$> [1 .. n]
     lCaseBody ctors tss =
