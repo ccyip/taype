@@ -1,3 +1,4 @@
 public: 10
 alice:
 bob: 6
+expected: false
