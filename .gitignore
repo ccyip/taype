@@ -86,11 +86,11 @@ TAGS
 .DS_Store
 .shake
 /test
+examples/output*
 examples/figs
 examples/.*
 examples/**/*.ml
 examples/**/test_*
-examples/**/*.output.csv
 examples/common/test
 !examples/common/*.ml
 examples/common/prelude.ml
