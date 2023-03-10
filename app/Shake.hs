@@ -12,8 +12,6 @@
 module Main (main) where
 
 import qualified Data.String as S
-import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
 import Development.Shake
 import Development.Shake.FilePath
 import System.Console.GetOpt
@@ -208,22 +206,6 @@ getInputCsvIn :: MonadIO m => FilePath -> m [FilePath]
 getInputCsvIn example =
   liftIO $ getDirectoryFilesIO (exampleDir </> example) ["*.input.csv"]
 
-getSwitches :: MonadIO m => FilePath -> m (Maybe [String])
-getSwitches file = do
-  line <- liftIO $ withFile file ReadMode TIO.hGetLine
-  return $ parseSwitches $ T.strip line
-
-parseSwitches :: Text -> Maybe [String]
-parseSwitches line = do
-  line' <- T.stripPrefix "(*!" line
-  let content = fromMaybe line' $ T.stripSuffix "*)" line'
-      xs = T.splitOn ":" content
-  case xs of
-    [key, switches]
-      | T.strip key == "switch" ->
-          return $ T.splitOn "," switches <&> toString . T.strip
-    _ -> Nothing
-
 rulesForRunner :: Int -> FilePath -> FilePath -> Rules ()
 rulesForRunner rnd outRoot example = do
   inputNames <- getInputCsvIn example
@@ -233,38 +215,25 @@ rulesForRunner rnd outRoot example = do
   outputs <- flip foldMapM inputNames $ \inputName -> do
     let testName = dropExtensions inputName
         tgtWithName = tgt <> "/" <> testName
-    switches <- getSwitches $ inDir </> testName <.> "ml"
 
-    outputs <- flip foldMapM drivers $ \driver -> do
-      let tgtWithDriver = tgtWithName <> "/" <> driver
+    outputs <- forM drivers $ \driver -> do
+      let input = inDir </> inputName
+          output = outDir </> testName <.> driver <.> "output" <.> "csv"
+          isPlainText = driver == "plaintext"
+          bin = mkTestBin (inDir </> testName) driver
+          rnd' = if isPlainText then 1 else rnd
 
-      outputs <- forM (sequence switches) $ \switch -> do
-        let input = inDir </> inputName
-            outPath = outDir </> testName
-            output =
-              ( case switch of
-                  Just s -> outPath <.> driver <.> s
-                  _ -> outPath <.> driver
-              )
-                <.> "output"
-                <.> "csv"
-            isPlainText = driver == "plaintext"
-            bin = mkTestBin (inDir </> testName) driver
-            rnd' = if isPlainText then 1 else rnd
+      output %> \out -> do
+        unless isPlainText alwaysRerun
+        need [bin, input]
+        runnerCmd [bin, partiesFromDriver driver, show rnd', input, out]
 
-        output %> \out -> do
-          unless isPlainText alwaysRerun
-          need [bin, input]
-          runnerCmd $
-            [bin, partiesFromDriver driver, show rnd', input, out]
-              <> maybeToList switch
+      tgtWithName <> "/" <> driver ~> need [output]
+      return output
 
-        whenJust switch $ \o -> tgtWithDriver <> "/" <> o ~> need [output]
-        return output
-      tgtWithDriver ~> need outputs
-      return outputs
     tgtWithName ~> need outputs
     return outputs
+
   tgt ~> need outputs
 
   "run/clean/" <> example ~> removeFilesAfter outDir ["*.output.csv"]
