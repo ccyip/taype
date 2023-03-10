@@ -13,10 +13,10 @@
 module Main (main) where
 
 import qualified Data.Csv as Csv
+import Data.List (maximum)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified Data.Vector as V
-import Data.List (maximum)
 import Options.Applicative
 import System.IO (hClose, withBinaryFile)
 import System.Process.Typed
