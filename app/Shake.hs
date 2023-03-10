@@ -29,11 +29,23 @@ main = shakeArgsWith shakeOptions {shakeColor = True} flags $
       [ Option
           ""
           ["round"]
-          (ReqArg R.readEither "ROUND")
-          "How many rounds each test case is evaluated for"
+          ( ReqArg
+              (\s -> R.readEither s <&> \v opts -> opts {optRound = v})
+              "ROUND"
+          )
+          "How many rounds each test case is evaluated for",
+        Option
+          ""
+          ["out-dir"]
+          ( ReqArg
+              (\s -> Right $ \opts -> opts {optOutputDir = s})
+              "OUTDIR"
+          )
+          "Path to the output directory"
       ]
     mkRules args = do
-      let rnd = fromMaybe 1 $ viaNonEmpty last args
+      let Options {optRound = rnd, optOutputDir = outDir} =
+            flipfoldl' ($) defaultOptions args
       examples <- getExamples
       rulesForCommon
       bins <- foldMapM rulesForExample examples
@@ -42,18 +54,30 @@ main = shakeArgsWith shakeOptions {shakeColor = True} flags $
       "clean" ~> do
         need $ "clean/common" : (("clean/" <>) <$> examples)
 
-      mapM_ (rulesForRunner rnd) examples
+      mapM_ (rulesForRunner rnd outDir) examples
 
       "run" ~> do
         need $ ("run/" <>) <$> examples
 
       "run/clean" ~> do
-        need $ ("run/clean/" <>) <$> examples
+        removeFilesAfter outDir ["//"]
 
       "cleanall" ~> do
         need ["clean", "run/clean"]
         ShakeOptions {shakeFiles} <- getShakeOptions
         removeFilesAfter shakeFiles ["//*"]
+
+data Options = Options
+  { optRound :: Int,
+    optOutputDir :: FilePath
+  }
+
+defaultOptions :: Options
+defaultOptions =
+  Options
+    { optRound = 1,
+      optOutputDir = exampleDir </> "output"
+    }
 
 drivers :: [String]
 drivers = ["plaintext", "emp"]
@@ -200,31 +224,32 @@ parseSwitches line = do
           return $ T.splitOn "," switches <&> toString . T.strip
     _ -> Nothing
 
-rulesForRunner :: Int -> FilePath -> Rules ()
-rulesForRunner rnd example = do
+rulesForRunner :: Int -> FilePath -> FilePath -> Rules ()
+rulesForRunner rnd outRoot example = do
   inputNames <- getInputCsvIn example
-  let dir = exampleDir </> example
+  let inDir = exampleDir </> example
+      outDir = outRoot </> example
       tgt = "run/" <> example
   outputs <- flip foldMapM inputNames $ \inputName -> do
-    let name = dropExtensions inputName
-        tgtWithName = tgt <> "/" <> name
-    switches <- getSwitches $ dir </> name <.> "ml"
+    let testName = dropExtensions inputName
+        tgtWithName = tgt <> "/" <> testName
+    switches <- getSwitches $ inDir </> testName <.> "ml"
 
     outputs <- flip foldMapM drivers $ \driver -> do
       let tgtWithDriver = tgtWithName <> "/" <> driver
 
       outputs <- forM (sequence switches) $ \switch -> do
-        let input = dir </> inputName
-            path = dir </> name
+        let input = inDir </> inputName
+            outPath = outDir </> testName
             output =
               ( case switch of
-                  Just s -> path <.> driver <.> s
-                  _ -> path <.> driver
+                  Just s -> outPath <.> driver <.> s
+                  _ -> outPath <.> driver
               )
                 <.> "output"
                 <.> "csv"
             isPlainText = driver == "plaintext"
-            bin = mkTestBin path driver
+            bin = mkTestBin (inDir </> testName) driver
             rnd' = if isPlainText then 1 else rnd
 
         output %> \out -> do
@@ -242,7 +267,7 @@ rulesForRunner rnd example = do
     return outputs
   tgt ~> need outputs
 
-  "run/clean/" <> example ~> removeFilesAfter dir ["*.output.csv"]
+  "run/clean/" <> example ~> removeFilesAfter outDir ["*.output.csv"]
 
 partiesFromDriver :: String -> String
 partiesFromDriver "plaintext" = "public"
