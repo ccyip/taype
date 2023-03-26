@@ -1,5 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 
 -- |
 -- Copyright: (c) 2022-2023 Qianchuan Ye
