@@ -11,7 +11,7 @@ license:             MIT
 license-file:        LICENSE
 author:              Qianchuan Ye
 maintainer:          Qianchuan Ye <yeqianchuan@gmail.com>
-copyright:           2022 Qianchuan Ye
+copyright:           2022-2023 Qianchuan Ye
 category:            Language
 build-type:          Simple
 extra-doc-files:     README.md

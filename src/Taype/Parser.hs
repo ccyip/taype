@@ -8,7 +8,7 @@
 {-# LANGUAGE TupleSections #-}
 
 -- |
--- Copyright: (c) 2022 Qianchuan Ye
+-- Copyright: (c) 2022-2023 Qianchuan Ye
 -- SPDX-License-Identifier: MIT
 -- Maintainer: Qianchuan Ye <yeqianchuan@gmail.com>
 -- Stability: experimental
