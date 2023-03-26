@@ -79,7 +79,6 @@ data Options = Options
     optFlagNoEarlyTape :: Bool,
     optFlagNoSimplify :: Bool,
     optFlagNoTupling :: Bool,
-    optGeneratePrelude :: Maybe FilePath,
     optPrintCore :: Bool,
     optPrintPrelude :: Bool,
     optPrintOil :: Bool,

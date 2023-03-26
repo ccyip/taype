@@ -16,29 +16,22 @@ module Taype
 where
 
 import Data.Char (toUpper)
-import qualified Oil.Syntax as Oil (Program (..), cuteDefs)
-import qualified Oil.ToOCaml as Oil (toOCaml)
-import Oil.Translation (prelude, toOilProgram)
+-- import qualified Oil.Syntax as Oil (Program (..), cuteDefs)
+-- import qualified Oil.ToOCaml as Oil (toOCaml)
+-- import Oil.Translation (prelude, toOilProgram)
 import Options.Applicative
 import System.FilePath
 import Taype.Common
 import Taype.Cute
-import Taype.Environment
+-- import Taype.Environment
 import Taype.Error
-import Taype.Lexer
-import Taype.Parser
+-- import Taype.Lexer
+-- import Taype.Parser
 import Taype.Syntax
-import Taype.TypeChecker
+-- import Taype.TypeChecker
 
 run :: Options -> IO ()
-run options@Options {optFile = file, optGeneratePrelude = preludeFile} = do
-  whenJust preludeFile $ genPrelude options
-  when (null file) $
-    if isJust preludeFile
-      then exitSuccess
-      else
-        putStrLn "Taype file must be given unless generating prelude"
-          >> exitFailure
+run options@Options {optFile = file} = do
   content <- readFileBS file
   let code = decodeUtf8 content
       opt = options {optCode = code}
@@ -49,78 +42,62 @@ run options@Options {optFile = file, optGeneratePrelude = preludeFile} = do
 
 process :: Options -> ExceptT Err IO ()
 process options@Options {optFile = file, optCode = code, ..} = do
-  tokens <- lex file code
-  when optPrintTokens $ printTokens file code tokens >> putStr "\n"
-  namedDefs <- parse tokens
-  let names = fst <$> namedDefs
-      srcDefs = closeDefs namedDefs
-      srcDoc = cuteDefs options srcDefs
-  when optPrintSource $ printDoc options srcDoc
-  gctx <- checkDefs options srcDefs
-  let coreDefs = defsFromGCtx gctx names
-      coreDefs' = if optReadable then readableDefs coreDefs else coreDefs
-      coreDoc =
-        cuteDefs options {optPrintLabels = True} (fromClosedDefs coreDefs')
-  when optPrintCore $ printDoc options coreDoc
-  printToFile (file -<.> "tpc") coreDoc
-  prog <- lift $ toOilProgram options gctx coreDefs
-  let (preludeOil, preludeML) = preludeDocs options
-      Oil.Program {..} = fromClosed prog
-      mainOil = Oil.cuteDefs options mainDefs
-      concealOil = Oil.cuteDefs options concealDefs
-      revealOil = Oil.cuteDefs options revealDefs
-  when (optPrintOil && optPrintPrelude) $ printDoc options preludeOil
-  when optPrintOil $ printDoc options $ mainOil <> concealOil <> revealOil
-  printToFiles "oil" mainOil concealOil revealOil
-  let mainML =
-        Oil.toOCaml
-          options
-          (mkHeader "the main programs as a library")
-          ["Driver", "Prelude"]
-          mainDefs
-      concealML =
-        Oil.toOCaml
-          options
-          (mkHeader "the section functions for the conceal phase")
-          ["Driver", "Prelude", modName]
-          concealDefs
-      revealML =
-        Oil.toOCaml
-          options
-          (mkHeader "the retraction functions for the reveal phase")
-          ["Driver", "Prelude", modName]
-          revealDefs
-  when (optPrintOCaml && optPrintPrelude) $ printDoc options preludeML
-  when optPrintOCaml $ printDoc options $ mainML <> concealML <> revealML
-  printToFiles "ml" mainML concealML revealML
-  where
-    capitalize (h : t) = toUpper h : t
-    capitalize "" = ""
-    printToFile f d = unless optNoFiles $ printDocToFile f d
-    printToFiles ext mainDoc concealDoc revealDoc = do
-      printToFile (file -<.> ext) mainDoc
-      printToFile (dir </> (baseName <> "_conceal") <.> ext) concealDoc
-      printToFile (dir </> (baseName <> "_reveal") <.> ext) revealDoc
-    dir = takeDirectory file
-    baseName = takeBaseName file
-    modName = toText $ capitalize baseName
-
-genPrelude :: Options -> FilePath -> IO ()
-genPrelude options file = do
-  let (preludeOil, preludeML) = preludeDocs options
-  printDocToFile (file <.> "oil") preludeOil
-  printDocToFile (file <.> "ml") preludeML
-
-preludeDocs :: Options -> (Doc, Doc)
-preludeDocs options =
-  let preludeOil = Oil.cuteDefs options prelude
-      preludeML =
-        Oil.toOCaml
-          options
-          (mkHeader "the prelude of helper types and functions")
-          ["Driver"]
-          prelude
-   in (preludeOil, preludeML)
+  putTextLn "not implemented yet"
+  -- tokens <- lex file code
+  -- when optPrintTokens $ printTokens file code tokens >> putStr "\n"
+  -- namedDefs <- parse tokens
+  -- let names = fst <$> namedDefs
+  --     srcDefs = closeDefs namedDefs
+  --     srcDoc = cuteDefs options srcDefs
+  -- when optPrintSource $ printDoc options srcDoc
+  -- gctx <- checkDefs options srcDefs
+  -- let coreDefs = defsFromGCtx gctx names
+  --     coreDefs' = if optReadable then readableDefs coreDefs else coreDefs
+  --     coreDoc =
+  --       cuteDefs options {optPrintLabels = True} (fromClosedDefs coreDefs')
+  -- when optPrintCore $ printDoc options coreDoc
+  -- printToFile (file -<.> "tpc") coreDoc
+  -- prog <- lift $ toOilProgram options gctx coreDefs
+  -- let (preludeOil, preludeML) = preludeDocs options
+  --     Oil.Program {..} = fromClosed prog
+  --     mainOil = Oil.cuteDefs options mainDefs
+  --     concealOil = Oil.cuteDefs options concealDefs
+  --     revealOil = Oil.cuteDefs options revealDefs
+  -- when (optPrintOil && optPrintPrelude) $ printDoc options preludeOil
+  -- when optPrintOil $ printDoc options $ mainOil <> concealOil <> revealOil
+  -- printToFiles "oil" mainOil concealOil revealOil
+  -- let mainML =
+  --       Oil.toOCaml
+  --         options
+  --         (mkHeader "the main programs as a library")
+  --         ["Driver", "Prelude"]
+  --         mainDefs
+  --     concealML =
+  --       Oil.toOCaml
+  --         options
+  --         (mkHeader "the section functions for the conceal phase")
+  --         ["Driver", "Prelude", modName]
+  --         concealDefs
+  --     revealML =
+  --       Oil.toOCaml
+  --         options
+  --         (mkHeader "the retraction functions for the reveal phase")
+  --         ["Driver", "Prelude", modName]
+  --         revealDefs
+  -- when (optPrintOCaml && optPrintPrelude) $ printDoc options preludeML
+  -- when optPrintOCaml $ printDoc options $ mainML <> concealML <> revealML
+  -- printToFiles "ml" mainML concealML revealML
+  -- where
+  --   capitalize (h : t) = toUpper h : t
+  --   capitalize "" = ""
+  --   printToFile f d = unless optNoFiles $ printDocToFile f d
+  --   printToFiles ext mainDoc concealDoc revealDoc = do
+  --     printToFile (file -<.> ext) mainDoc
+  --     printToFile (dir </> (baseName <> "_conceal") <.> ext) concealDoc
+  --     printToFile (dir </> (baseName <> "_reveal") <.> ext) revealDoc
+  --   dir = takeDirectory file
+  --   baseName = takeBaseName file
+  --   modName = toText $ capitalize baseName
 
 mkHeader :: Text -> Text
 mkHeader what =
@@ -146,7 +123,7 @@ opts = do
     switch $
       long "internal-names"
         <> short 'i'
-        <> help "Whether to use the internal names for variables"
+        <> help "Whether to print the internal names for variables"
   optNoFlattenLets <-
     switch $
       long "no-flatten-lets"
@@ -172,12 +149,6 @@ opts = do
     switch $
       long "fno-tupling"
         <> help "Disable tupling optimization"
-  optGeneratePrelude <-
-    optional $
-      strOption $
-        long "generate-prelude"
-          <> metavar "PRELUDE"
-          <> help "Generate the prelude files PRELUDE.oil and PRELUDE.ml"
   optPrintCore <-
     switch $
       long "print-core"
