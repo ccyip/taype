@@ -56,18 +56,18 @@ library
                        Taype.Cute
                        Taype.Binder
                        Taype.Syntax
-                       Taype.Environment
-                       Taype.Lexer
-                       Taype.Parser
-                       Taype.TypeChecker
-                       Oil.Syntax
-                       Oil.Translation
-                       Oil.Optimization
-                       Oil.ToOCaml
+                       -- Taype.Environment
+                       -- Taype.Lexer
+                       -- Taype.Parser
+                       -- Taype.TypeChecker
+                       -- Oil.Syntax
+                       -- Oil.Translation
+                       -- Oil.Optimization
+                       -- Oil.ToOCaml
   mixins:              base hiding (Prelude)
                      , relude (Relude as Prelude)
                      , relude
-  build-depends:       base >= 4.14.3.0 && < 4.17
+  build-depends:       base >= 4.14.3.0 && < 4.18
                      , relude
                      , bound
                      , prettyprinter
