@@ -198,26 +198,26 @@ fn decide : dtree -> patient -> bool = \t p ->
 
 data patient_view
   -- Reveal ID
-  = Know_id int
+  = Known_id int
   -- Or medical data
-  | Know_data int int
+  | Known_data int int
 
 obliv `patient (v : patient_view) =
   case v of
-  | Know_id _ -> `int `* `int `* `int
-  | Know_data _ _ -> `int `* `int
+  | Known_id _ -> `int `* `int `* `int
+  | Known_data _ _ -> `int `* `int
   end
 
 #[section]
 fn s_patient : (v : patient_view) -> patient -> `patient v = \v p ->
   case v of
-  | Know_id _ ->
+  | Known_id _ ->
     tape
       (case p of
        | Patient _ age h w ->
          `(tape (s_int age), tape (s_int h), tape (s_int w))
        end)
-  | Know_data _ _ ->
+  | Known_data _ _ ->
     tape
       (case p of
        | Patient id age _ _ ->
@@ -228,11 +228,11 @@ fn s_patient : (v : patient_view) -> patient -> `patient v = \v p ->
 #[retraction]
 fn r_patient : (v : patient_view) -> `patient v -> patient = \v ->
   case v of
-  | Know_id id -> \p ->
+  | Known_id id -> \p ->
     `case p of
     `(age, h, w) -> Patient id (r_int age) (r_int h) (r_int w)
     end
-  | Know_data h w -> \p ->
+  | Known_data h w -> \p ->
     `case p of
     `(id, age) -> Patient (r_int id) (r_int age) h w
     end
@@ -265,8 +265,8 @@ fn s_db : (vs : db_view) -> db -> `db vs = \vs ps ->
        | Db_Empty ->
          -- Bogus
          `(case v of
-           | Know_id _ -> `(s_int 0, s_int 0, s_int 0)
-           | Know_data _ _ -> `(s_int 0, s_int 0)
+           | Known_id _ -> `(s_int 0, s_int 0, s_int 0)
+           | Known_data _ _ -> `(s_int 0, s_int 0)
            end,
            s_db vs' Db_Empty)
        | Db_More p ps' -> `(s_patient v p, s_db vs' ps')

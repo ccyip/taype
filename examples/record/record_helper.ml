@@ -11,8 +11,8 @@ let patient_of_sexp s =
   | _ -> failwith "Cannot parse as patient"
 
 let patient_check (Patient (id, _, h, w)) = function
-  | Know_id id' -> id = id'
-  | Know_data (h', w') -> h = h' && w = w'
+  | Known_id id' -> id = id'
+  | Known_data (h', w') -> h = h' && w = w'
 
 let patient_of_sexp_check = of_sexp_check patient_of_sexp patient_check
 
@@ -65,14 +65,14 @@ let bmi_db_check bmis k = List.length (bmi_db_to_list bmis) = k
 let bmi_db_of_sexp_check = of_sexp_check bmi_db_of_sexp bmi_db_check
 
 let patient_view_to_sexp = function
-  | Know_id id -> Sexp.List [ Sexp.Atom "i"; Conv.sexp_of_int id ]
-  | Know_data (h, w) -> Sexp.List [ Sexp.Atom "d";
+  | Known_id id -> Sexp.List [ Sexp.Atom "i"; Conv.sexp_of_int id ]
+  | Known_data (h, w) -> Sexp.List [ Sexp.Atom "d";
                                     Conv.sexp_of_int h; Conv.sexp_of_int w ]
 
 let patient_view_of_sexp = function
-  | Sexp.List [ Sexp.Atom "i"; id ] -> Know_id (Conv.int_of_sexp id)
+  | Sexp.List [ Sexp.Atom "i"; id ] -> Known_id (Conv.int_of_sexp id)
   | Sexp.List [ Sexp.Atom "d"; h; w ] ->
-    Know_data (Conv.int_of_sexp h, Conv.int_of_sexp w)
+    Known_data (Conv.int_of_sexp h, Conv.int_of_sexp w)
   | _ -> failwith "Cannot parse as patient view"
 
 let rec db_view_to_list = function
