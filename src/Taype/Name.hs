@@ -1,6 +1,8 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- |
 -- Copyright: (c) 2022-2023 Qianchuan Ye
@@ -14,14 +16,13 @@ module Taype.Name
   ( Name,
 
     -- * Fresh name generator
-    FreshT,
-    MonadFresh,
+    FreshT (..),
+    MonadFresh (..),
     runFreshT,
     contFreshT,
     FreshM,
     runFreshM,
     contFreshM,
-    getFresh,
     fresh,
     freshes,
 
@@ -43,6 +44,8 @@ module Taype.Name
 where
 
 import Bound
+import Control.Monad.Except
+import Control.Monad.Writer
 import Data.List (findIndex)
 import Taype.Prelude
 
@@ -52,16 +55,42 @@ type Name = Int
 ----------------------------------------------------------------
 -- Fresh name generator
 
--- | Fresh name monad transformer is just state monad transformer.
-type FreshT = StateT Name
+-- | Fresh name class is similar to 'MonadState' class.
+class Monad m => MonadFresh m where
+  getFresh :: m Name
+  putFresh :: Name -> m ()
 
-type MonadFresh = MonadState Name
+instance (Monoid w, MonadFresh m) => MonadFresh (WriterT w m) where
+  getFresh = lift getFresh
+  putFresh = lift . putFresh
+
+-- | Fresh name monad transformer is just state monad transformer.
+newtype FreshT m a = FreshT {unFreshT :: StateT Name m a}
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadFail,
+      MonadIO,
+      MonadTrans,
+      MonadReader r,
+      MonadWriter w,
+      MonadError e
+    )
+
+instance Monad m => MonadFresh (FreshT m) where
+  getFresh = FreshT get
+  putFresh n = FreshT $ put n
+
+instance MonadState s m => MonadState s (FreshT m) where
+  get = lift get
+  put = lift . put
 
 runFreshT :: Monad m => FreshT m a -> m a
-runFreshT = contFreshT 0
+runFreshT m = contFreshT m 0
 
-contFreshT :: Monad m => Int -> FreshT m a -> m a
-contFreshT = flip evalStateT
+contFreshT :: Monad m => FreshT m a -> Int -> m a
+contFreshT (FreshT m) = evalStateT m
 
 -- | Fresh name monad
 type FreshM = FreshT Identity
@@ -69,24 +98,21 @@ type FreshM = FreshT Identity
 runFreshM :: FreshM a -> a
 runFreshM = runIdentity . runFreshT
 
-contFreshM :: Int -> FreshM a -> a
-contFreshM = runIdentity <<$>> contFreshT
-
-getFresh :: MonadFresh m => m Name
-getFresh = get
+contFreshM :: FreshM a -> Int -> a
+contFreshM m = runIdentity . contFreshT m
 
 -- | Generate a fresh name.
 fresh :: MonadFresh m => m Name
 fresh = do
-  n <- get
-  put (n + 1)
+  n <- getFresh
+  putFresh (n + 1)
   return n
 
 -- | Generate many fresh names.
 freshes :: MonadFresh m => Int -> m [Name]
 freshes k = do
-  n <- get
-  put (n + k)
+  n <- getFresh
+  putFresh (n + k)
   return [n .. n + k - 1]
 
 ----------------------------------------------------------------

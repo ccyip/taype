@@ -1,6 +1,5 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -130,7 +129,7 @@ runCuteM :: Options -> CuteM a -> a
 runCuteM opts (CuteM m) = runReader (runFreshT m) opts
 
 contCuteM :: Options -> Int -> CuteM a -> a
-contCuteM opts n (CuteM m) = runReader (contFreshT n m) opts
+contCuteM opts n (CuteM m) = runReader (contFreshT m n) opts
 
 instance IsString a => IsString (CuteM a) where
   fromString = return . fromString
