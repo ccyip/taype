@@ -41,6 +41,9 @@ common common-options
     ghc-options:       -Wmissing-deriving-strategies
                        -fwrite-ide-info
                        -hiedir=.hie
+  if impl(ghc < 9.4)
+    default-extensions:
+                       GADTs
 
   default-language:    GHC2021
 
