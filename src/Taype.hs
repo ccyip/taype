@@ -137,10 +137,6 @@ opts = do
     switch $
       long "fno-opt"
         <> help "Disable all optimization"
-  optFlagNoEarlyTape <-
-    switch $
-      long "fno-early-tape"
-        <> help "Disable early tape optimization"
   optFlagNoSimplify <-
     switch $
       long "fno-simplify"
@@ -197,7 +193,6 @@ opts = do
   return
     Options
       { optCode = "",
-        optFlagNoEarlyTape = optFlagNoEarlyTape || optFlagNoOptimization,
         optFlagNoSimplify = optFlagNoSimplify || optFlagNoOptimization,
         optFlagNoTupling = optFlagNoTupling || optFlagNoOptimization,
         ..

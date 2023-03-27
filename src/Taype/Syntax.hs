@@ -23,7 +23,6 @@ module Taype.Syntax
     Defs,
     getDefLoc,
     closeDefs,
-    LabelPolyStrategy (..),
     Pat (..),
 
     -- * Smart constructors
@@ -33,17 +32,14 @@ module Taype.Syntax
     let_,
     ite_,
     oite_,
-    case_,
-    ocase_,
-    ocasePat_,
-    pcase_,
-    pcasePat_,
-    opcase_,
-    opcasePat_,
+    match_,
+    omatch_,
+    omatchPat_,
+    pmatch_,
+    pmatchPat_,
     let',
     lets',
-    pcase',
-    opcase',
+    pmatch',
 
     -- * Pretty printer
     cuteBinder,
@@ -63,7 +59,7 @@ import Taype.Cute
 import Taype.Name
 import Taype.Plate
 import Taype.Prelude
-import qualified Text.Show
+import Text.Show qualified
 import Prelude hiding (group)
 
 ----------------------------------------------------------------
@@ -80,27 +76,24 @@ data Expr a
   | -- | Dependent function type
     Pi
       { ty :: Ty a,
-        label :: Maybe Label,
         binder :: Maybe Binder,
         bnd :: Scope () Ty a
       }
   | -- | Lambda abstraction
     Lam
-      { mTy :: Maybe (Ty a),
-        label :: Maybe Label,
+      { argTy :: Maybe (Ty a),
         binder :: Maybe Binder,
         bnd :: Scope () Expr a
       }
   | -- | Application, including function application, type application, etc
     App
-      { appKind :: Maybe AppKind,
+      { appKind :: AppKind,
         fn :: Expr a,
         args :: [Expr a]
       }
   | -- | Let binding
     Let
-      { mTy :: Maybe (Ty a),
-        label :: Maybe Label,
+      { rhsTy :: Maybe (Ty a),
         rhs :: Expr a,
         binder :: Maybe Binder,
         bnd :: Scope () Expr a
@@ -109,58 +102,46 @@ data Expr a
     TUnit
   | -- | Unit value
     VUnit
-  | -- | Boolean type
-    TBool
-  | -- | Oblivious Boolean type
-    OBool
+  | -- | Public and oblivious Boolean type
+    TBool {olabel :: OLabel}
   | -- | Boolean literal
     BLit {bLit :: Bool}
-  | -- | Integer type
-    TInt
-  | -- | Oblivious integer type
-    OInt
+  | -- | Public and oblivious integer type
+    TInt {olabel :: OLabel}
   | -- | Integer literal
     ILit {iLit :: Int}
   | -- | (Dependent) if conditional
     Ite
-      { retTy :: Maybe (Ty a),
-        cond :: Expr a,
-        left :: Expr a,
-        right :: Expr a
-      }
-  | -- | (Dependent) case analysis
-    --
-    --  Do not support empty type, i.e. 'alts' must be non empty.
-    Case
-      { retTy :: Maybe (Ty a),
-        cond :: Expr a,
-        alts :: NonEmpty (CaseAlt Expr a)
-      }
-  | -- | Oblivious and leaky if conditional
-    OIte
       { cond :: Expr a,
         left :: Expr a,
         right :: Expr a
       }
-  | -- | Product type
-    Prod {left :: Ty a, right :: Ty a}
-  | -- | Normal pair
-    Pair {left :: Expr a, right :: Expr a}
-  | -- | Case analysis for product
-    PCase
-      { retTy :: Maybe (Ty a),
-        cond :: Expr a,
-        lBinder :: Maybe Binder,
-        rBinder :: Maybe Binder,
-        bnd2 :: Scope Bool Expr a
+  | -- | (Dependent) ADT pattern matching
+    --
+    --  Do not support empty type, i.e. 'alts' must be non empty.
+    Match
+      { cond :: Expr a,
+        alts :: NonEmpty (MatchAlt Expr a)
       }
-  | -- | Oblivious product type
-    OProd {left :: Ty a, right :: Ty a}
-  | -- | Oblivious pair
-    OPair {left :: Expr a, right :: Expr a}
-  | -- | Case analysis for oblivious product
-    OPCase
-      { oprodTy :: Maybe (Ty a),
+  | -- | Oblivious (and possibly leaky) if conditional
+    --
+    -- When 'label' is 'SafeL', this is just mux.
+    OIte
+      { label :: LLabel,
+        cond :: Expr a,
+        left :: Expr a,
+        right :: Expr a
+      }
+  | -- | Product type
+    --
+    -- This definition includes public product and oblivious product.
+    Prod {olabel :: OLabel, left :: Ty a, right :: Ty a}
+  | -- | Public and oblivious pairs
+    Pair {pairKind :: PairKind, left :: Expr a, right :: Expr a}
+  | -- | Product type pattern matching
+    PMatch
+      { pairKind :: PairKind,
+        condTy :: Maybe (Ty a),
         cond :: Expr a,
         lBinder :: Maybe Binder,
         rBinder :: Maybe Binder,
@@ -170,39 +151,28 @@ data Expr a
     OSum {left :: Ty a, right :: Ty a}
   | -- | Oblivious injection
     OInj
-      { mTy :: Maybe (Ty a),
+      { injTy :: Maybe (Ty a),
         tag :: Bool,
         inj :: Expr a
       }
-  | -- | (Leaky) case analysis for oblivious sum type
-    OCase
-      { retTy :: Maybe (Ty a),
-        osumTy :: Maybe (Ty a),
+  | -- | Oblivious sum projections
+    OProj {projKind :: OProjKind, expr :: Expr a}
+  | -- | Oblivious sum type pattern matching
+    --
+    -- This does not appear in the core language, as it is just syntax sugar for
+    -- oblivious if and oblivious sum projections.
+    OMatch
+      { condTy :: Maybe (Ty a),
         cond :: Expr a,
         lBinder :: Maybe Binder,
         lBnd :: Scope () Expr a,
         rBinder :: Maybe Binder,
         rBnd :: Scope () Expr a
       }
-  | -- | Oblivious conditional, i.e. multiplexer
-    Mux
-      { cond :: Expr a,
-        left :: Expr a,
-        right :: Expr a
-      }
   | -- | Ascription
     --
     -- This does not appear in the core language.
     Asc {ty :: Ty a, expr :: Expr a}
-  | -- | Label promotion
-    --
-    -- This does not appear in the surface language, and the type checker will
-    -- insert promotion automatically.
-    Promote {expr :: Expr a}
-  | -- | Tape construct
-    --
-    -- This is the key operation in taype.
-    Tape {expr :: Expr a}
   | -- | Location information for error reporting
     --
     -- This does not appear in the core language
@@ -257,9 +227,7 @@ data DefB f a
   = -- | Function
     FunDef
       { loc :: Int,
-        attr :: Attribute,
         ty :: f a,
-        label :: Maybe Label,
         expr :: f a
       }
   | -- | Algebraic data type
@@ -269,14 +237,13 @@ data DefB f a
   | -- | Oblivious algebraic data type
     --
     -- It takes a single argument for now.
-    OADTDef {loc :: Int, ty :: f a, binder :: Maybe Binder, bnd :: Scope () f a}
+    OADTDef {loc :: Int, argTy :: f a, binder :: Maybe Binder, bnd :: Scope () f a}
   | -- | Constructor
     CtorDef {paraTypes :: [f a], dataType :: Text}
   | -- | Builtin operation
     BuiltinDef
       { paraTypes :: [f a],
-        resType :: f a,
-        strategy :: LabelPolyStrategy
+        resType :: f a
       }
   deriving stock (Eq, Show, Functor, Foldable, Traversable)
 
@@ -294,11 +261,6 @@ getDefLoc = \case
 closeDefs :: Defs Text -> Defs a
 closeDefs = (second (>>>= GV) <$>)
 
--- | A simple label polymorphism mechanism for builtin functions and
--- constructors. Taype does not support general label polymorphism yet.
-data LabelPolyStrategy = JoinStrategy | LeakyStrategy | SafeStrategy
-  deriving stock (Eq, Show)
-
 -- | A rudimentary pattern that only supports pairs
 data Pat a = VarP (BinderM a) | PairP Int (Pat a) (Pat a)
 
@@ -313,36 +275,31 @@ instance Monad Expr where
   V {..} >>= f = f name
   GV {..} >>= _ = GV {..}
   Pi {..} >>= f = Pi {ty = ty >>= f, bnd = bnd >>>= f, ..}
-  Lam {..} >>= f = Lam {mTy = mTy <&> (>>= f), bnd = bnd >>>= f, ..}
+  Lam {..} >>= f = Lam {argTy = argTy <&> (>>= f), bnd = bnd >>>= f, ..}
   App {..} >>= f = App {fn = fn >>= f, args = args <&> (>>= f), ..}
   Let {..} >>= f =
     Let
-      { mTy = mTy <&> (>>= f),
+      { rhsTy = rhsTy <&> (>>= f),
         rhs = rhs >>= f,
         bnd = bnd >>>= f,
         ..
       }
   TUnit >>= _ = TUnit
   VUnit >>= _ = VUnit
-  TBool >>= _ = TBool
-  OBool >>= _ = OBool
+  TBool {..} >>= _ = TBool {..}
   BLit {..} >>= _ = BLit {..}
-  TInt >>= _ = TInt
-  OInt >>= _ = OInt
+  TInt {..} >>= _ = TInt {..}
   ILit {..} >>= _ = ILit {..}
   Ite {..} >>= f =
     Ite
-      { retTy = retTy <&> (>>= f),
-        cond = cond >>= f,
+      { cond = cond >>= f,
         left = left >>= f,
         right = right >>= f
       }
-  Case {..} >>= f =
-    Case
-      { retTy = retTy <&> (>>= f),
-        cond = cond >>= f,
-        alts = alts <&> (>>>= f),
-        ..
+  Match {..} >>= f =
+    Match
+      { cond = cond >>= f,
+        alts = alts <&> (>>>= f)
       }
   OIte {..} >>= f =
     OIte
@@ -353,49 +310,31 @@ instance Monad Expr where
       }
   Prod {..} >>= f = Prod {left = left >>= f, right = right >>= f, ..}
   Pair {..} >>= f = Pair {left = left >>= f, right = right >>= f, ..}
-  PCase {..} >>= f =
-    PCase
-      { retTy = retTy <&> (>>= f),
-        cond = cond >>= f,
+  PMatch {..} >>= f =
+    PMatch
+      { cond = cond >>= f,
         bnd2 = bnd2 >>>= f,
+        condTy = condTy <&> (>>= f),
         ..
       }
-  OProd {..} >>= f = OProd {left = left >>= f, right = right >>= f, ..}
-  OPair {..} >>= f = OPair {left = left >>= f, right = right >>= f, ..}
-  OPCase {..} >>= f =
-    OPCase
-      { oprodTy = oprodTy <&> (>>= f),
-        cond = cond >>= f,
-        bnd2 = bnd2 >>>= f,
-        ..
-      }
-  OSum {..} >>= f = OSum {left = left >>= f, right = right >>= f, ..}
-  OInj {..} >>= f = OInj {mTy = mTy <&> (>>= f), inj = inj >>= f, ..}
-  OCase {..} >>= f =
-    OCase
-      { retTy = retTy <&> (>>= f),
-        osumTy = osumTy <&> (>>= f),
+  OSum {..} >>= f = OSum {left = left >>= f, right = right >>= f}
+  OInj {..} >>= f = OInj {injTy = injTy <&> (>>= f), inj = inj >>= f, ..}
+  OProj {..} >>= f = OProj {expr = expr >>= f, ..}
+  OMatch {..} >>= f =
+    OMatch
+      { condTy = condTy <&> (>>= f),
         cond = cond >>= f,
         lBnd = lBnd >>>= f,
         rBnd = rBnd >>>= f,
         ..
       }
-  Mux {..} >>= f =
-    Mux
-      { cond = cond >>= f,
-        left = left >>= f,
-        right = right >>= f,
-        ..
-      }
   Asc {..} >>= f = Asc {ty = ty >>= f, expr = expr >>= f, ..}
-  Promote {..} >>= f = Promote {expr = expr >>= f, ..}
-  Tape {..} >>= f = Tape {expr = expr >>= f, ..}
   Loc {..} >>= f = Loc {expr = expr >>= f, ..}
 
 instance Bound DefB where
   FunDef {..} >>>= f = FunDef {ty = ty >>= f, expr = expr >>= f, ..}
   ADTDef {..} >>>= f = ADTDef {ctors = ctors <&> second ((>>= f) <$>), ..}
-  OADTDef {..} >>>= f = OADTDef {ty = ty >>= f, bnd = bnd >>>= f, ..}
+  OADTDef {..} >>>= f = OADTDef {argTy = argTy >>= f, bnd = bnd >>>= f, ..}
   CtorDef {..} >>>= f = CtorDef {paraTypes = paraTypes <&> (>>= f), ..}
   BuiltinDef {..} >>>= f =
     BuiltinDef
@@ -407,24 +346,22 @@ instance Bound DefB where
 instance Eq1 Expr where
   liftEq eq V {name} V {name = name'} = eq name name'
   liftEq _ GV {ref} GV {ref = ref'} = ref == ref'
-  liftEq eq Pi {ty, label, bnd} Pi {ty = ty', label = label', bnd = bnd'} =
-    liftEq eq ty ty' && label == label' && liftEq eq bnd bnd'
-  liftEq eq Lam {label, bnd} Lam {label = label', bnd = bnd'} =
+  liftEq eq Pi {ty, bnd} Pi {ty = ty', bnd = bnd'} =
+    liftEq eq ty ty' && liftEq eq bnd bnd'
+  liftEq eq Lam {bnd} Lam {bnd = bnd'} =
     -- Ignore type annotations
-    label == label' && liftEq eq bnd bnd'
+    liftEq eq bnd bnd'
   liftEq eq App {fn, args} App {fn = fn', args = args'} =
     -- Ignore application kind
     liftEq eq fn fn' && liftEq (liftEq eq) args args'
-  liftEq eq Let {rhs, label, bnd} Let {rhs = rhs', label = label', bnd = bnd'} =
+  liftEq eq Let {rhs, bnd} Let {rhs = rhs', bnd = bnd'} =
     -- Ignore type annotations
-    liftEq eq rhs rhs' && label == label' && liftEq eq bnd bnd'
+    liftEq eq rhs rhs' && liftEq eq bnd bnd'
   liftEq _ TUnit TUnit = True
   liftEq _ VUnit VUnit = True
-  liftEq _ TBool TBool = True
-  liftEq _ OBool OBool = True
+  liftEq _ TBool {olabel} TBool {olabel = olabel'} = olabel == olabel'
   liftEq _ BLit {bLit} BLit {bLit = bLit'} = bLit == bLit'
-  liftEq _ TInt TInt = True
-  liftEq _ OInt OInt = True
+  liftEq _ TInt {olabel} TInt {olabel = olabel'} = olabel == olabel'
   liftEq _ ILit {iLit} ILit {iLit = iLit'} = iLit == iLit'
   liftEq
     eq
@@ -433,49 +370,46 @@ instance Eq1 Expr where
       liftEq eq cond cond'
         && liftEq eq left left'
         && liftEq eq right right'
-  liftEq eq Case {cond, alts} Case {cond = cond', alts = alts'} =
+  liftEq eq Match {cond, alts} Match {cond = cond', alts = alts'} =
     liftEq eq cond cond' && liftEq (liftEq eq) alts alts'
   liftEq
     eq
     OIte {cond, left, right}
     OIte {cond = cond', left = left', right = right'} =
+      -- Ignore the leakage label
       liftEq eq cond cond'
         && liftEq eq left left'
         && liftEq eq right right'
-  liftEq eq Prod {left, right} Prod {left = left', right = right'} =
-    liftEq eq left left' && liftEq eq right right'
+  liftEq
+    eq
+    Prod {olabel, left, right}
+    Prod {olabel = olabel', left = left', right = right'} =
+      olabel == olabel' && liftEq eq left left' && liftEq eq right right'
   liftEq eq Pair {left, right} Pair {left = left', right = right'} =
     liftEq eq left left' && liftEq eq right right'
-  liftEq eq PCase {cond, bnd2} PCase {cond = cond', bnd2 = bnd2'} =
-    liftEq eq cond cond' && liftEq eq bnd2 bnd2'
-  liftEq eq OProd {left, right} OProd {left = left', right = right'} =
-    liftEq eq left left' && liftEq eq right right'
-  liftEq eq OPair {left, right} OPair {left = left', right = right'} =
-    liftEq eq left left' && liftEq eq right right'
-  liftEq eq OPCase {cond, bnd2} OPCase {cond = cond', bnd2 = bnd2'} =
-    liftEq eq cond cond' && liftEq eq bnd2 bnd2'
+  liftEq
+    eq
+    PMatch {pairKind, cond, bnd2}
+    PMatch {pairKind = pairKind', cond = cond', bnd2 = bnd2'} =
+      -- Ignore type annotations
+      pairKind == pairKind'
+        && liftEq eq cond cond'
+        && liftEq eq bnd2 bnd2'
   liftEq eq OSum {left, right} OSum {left = left', right = right'} =
     liftEq eq left left' && liftEq eq right right'
   liftEq eq OInj {tag, inj} OInj {tag = tag', inj = inj'} =
     -- Ignore type annotations
     tag == tag' && liftEq eq inj inj'
+  liftEq eq OProj {projKind, expr} OProj {projKind = projKind', expr = expr'} =
+    projKind == projKind' && liftEq eq expr expr'
   liftEq
     eq
-    OCase {cond, lBnd, rBnd}
-    OCase {cond = cond', lBnd = lBnd', rBnd = rBnd'} =
+    OMatch {cond, lBnd, rBnd}
+    OMatch {cond = cond', lBnd = lBnd', rBnd = rBnd'} =
+      -- Ignore type annotations
       liftEq eq cond cond' && liftEq eq lBnd lBnd' && liftEq eq rBnd rBnd'
-  liftEq
-    eq
-    Mux {cond, left, right}
-    Mux {cond = cond', left = left', right = right'} =
-      liftEq eq cond cond'
-        && liftEq eq left left'
-        && liftEq eq right right'
   liftEq eq Asc {expr} expr' = liftEq eq expr expr'
   liftEq eq expr' Asc {expr} = liftEq eq expr' expr
-  liftEq eq Promote {expr} expr' = liftEq eq expr expr'
-  liftEq eq expr' Promote {expr} = liftEq eq expr' expr
-  liftEq eq Tape {expr} Tape {expr = expr'} = liftEq eq expr expr'
   liftEq eq Loc {expr} expr' = liftEq eq expr expr'
   liftEq eq expr' Loc {expr} = liftEq eq expr' expr
   liftEq _ _ _ = False
@@ -484,106 +418,89 @@ instance Eq a => Eq (Expr a) where (==) = eq1
 
 instance PlateM (Expr Name) where
   plateM f Let {..} = do
-    mTy' <- mapM f mTy
+    rhsTy' <- mapM f rhsTy
     rhs' <- f rhs
     (x, body) <- unbind1 bnd
     body' <- f body
-    return Let {mTy = mTy', rhs = rhs', bnd = abstract_ x body', ..}
+    return Let {rhsTy = rhsTy', rhs = rhs', bnd = abstract_ x body', ..}
   plateM f Pi {..} = do
     ty' <- f ty
     (x, body) <- unbind1 bnd
     body' <- f body
     return Pi {ty = ty', bnd = abstract_ x body', ..}
   plateM f Lam {..} = do
-    mTy' <- mapM f mTy
+    argTy' <- mapM f argTy
     (x, body) <- unbind1 bnd
     body' <- f body
-    return Lam {mTy = mTy', bnd = abstract_ x body', ..}
+    return Lam {argTy = argTy', bnd = abstract_ x body', ..}
   plateM f App {..} = do
     fn' <- f fn
     args' <- mapM f args
     return App {fn = fn', args = args', ..}
   plateM f Ite {..} = do
-    retTy' <- mapM f retTy
     cond' <- f cond
     left' <- f left
     right' <- f right
-    return Ite {retTy = retTy', cond = cond', left = left', right = right'}
-  plateM f Case {..} = do
-    retTy' <- mapM f retTy
+    return Ite {cond = cond', left = left', right = right'}
+  plateM f Match {..} = do
     cond' <- f cond
     alts' <- mapM (biplateM f) alts
-    return Case {retTy = retTy', cond = cond', alts = alts'}
+    return Match {cond = cond', alts = alts'}
   plateM f OIte {..} = do
     cond' <- f cond
     left' <- f left
     right' <- f right
-    return OIte {cond = cond', left = left', right = right'}
+    return OIte {cond = cond', left = left', right = right', ..}
   plateM f Prod {..} = do
     left' <- f left
     right' <- f right
-    return Prod {left = left', right = right'}
+    return Prod {left = left', right = right', ..}
   plateM f Pair {..} = do
     left' <- f left
     right' <- f right
-    return Pair {left = left', right = right'}
-  plateM f PCase {..} = do
-    retTy' <- mapM f retTy
+    return Pair {left = left', right = right', ..}
+  plateM f PMatch {..} = do
+    condTy' <- mapM f condTy
     cond' <- f cond
     ((xl, xr), body) <- unbind2 bnd2
     body' <- f body
-    return PCase {retTy = retTy', cond = cond', bnd2 = abstract_ (xl, xr) body', ..}
-  plateM f OProd {..} = do
-    left' <- f left
-    right' <- f right
-    return OProd {left = left', right = right'}
-  plateM f OPair {..} = do
-    left' <- f left
-    right' <- f right
-    return OPair {left = left', right = right'}
-  plateM f OPCase {..} = do
-    cond' <- f cond
-    ((xl, xr), body) <- unbind2 bnd2
-    body' <- f body
-    return OPCase {cond = cond', bnd2 = abstract_ (xl, xr) body', ..}
+    return
+      PMatch
+        { condTy = condTy',
+          cond = cond',
+          bnd2 = abstract_ (xl, xr) body',
+          ..
+        }
   plateM f OSum {..} = do
     left' <- f left
     right' <- f right
     return OSum {left = left', right = right'}
   plateM f OInj {..} = do
-    mTy' <- mapM f mTy
+    injTy' <- mapM f injTy
     inj' <- f inj
-    return OInj {mTy = mTy', inj = inj', ..}
-  plateM f OCase {..} = do
-    retTy' <- mapM f retTy
+    return OInj {injTy = injTy', inj = inj', ..}
+  plateM f OProj {..} = do
+    expr' <- f expr
+    return OProj {expr = expr', ..}
+  plateM f OMatch {..} = do
+    condTy' <- mapM f condTy
     cond' <- f cond
     (xl, lBody) <- unbind1 lBnd
     lBody' <- f lBody
     (xr, rBody) <- unbind1 rBnd
     rBody' <- f rBody
     return
-      OCase
-        { retTy = retTy',
+      OMatch
+        { condTy = condTy',
           cond = cond',
           lBnd = abstract_ xl lBody',
           rBnd = abstract_ xr rBody',
           ..
         }
-  plateM f Mux {..} = do
-    cond' <- f cond
-    left' <- f left
-    right' <- f right
-    return Mux {cond = cond', left = left', right = right'}
   plateM f Asc {..} = do
     ty' <- f ty
     expr' <- f expr
     return Asc {ty = ty', expr = expr'}
-  plateM f Promote {..} = do
-    expr' <- f expr
-    return Promote {expr = expr'}
-  plateM f Tape {..} = do
-    expr' <- f expr
-    return Tape {expr = expr'}
   plateM f Loc {..} = do
     expr' <- f expr
     return Loc {expr = expr', ..}
@@ -598,10 +515,10 @@ instance BiplateM (Def Name) (Expr Name) where
     ctors' <- forM ctors $ secondM (mapM f)
     return ADTDef {ctors = ctors', ..}
   biplateM f OADTDef {..} = do
-    ty' <- f ty
+    argTy' <- f argTy
     (x, body) <- unbind1 bnd
     body' <- f body
-    return OADTDef {ty = ty', bnd = abstract_ x body', ..}
+    return OADTDef {argTy = argTy', bnd = abstract_ x body', ..}
   -- Skip handling constructor definitions, as they should be in sync with the ADT
   -- definitions. The caller is responsible for resyncing these two definitions.
   -- Builtin definitions are not handled either.
@@ -611,10 +528,9 @@ instance BiplateM (Def Name) (Expr Name) where
 -- Smart constructors
 
 lam_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a
-lam_ binder mTy body =
+lam_ binder argTy body =
   Lam
-    { label = Nothing,
-      bnd = abstractBinder binder body,
+    { bnd = abstractBinder binder body,
       binder = Just binder,
       ..
     }
@@ -622,34 +538,32 @@ lam_ binder mTy body =
 pi_ :: a ~ Text => BinderM a -> Ty a -> Expr a -> Expr a
 pi_ binder ty body =
   Pi
-    { label = Nothing,
-      bnd = abstractBinder binder body,
+    { bnd = abstractBinder binder body,
       binder = Just binder,
       ..
     }
 
 app_ :: Expr a -> [Expr a] -> Expr a
-app_ fn args = App {appKind = Nothing, ..}
+app_ fn args = App {appKind = FunApp, ..}
 
 let_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a -> Expr a
-let_ binder mTy rhs body =
+let_ binder rhsTy rhs body =
   Let
-    { label = Nothing,
-      bnd = abstractBinder binder body,
+    { bnd = abstractBinder binder body,
       binder = Just binder,
       ..
     }
 
 ite_ :: Expr a -> Expr a -> Expr a -> Expr a
-ite_ cond left right = Ite {retTy = Nothing, ..}
+ite_ cond left right = Ite {..}
 
 oite_ :: Expr a -> Expr a -> Expr a -> Expr a
-oite_ cond left right = OIte {..}
+oite_ cond left right = OIte {label = LeakyL, ..}
 
-case_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
-case_ cond alts = Case {retTy = Nothing, alts = uncurry3 caseAlt_ <$> alts, ..}
+match_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
+match_ cond alts = Match {alts = uncurry3 caseAlt_ <$> alts, ..}
 
-ocase_ ::
+omatch_ ::
   a ~ Text =>
   Expr a ->
   BinderM a ->
@@ -657,10 +571,9 @@ ocase_ ::
   BinderM a ->
   Expr a ->
   Expr a
-ocase_ cond lBinder lBody rBinder rBody =
-  OCase
-    { retTy = Nothing,
-      osumTy = Nothing,
+omatch_ cond lBinder lBody rBinder rBody =
+  OMatch
+    { condTy = Nothing,
       lBinder = Just lBinder,
       lBnd = abstractBinder lBinder lBody,
       rBinder = Just rBinder,
@@ -668,7 +581,7 @@ ocase_ cond lBinder lBody rBinder rBody =
       ..
     }
 
-ocasePat_ ::
+omatchPat_ ::
   a ~ Text =>
   Expr a ->
   Pat a ->
@@ -676,17 +589,18 @@ ocasePat_ ::
   Pat a ->
   Expr a ->
   Expr a
-ocasePat_ cond lPat lBody rPat rBody = runFreshM $ do
+omatchPat_ cond lPat lBody rPat rBody = runFreshM $ do
   xl <- freshPatBinder lPat
-  lBody' <- elabPat opcase_ lPat (V $ fromBinder xl) lBody
+  lBody' <- elabPat (pmatch_ OblivP) lPat (V $ fromBinder xl) lBody
   xr <- freshPatBinder rPat
-  rBody' <- elabPat opcase_ rPat (V $ fromBinder xr) rBody
-  return $ ocase_ cond xl lBody' xr rBody'
+  rBody' <- elabPat (pmatch_ OblivP) rPat (V $ fromBinder xr) rBody
+  return $ omatch_ cond xl lBody' xr rBody'
 
-pcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
-pcase_ cond lBinder rBinder body =
-  PCase
-    { retTy = Nothing,
+pmatch_ ::
+  a ~ Text => PairKind -> Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
+pmatch_ pairKind cond lBinder rBinder body =
+  PMatch
+    { condTy = Nothing,
       lBinder = Just lBinder,
       rBinder = Just rBinder,
       bnd2 = abstractBinder (lBinder, rBinder) body,
@@ -694,22 +608,9 @@ pcase_ cond lBinder rBinder body =
     }
 
 -- The pattern has to be 'PairP'.
-pcasePat_ :: a ~ Text => Expr a -> Pat a -> Expr a -> Expr a
-pcasePat_ cond pat body = runFreshM $ elabPat pcase_ pat cond body
-
-opcase_ :: a ~ Text => Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
-opcase_ cond lBinder rBinder body =
-  OPCase
-    { oprodTy = Nothing,
-      lBinder = Just lBinder,
-      rBinder = Just rBinder,
-      bnd2 = abstractBinder (lBinder, rBinder) body,
-      ..
-    }
-
--- The pattern has to be 'PairP'.
-opcasePat_ :: a ~ Text => Expr a -> Pat a -> Expr a -> Expr a
-opcasePat_ cond pat body = runFreshM $ elabPat opcase_ pat cond body
+pmatchPat_ :: a ~ Text => PairKind -> Expr a -> Pat a -> Expr a -> Expr a
+pmatchPat_ pairKind cond pat body =
+  runFreshM $ elabPat (pmatch_ pairKind) pat cond body
 
 -- | Elaborate pattern.
 --
@@ -733,14 +634,14 @@ elabPat ::
   Expr a ->
   Expr a ->
   m (Expr a)
-elabPat pcase = go
+elabPat pmatch = go
   where
     go (VarP _) _ body = return body
     go (PairP _ lPat rPat) src body = do
       xl <- freshPatBinder lPat
       xr <- freshPatBinder rPat
       body' <- go rPat (srcFromBinder xr) body >>= go lPat (srcFromBinder xl)
-      return $ pcase src xl xr body'
+      return $ pmatch src xl xr body'
     srcFromBinder (Named loc name) = Loc {expr = V name, ..}
     srcFromBinder _ = oops "Not a pair pattern"
 
@@ -753,33 +654,22 @@ freshPatBinder (PairP loc _ _) = do
 ----------------------------------------------------------------
 -- Smart constructors that work with 'Name's
 
-let' :: Name -> Ty Name -> Label -> Expr Name -> Expr Name -> Expr Name
-let' x t l rhs body =
+let' :: Name -> Ty Name -> Expr Name -> Expr Name -> Expr Name
+let' x t rhs body =
   Let
-    { mTy = Just t,
-      label = Just l,
+    { rhsTy = Just t,
       binder = Nothing,
       bnd = abstract_ x body,
       ..
     }
 
-lets' :: [(Name, Ty Name, Label, Expr Name)] -> Expr Name -> Expr Name
-lets' = flip $ foldr $ uncurry4 let'
+lets' :: [(Name, Ty Name, Expr Name)] -> Expr Name -> Expr Name
+lets' = flip $ foldr $ uncurry3 let'
 
-pcase' :: Expr Name -> Name -> Name -> Ty Name -> Expr Name -> Expr Name
-pcase' cond xl xr ty body =
-  PCase
-    { retTy = Just ty,
-      lBinder = Nothing,
-      rBinder = Nothing,
-      bnd2 = abstract_ (xl, xr) body,
-      ..
-    }
-
-opcase' :: Expr Name -> Ty Name -> Name -> Name -> Expr Name -> Expr Name
-opcase' cond ty xl xr body =
-  OPCase
-    { oprodTy = Just ty,
+pmatch' :: PairKind -> Expr Name -> Name -> Name -> Expr Name -> Expr Name
+pmatch' pairKind cond xl xr body =
+  PMatch
+    { condTy = Nothing,
       lBinder = Nothing,
       rBinder = Nothing,
       bnd2 = abstract_ (xl, xr) body,
@@ -797,7 +687,7 @@ instance Cute (Expr Text) where
   cute GV {..} = cute ref
   cute e@Pi {..} = do
     (x, body) <- unbind1NameOrBinder binder bnd
-    binderDoc <- cuteTypeBinder e x label ty binder
+    binderDoc <- cuteTypeBinder e x ty binder
     bodyDoc <- cute body
     return $ group binderDoc <+> "->" <> line <> bodyDoc
   cute e@Lam {} = cuteLam False e
@@ -810,7 +700,7 @@ instance Cute (Expr Text) where
     where
       go Let {..} = do
         (x, body) <- unbind1NameOrBinder binder bnd
-        binderDoc <- cuteBinder x label mTy
+        binderDoc <- cuteBinder x rhsTy
         rhsDoc <- cute rhs
         (bindingDocs, bodyDoc) <- go body
         return ((binderDoc, rhsDoc) : bindingDocs, bodyDoc)
@@ -818,51 +708,47 @@ instance Cute (Expr Text) where
       go expr = ([],) <$> cute expr
   cute TUnit = "unit"
   cute VUnit = "()"
-  cute TBool = "bool"
-  cute OBool = cute $ oblivName "bool"
+  cute TBool {..} = cute $ accentOfOLabel olabel <> "bool"
   cute BLit {..} = if bLit then "True" else "False"
-  cute TInt = "int"
-  cute OInt = cute $ oblivName "int"
+  cute TInt {..} = cute $ accentOfOLabel olabel <> "int"
   cute ILit {..} = cute iLit
   cute Ite {..} = cuteIte "" cond left right
-  cute Case {..} = cuteCase "" True cond alts
+  cute Match {..} = cuteMatch "" True cond alts
   cute OIte {..} = cuteIte oblivAccent cond left right
-  cute e@Prod {..} = cuteInfix e "*" left right
-  cute Pair {..} = cutePair "" left right
-  cute PCase {..} = cutePCase "" cond lBinder rBinder bnd2
-  cute e@OProd {..} =
-    cuteInfix e (oblivName "*") left right
-  cute OPair {..} = cutePair oblivAccent left right
-  cute OPCase {..} = cutePCase oblivAccent cond lBinder rBinder bnd2
+  cute e@Prod {..} = cuteInfix e (accentOfOLabel olabel <> "*") left right
+  cute Pair {..} = cutePair pairKind left right
+  cute PMatch {..} = cutePMatch pairKind cond lBinder rBinder bnd2
   cute e@OSum {..} = cuteInfix e (oblivName "+") left right
   cute OInj {..} = do
-    tyDoc <- fromMaybe "" <$> mapM cuteInjType mTy
+    tyDoc <- fromMaybe "" <$> mapM cuteInjType injTy
     cuteApp_
       (pretty (oblivName $ if tag then "inl" else "inr") <> tyDoc)
       [inj]
     where
       cuteInjType ty = angles <$> cute ty
-  cute OCase {..} = do
+  cute OProj {..} =
+    cute $
+      oblivName $
+        "pi" <> case projKind of
+          TagP -> "0"
+          LeftP -> "1"
+          RightP -> "2"
+  cute OMatch {..} = do
     condDoc <- cute cond
     (xl, lBody) <- unbind1NameOrBinder lBinder lBnd
     (xr, rBody) <- unbind1NameOrBinder rBinder rBnd
     lBodyDoc <- cute lBody
     rBodyDoc <- cute rBody
     return $
-      cuteCaseDoc oblivAccent True condDoc $
+      cuteMatchDoc oblivAccent True condDoc $
         cuteAltDocs
           [ (oblivName "inl", [xl], lBodyDoc),
             (oblivName "inr", [xr], rBodyDoc)
           ]
-  cute Mux {..} = cuteApp_ "mux" [cond, left, right]
   cute Asc {..} = do
     tyDoc <- cute ty
     exprDoc <- cute expr
     return $ parens $ hang $ align exprDoc <> sep1 (colon <+> tyDoc)
-  cute Promote {..} = do
-    doc <- cuteSubAgg expr
-    return $ "!" <> doc
-  cute Tape {..} = cuteApp_ "tape" [expr]
   cute Loc {..} = cute expr
 
 -- | Pretty printer for taype definitions
@@ -875,13 +761,10 @@ cuteDefs options = foldMap go
 cuteDef :: Options -> Text -> Def Text -> Doc
 cuteDef options name = \case
   FunDef {..} ->
-    "#" <> brackets (pretty attr) <> hardline <> funDoc
-    where
-      funDoc =
-        hang $
-          "fn"
-            <+> go (cuteBinder name label (Just ty))
-            <+> equals <> go (cuteLam True expr)
+    hang $
+      "fn"
+        <+> go (cuteBinder name (Just ty))
+        <+> equals <> go (cuteLam True expr)
   ADTDef {..} ->
     hang $
       "data"
@@ -895,7 +778,7 @@ cuteDef options name = \case
     where
       rest = go $ do
         (x, body) <- unbind1NameOrBinder binder bnd
-        binderDoc <- cuteBinder x (Just SafeL) (Just ty)
+        binderDoc <- cuteBinder x (Just argTy)
         bodyDoc <- cute body
         return $ parens binderDoc <+> equals <> hardline <> bodyDoc
   _ -> oops "Builtin functions or constructors in the definitions"
@@ -909,53 +792,36 @@ cuteLam isRoot e = do
   where
     go Lam {..} = do
       (x, body) <- unbind1NameOrBinder binder bnd
-      binderDoc <- cuteEnclosedBinder x label mTy
+      binderDoc <- cuteEnclosedBinder x argTy
       (binderDocs, bodyDoc) <- go body
       return (binderDoc : binderDocs, bodyDoc)
     go Loc {..} = go expr
     go expr = ([],) <$> cute expr
 
-cuteBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM Doc
-cuteBinder x l Nothing =
-  ifM
-    (asks optPrintLabels &&^ return (isJust l))
-    ((<>) . parens <$> cute x <*> cuteLabel l)
-    (cute x)
-cuteBinder x l (Just ty) = do
+cuteBinder :: Text -> Maybe (Ty Text) -> CuteM Doc
+cuteBinder x Nothing = cute x
+cuteBinder x (Just ty) = do
   tyDoc <- cute ty
-  labelDoc <- ifM (asks optPrintLabels) (cuteLabel l) ""
   return $
     hang $
-      pretty x <> sep1_ x (colon <> labelDoc <+> align (group tyDoc))
+      pretty x <> sep1_ x (colon <+> align (group tyDoc))
 
-cuteEnclosedBinder :: Text -> Maybe Label -> Maybe (Ty Text) -> CuteM Doc
-cuteEnclosedBinder x l mTy = do
-  doc <- cuteBinder x l mTy
+cuteEnclosedBinder :: Text -> Maybe (Ty Text) -> CuteM Doc
+cuteEnclosedBinder x mTy = do
+  doc <- cuteBinder x mTy
   return $ if isJust mTy then parens doc else doc
 
 cuteTypeBinder ::
   Ty Text ->
   Text ->
-  Maybe Label ->
   Ty Text ->
   Maybe Binder ->
   CuteM Doc
-cuteTypeBinder super x l ty = \case
-  Just Anon ->
-    ifM
-      (asks optInternalNames)
-      go
-      ( ifM
-          (asks optPrintLabels &&^ return (isJust l))
-          ((<>) . parens <$> cute ty <*> cuteLabel l)
-          (cuteSub super ty)
-      )
+cuteTypeBinder super x ty = \case
+  Just Anon -> ifM (asks optInternalNames) go (cuteSub super ty)
   _ -> go
   where
-    go = parens <$> cuteBinder x l (Just ty)
-
-cuteLabel :: Maybe Label -> CuteM Doc
-cuteLabel = maybe "" cute
+    go = parens <$> cuteBinder x (Just ty)
 
 instance HasPLevel (Expr a) where
   plevel = \case
@@ -966,21 +832,14 @@ instance HasPLevel (Expr a) where
     App {} -> 10
     TUnit -> 0
     VUnit -> 0
-    TBool -> 0
-    OBool -> 0
+    TBool {} -> 0
     BLit {} -> 0
-    TInt -> 0
-    OInt -> 0
+    TInt {} -> 0
     ILit {} -> 0
     Prod {} -> 20
     Pair {} -> 0
-    OProd {} -> 20
-    OPair {} -> 0
     OSum {} -> 20
     OInj {} -> 10
-    Mux {} -> 10
-    Promote {} -> 0
-    Tape {} -> 10
     Asc {} -> 0
     Loc {..} -> plevel expr
     _ -> 90

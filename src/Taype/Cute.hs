@@ -58,13 +58,13 @@ module Taype.Cute
     cuteIte,
     cutePairDoc,
     cutePair,
-    cuteCaseDoc,
-    cuteCase,
+    cuteMatchDoc,
+    cuteMatch,
     cuteAltDoc,
     cuteAltDocs,
-    cutePCaseDoc,
-    cutePCase_,
-    cutePCase,
+    cutePMatchDoc,
+    cutePMatch_,
+    cutePMatch,
     cuteSubDoc,
     cuteSub,
     cuteSubAggDoc,
@@ -73,9 +73,9 @@ module Taype.Cute
 where
 
 import Bound
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Prettyprinter hiding (Doc, hang, indent)
-import qualified Prettyprinter as PP
+import Prettyprinter qualified as PP
 import Prettyprinter.Render.Text (hPutDoc, putDoc)
 import Prettyprinter.Util (putDocW)
 import Taype.Binder
@@ -175,8 +175,6 @@ data Disp m
 
 instance Cute Text
 
-instance Cute Label
-
 instance Cute Int where
   cute i =
     return $
@@ -184,8 +182,8 @@ instance Cute Int where
         then parens $ pretty i
         else pretty i
 
-instance (Monad f, Cute (f Text)) => Cute (CaseAlt f Text) where
-  cute CaseAlt {..} = do
+instance (Monad f, Cute (f Text)) => Cute (MatchAlt f Text) where
+  cute MatchAlt {..} = do
     (xs, body) <- unbindManyNamesOrBinders binders bnd
     bodyDoc <- cute body
     return $ cuteAltDoc ctor xs bodyDoc
@@ -279,7 +277,7 @@ cuteLamDoc_ kw isRoot binderDocs bodyDoc =
           )
     else hang $ group mkBindersDoc <> sep1 bodyDoc
   where
-    mkBindersDoc = kw <> align (vsep binderDocs) <+> "->"
+    mkBindersDoc = kw <> align (vsep binderDocs) <+> "=>"
 
 cuteLamDoc :: Bool -> [Doc] -> Doc -> Doc
 cuteLamDoc = cuteLamDoc_ backslash
@@ -337,22 +335,23 @@ cuteIte accent cond left right = do
   rightDoc <- cute right
   return $ cuteIteDoc accent condDoc leftDoc rightDoc
 
-cutePairDoc :: Text -> Doc -> Doc -> Doc
-cutePairDoc accent leftDoc rightDoc =
-  pretty accent <> parens (align (leftDoc <> comma <> sep1 rightDoc))
+cutePairDoc :: PairKind -> Doc -> Doc -> Doc
+cutePairDoc pKind leftDoc rightDoc =
+  pretty (accentOfPairKind pKind)
+    <> parens (align (leftDoc <> comma <> sep1 rightDoc))
 
-cutePair :: Cute e => Text -> e -> e -> CuteM Doc
-cutePair accent left right = do
+cutePair :: Cute e => PairKind -> e -> e -> CuteM Doc
+cutePair pKind left right = do
   leftDoc <- cute left
   rightDoc <- cute right
-  return $ cutePairDoc accent leftDoc rightDoc
+  return $ cutePairDoc pKind leftDoc rightDoc
 
-cuteCaseDoc :: Foldable t => Text -> Bool -> Doc -> t Doc -> Doc
-cuteCaseDoc accent usePipe condDoc altDocs =
+cuteMatchDoc :: Foldable t => Text -> Bool -> Doc -> t Doc -> Doc
+cuteMatchDoc accent usePipe condDoc altDocs =
   align $
-    pretty accent <> "case"
+    pretty accent <> "match"
       <+> condDoc
-      <+> "of"
+      <+> "with"
         <> ( if usePipe
                then foldMap (\altDoc -> hardline <> pipe <+> altDoc) altDocs
                else foldMap (hardline <>) altDocs
@@ -360,23 +359,23 @@ cuteCaseDoc accent usePipe condDoc altDocs =
         <> hardline
         <> "end"
 
-cuteCase ::
+cuteMatch ::
   (Traversable t, Monad f, Cute (f Text)) =>
   Text ->
   Bool ->
   f Text ->
-  t (CaseAlt f Text) ->
+  t (MatchAlt f Text) ->
   CuteM Doc
-cuteCase accent usePipe cond alts = do
+cuteMatch accent usePipe cond alts = do
   condDoc <- cute cond
   altDocs <- mapM cute alts
-  return $ cuteCaseDoc accent usePipe condDoc altDocs
+  return $ cuteMatchDoc accent usePipe condDoc altDocs
 
 cuteAltDoc :: Text -> [Text] -> Doc -> Doc
 cuteAltDoc ctor xs bodyDoc =
   hang
     ( pretty ctor <> group (foldMap ((line <>) . pretty) xs)
-        <+> "->" <> sep1 bodyDoc
+        <+> "=>" <> sep1 bodyDoc
     )
 
 cuteAltDocs :: (Functor t) => t (Text, [Text], Doc) -> t Doc
@@ -384,40 +383,33 @@ cuteAltDocs = (go <$>)
   where
     go (ctor, xs, bodyDoc) = cuteAltDoc ctor xs bodyDoc
 
-cutePCaseDoc :: Text -> Doc -> Text -> Text -> Doc -> Doc
-cutePCaseDoc accent condDoc xl xr bodyDoc =
-  cuteCaseDoc
-    accent
+cutePMatchDoc :: PairKind -> Doc -> Text -> Text -> Doc -> Doc
+cutePMatchDoc pKind condDoc xl xr bodyDoc =
+  cuteMatchDoc
+    (accentOfPairKind pKind)
     False
     condDoc
     [ hang $
-        cutePairDoc accent (pretty xl) (pretty xr) <+> "->" <> sep1 bodyDoc
+        cutePairDoc pKind (pretty xl) (pretty xr) <+> "=>" <> sep1 bodyDoc
     ]
 
-cutePCase_ :: Cute e => Text -> e -> Text -> Text -> e -> CuteM Doc
-cutePCase_ accent cond xl xr body = do
+cutePMatch_ :: Cute e => PairKind -> e -> Text -> Text -> e -> CuteM Doc
+cutePMatch_ pKind cond xl xr body = do
   condDoc <- cute cond
   bodyDoc <- cute body
-  return $
-    cuteCaseDoc
-      accent
-      False
-      condDoc
-      [ hang $
-          cutePairDoc accent (pretty xl) (pretty xr) <+> "->" <> sep1 bodyDoc
-      ]
+  return $ cutePMatchDoc pKind condDoc xl xr bodyDoc
 
-cutePCase ::
+cutePMatch ::
   (Monad f, Cute (f Text)) =>
-  Text ->
+  PairKind ->
   f Text ->
   Maybe Binder ->
   Maybe Binder ->
   Scope Bool f Text ->
   CuteM Doc
-cutePCase accent cond lBinder rBinder bnd2 = do
+cutePMatch pKind cond lBinder rBinder bnd2 = do
   ((xl, xr), body) <- unbind2NamesOrBinders (lBinder, rBinder) bnd2
-  cutePCase_ accent cond xl xr body
+  cutePMatch_ pKind cond xl xr body
 
 -- | Add parentheses to the expressions according to their precedence level.
 cuteSubDoc :: HasPLevel e => e -> e -> Doc -> Doc
