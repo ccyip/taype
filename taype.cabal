@@ -60,9 +60,9 @@ library
                        Taype.Cute
                        Taype.Binder
                        Taype.Syntax
+                       Taype.Lexer
+                       Taype.Parser
                        -- Taype.Environment
-                       -- Taype.Lexer
-                       -- Taype.Parser
                        -- Taype.TypeChecker
                        -- Oil.Syntax
                        -- Oil.Translation

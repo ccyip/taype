@@ -23,7 +23,7 @@ import Taype.Common
 import Taype.Cute
 import Taype.Error
 import Taype.Lexer (LocatedToken (..), Token)
-import qualified Taype.Lexer as L
+import Taype.Lexer qualified as L
 import Taype.Prelude
 import Taype.Syntax
 import Text.Earley hiding (Parser, token)
@@ -96,8 +96,8 @@ setLoc loc Loc {loc = _, ..} = Loc {..}
 setLoc loc expr = Loc {..}
 
 infixToTypeFormer :: Text -> (Ty a -> Ty a -> Ty a)
-infixToTypeFormer "*" = Prod
-infixToTypeFormer x | x == oblivName "*" = OProd
+infixToTypeFormer "*" = Prod PublicL
+infixToTypeFormer x | x == oblivName "*" = Prod OblivL
 infixToTypeFormer x | x == oblivName "+" = OSum
 infixToTypeFormer _ = oops "unknown type infix"
 
@@ -130,7 +130,7 @@ grammar = mdo
                   ty <- pType
                   pToken L.RParen
                   return (binder, ty)
-            ~(binder, ty) <- pArg
+            ~(binder, argTy) <- pArg
             pToken L.Equals
             body <- pType
             return
@@ -143,32 +143,13 @@ grammar = mdo
               ),
           -- Function definition
           do
-            let pAttr = do
-                  pToken L.LAttr
-                  attr <-
-                    choice
-                      [ SectionAttr "" "" <$ pToken (L.Ident "section"),
-                        RetractionAttr "" "" <$ pToken (L.Ident "retraction"),
-                        SafeAttr <$ pToken (L.Ident "safe"),
-                        LeakyAttr <$ pToken (L.Ident "leaky")
-                      ]
-                  pToken L.RBrace
-                  return attr
-            attr <- optional pAttr
             pToken L.Fn
             ~(loc, name) <- pLocatedIdent
             pToken L.Colon
             ty <- pType
             pToken L.Equals
             expr <- pExpr
-            return
-              ( name,
-                FunDef
-                  { attr = fromMaybe LeakyAttr attr,
-                    label = Nothing,
-                    ..
-                  }
-              )
+            return (name, FunDef {..})
         ]
 
   -- Expression
@@ -179,7 +160,7 @@ grammar = mdo
           do
             pToken L.Lambda
             args <- some1 pLocatedFunArg
-            pToken L.Arrow
+            pToken L.DArrow
             body <- pExpr
             return $
               let go ((loc, binder), mTy) body' =
@@ -189,31 +170,31 @@ grammar = mdo
           pLet pExpr,
           -- If conditional
           pIf ite_ L.If pExpr,
-          -- Oblivious (leaky) if conditional
+          -- Oblivious (possibly leaky) if conditional
           pIf oite_ L.OIf pExpr,
           -- Product elimination
-          pPCase pcasePat_ L.Case pPairPat pExpr,
+          pPMatch (pmatchPat_ PublicP) L.Match pPairPat pExpr,
           -- Oblivious product elimination
-          pPCase opcasePat_ L.OCase pOPairPat pExpr,
-          -- Case analysis
-          pCase pExpr,
-          -- Oblivious (leaky) case analysis
+          pPMatch (pmatchPat_ OblivP) L.OMatch pOPairPat pExpr,
+          -- ADT elimination
+          pMatch pExpr,
+          -- Oblivious (possibly leaky) sum elimination
           do
-            loc <- pLocatedToken L.OCase
+            loc <- pLocatedToken L.OMatch
             cond <- pExpr
-            pToken L.Of
+            pToken L.With
             optional $ pToken L.Bar
             pToken $ L.OInj True
             lPat <- pOPat
-            pToken L.Arrow
+            pToken L.DArrow
             lBody <- pExpr
             pToken L.Bar
             pToken $ L.OInj False
             rPat <- pOPat
-            pToken L.Arrow
+            pToken L.DArrow
             rBody <- pExpr
             pToken L.End
-            return Loc {expr = ocasePat_ cond lPat lBody rPat rBody, ..},
+            return Loc {expr = omatchPat_ cond lPat lBody rPat rBody, ..},
           -- Next precedence
           pOrExpr
         ]
@@ -224,10 +205,7 @@ grammar = mdo
   pOrExpr <-
     rule $
       choice
-        [ pInfixExpr
-            ["||", oblivName "||"]
-            pOrExpr
-            pAndExpr,
+        [ pInfixExpr ["||", oblivName "||"] pOrExpr pAndExpr,
           pAndExpr
         ]
 
@@ -235,10 +213,7 @@ grammar = mdo
   pAndExpr <-
     rule $
       choice
-        [ pInfixExpr
-            ["&&", oblivName "&&"]
-            pAndExpr
-            pCompareExpr,
+        [ pInfixExpr ["&&", oblivName "&&"] pAndExpr pCompareExpr,
           pCompareExpr
         ]
 
@@ -281,28 +256,16 @@ grammar = mdo
       choice
         [ -- Application
           pApp app_ pAtomExpr,
-          -- MUX
-          do
-            loc <- pLocatedToken L.Mux
-            cond <- pAtomExpr
-            left <- pAtomExpr
-            right <- pAtomExpr
-            return Loc {expr = Mux {..}, ..},
           -- Oblivious injection
           do
             ~(loc, tag) <- pLocatedOInj
-            mTy <- optional $ do
+            injTy <- optional $ do
               pToken L.LAngle
               ty <- pType
               pToken L.RAngle
               return ty
             inj <- pAtomExpr
             return Loc {expr = OInj {..}, ..},
-          -- Tape
-          do
-            loc <- pLocatedToken L.Tape
-            expr <- pAtomExpr
-            return Loc {expr = Tape {..}, ..},
           -- Next precedence
           pAtomExpr
         ]
@@ -321,9 +284,9 @@ grammar = mdo
           -- Variable
           pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
           -- Pair
-          pPair Pair L.LParen,
+          pPair (Pair PublicP) L.LParen,
           -- Oblivious pair
-          pPair OPair L.LOParen,
+          pPair (Pair OblivP) L.LOParen,
           -- Ascription
           pParen $ do
             expr <- pExpr
@@ -365,9 +328,9 @@ grammar = mdo
           -- If conditional
           pIf ite_ L.If pType,
           -- Product elimination
-          pPCase pcasePat_ L.Case pPairPat pType,
-          -- Case analysis
-          pCase pType,
+          pPMatch (pmatchPat_ PublicP) L.Match pPairPat pType,
+          -- ADT elimination
+          pMatch pType,
           -- Next precedence
           pProdType
         ]
@@ -410,13 +373,13 @@ grammar = mdo
         [ -- Unit type
           pLocatedToken L.TUnit <&> \loc -> Loc {expr = TUnit, ..},
           -- Boolean type
-          pLocatedToken L.TBool <&> \loc -> Loc {expr = TBool, ..},
+          pLocatedToken L.TBool <&> \loc -> Loc {expr = TBool PublicL, ..},
           -- Oblivious Boolean type
-          pLocatedToken L.OBool <&> \loc -> Loc {expr = OBool, ..},
+          pLocatedToken L.OBool <&> \loc -> Loc {expr = TBool OblivL, ..},
           -- Integer type
-          pLocatedToken L.TInt <&> \loc -> Loc {expr = TInt, ..},
+          pLocatedToken L.TInt <&> \loc -> Loc {expr = TInt PublicL, ..},
           -- Oblivious integer type
-          pLocatedToken L.OInt <&> \loc -> Loc {expr = OInt, ..},
+          pLocatedToken L.OInt <&> \loc -> Loc {expr = TInt OblivL, ..},
           -- Variable
           pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
           -- Parenthesized type
@@ -450,31 +413,31 @@ grammar = mdo
         right <- pBranch
         return Loc {expr = former cond left right, ..}
       -- Product-like elimination
-      pPCase former caseToken pPairPat_ pBody = do
-        loc <- pLocatedToken caseToken
+      pPMatch former matchToken pPairPat_ pBody = do
+        loc <- pLocatedToken matchToken
         cond <- pExpr
-        pToken L.Of
+        pToken L.With
         optional $ pToken L.Bar
         pat <- pPairPat_
-        pToken L.Arrow
+        pToken L.DArrow
         body <- pBody
         pToken L.End
         return Loc {expr = former cond pat body, ..}
       -- Public case-like elimination
-      pCase pBody = do
+      pMatch pBody = do
         let pAlt = do
               ctor <- pIdent
               binders <- many pBinder
-              pToken L.Arrow
+              pToken L.DArrow
               body <- pBody
               return (ctor, binders, body)
-        loc <- pLocatedToken L.Case
+        loc <- pLocatedToken L.Match
         cond <- pExpr
-        pToken L.Of
+        pToken L.With
         optional $ pToken L.Bar
         alts <- pAlt `sepBy1` pToken L.Bar
         pToken L.End
-        return Loc {expr = case_ cond alts, ..}
+        return Loc {expr = match_ cond alts, ..}
       -- Pair-like
       pPair former openParenToken = do
         loc <- pLocatedToken openParenToken
@@ -514,8 +477,8 @@ grammar = mdo
         ]
 
   -- Pattern
-  let pLocatedPairPatRule pLocatedPat_ openParenToken = rule $ do
-        patLoc <- pLocatedToken openParenToken
+  let pLocatedPairPatRule pLocatedPat_ pLParen = rule $ do
+        patLoc <- pLocatedToken pLParen
         prefix <- some1 $ pLocatedPat_ <* pToken L.Comma
         end <- pLocatedPat_
         pToken L.RParen
@@ -568,14 +531,13 @@ renderToken = \case
   L.Lambda -> "lambda abstraction"
   L.Underscore -> squotes "_"
   L.Arrow -> dquotes "->"
+  L.DArrow -> dquotes "=>"
   L.Equals -> squotes equals
   L.Colon -> squotes colon
   L.Bar -> squotes pipe
   L.Comma -> squotes comma
   L.LAngle -> squotes "<"
   L.RAngle -> squotes ">"
-  L.LAttr -> dquotes $ "#" <> lbracket
-  L.RBrace -> squotes rbracket
   L.LParen -> squotes lparen
   L.LOParen -> dquotes $ pretty oblivAccent <> lparen
   L.RParen -> squotes rparen
@@ -595,12 +557,10 @@ renderToken = \case
   L.OIf -> pretty $ oblivName "if"
   L.Then -> "then"
   L.Else -> "else"
-  L.Mux -> "mux"
-  L.Case -> "case"
-  L.OCase -> pretty $ oblivName "case"
-  L.Of -> "of"
+  L.Match -> "match"
+  L.OMatch -> pretty $ oblivName "match"
+  L.With -> "with"
   L.End -> "end"
-  L.Tape -> "tape"
   L.OInj tag -> pretty $ oblivName $ if tag then "inl" else "inr"
   L.Ident ident -> "identifier" <+> dquotes (pretty ident)
   L.Infix ident -> "infix" <+> dquotes (pretty ident)

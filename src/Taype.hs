@@ -25,8 +25,8 @@ import Taype.Common
 import Taype.Cute
 -- import Taype.Environment
 import Taype.Error
--- import Taype.Lexer
--- import Taype.Parser
+import Taype.Lexer
+import Taype.Parser
 import Taype.Syntax
 -- import Taype.TypeChecker
 
@@ -42,14 +42,13 @@ run options@Options {optFile = file} = do
 
 process :: Options -> ExceptT Err IO ()
 process options@Options {optFile = file, optCode = code, ..} = do
-  putTextLn "not implemented yet"
-  -- tokens <- lex file code
-  -- when optPrintTokens $ printTokens file code tokens >> putStr "\n"
-  -- namedDefs <- parse tokens
-  -- let names = fst <$> namedDefs
-  --     srcDefs = closeDefs namedDefs
-  --     srcDoc = cuteDefs options srcDefs
-  -- when optPrintSource $ printDoc options srcDoc
+  tokens <- lex file code
+  when optPrintTokens $ printTokens file code tokens >> putStr "\n"
+  namedDefs <- parse tokens
+  let names = fst <$> namedDefs
+      srcDefs = closeDefs namedDefs
+      srcDoc = cuteDefs options srcDefs
+  when optPrintSource $ printDoc options srcDoc
   -- gctx <- checkDefs options srcDefs
   -- let coreDefs = defsFromGCtx gctx names
   --     coreDefs' = if optReadable then readableDefs coreDefs else coreDefs

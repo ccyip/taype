@@ -33,14 +33,13 @@ data Token
   = Lambda
   | Underscore
   | Arrow
+  | DArrow
   | Equals
   | Colon
   | Bar
   | Comma
   | LAngle
   | RAngle
-  | LAttr
-  | RBrace
   | LParen
   | LOParen
   | RParen
@@ -60,12 +59,10 @@ data Token
   | OIf
   | Then
   | Else
-  | Mux
-  | Case
-  | OCase
-  | Of
+  | Match
+  | OMatch
+  | With
   | End
-  | Tape
   | OInj Bool
   | Ident Text
   | Infix Text
@@ -78,7 +75,7 @@ data LocatedToken = LocatedToken {token :: Token, offset :: Int}
 type Parser = Parsec Void Text
 
 space :: Parser ()
-space = L.space C.space1 (L.skipLineComment "--") (L.skipBlockComment "{-" "-}")
+space = L.space C.space1 (L.skipLineComment "--") empty
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme space
@@ -92,6 +89,7 @@ pToken =
   choice
     [ pIdent <?> "identifier",
       Arrow <$ symbol "->",
+      DArrow <$ symbol "=>",
       choice ((Infix <$>) . symbol <$> infixes <> oblivInfixes) <?> "infix",
       choice
         [ TUnit <$ symbol "unit",
@@ -111,14 +109,12 @@ pToken =
           OIf <$ symbol (oblivName "if"),
           Then <$ symbol "then",
           Else <$ symbol "else",
-          Mux <$ symbol "mux",
-          Case <$ symbol "case",
-          OCase <$ symbol (oblivName "case"),
-          Of <$ symbol "of",
+          Match <$ symbol "match",
+          OMatch <$ symbol (oblivName "match"),
+          With <$ symbol "with",
           End <$ symbol "end",
           OInj True <$ symbol (oblivName "inl"),
-          OInj False <$ symbol (oblivName "inr"),
-          Tape <$ symbol "tape"
+          OInj False <$ symbol (oblivName "inr")
         ]
         <?> "keyword",
       choice
@@ -135,8 +131,6 @@ pToken =
       Underscore <$ symbol "_",
       LAngle <$ symbol "<",
       RAngle <$ symbol ">",
-      LAttr <$ symbol "#[",
-      RBrace <$ symbol "]",
       LParen <$ symbol "(",
       LOParen <$ symbol (oblivName "("),
       RParen <$ symbol ")"
@@ -146,14 +140,14 @@ isIdent0 :: Char -> Bool
 isIdent0 c = isLetter c || c == '_'
 
 isIdent :: Char -> Bool
-isIdent c = isAlphaNum c || c == '_' || c == '\''
+isIdent c = isAlphaNum c || c == '_' || c == '\'' || c == '#'
 
 pIdent :: Parser Token
 pIdent = lexeme . try $ do
-  mayObliv <- option "" $ symbol oblivAccent
+  accent <- option "" $ symbol oblivAccent
   x <- satisfy isIdent0
   xs <- takeWhileP Nothing isIdent
-  let ident = mayObliv <> T.cons x xs
+  let ident = accent <> T.cons x xs
   guard (ident `notElem` reserved)
   return $ Ident ident
 
@@ -179,14 +173,12 @@ reserved =
     oblivName "if",
     "then",
     "else",
-    "mux",
-    "case",
-    oblivName "case",
-    "of",
+    "match",
+    oblivName "match",
+    "with",
     "end",
     oblivName "inl",
     oblivName "inr",
-    "tape",
     "unit",
     "bool",
     oblivName "bool",
