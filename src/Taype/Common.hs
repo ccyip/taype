@@ -67,7 +67,6 @@ data Options = Options
     optPrintPrelude :: Bool,
     optPrintOil :: Bool,
     optPrintOCaml :: Bool,
-    optPrintLabels :: Bool,
     optPrintTokens :: Bool,
     optPrintSource :: Bool,
     optReadable :: Bool,

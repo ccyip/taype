@@ -167,10 +167,6 @@ opts = do
         <> value "$"
         <> showDefault
         <> help "Prefix to the internal names (only affects printing)"
-  optPrintLabels <-
-    switch $
-      long "print-labels"
-        <> help "Whether to print the leakage labels"
   optPrintTokens <-
     switch $
       long "print-tokens"

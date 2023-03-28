@@ -423,7 +423,7 @@ grammar = mdo
         body <- pBody
         pToken L.End
         return Loc {expr = former cond pat body, ..}
-      -- Public case-like elimination
+      -- Public match-like elimination
       pMatch pBody = do
         let pAlt = do
               ctor <- pIdent
