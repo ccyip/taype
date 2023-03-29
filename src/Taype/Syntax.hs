@@ -53,6 +53,7 @@ import Algebra.PartialOrd
 import Bound
 import Control.Monad
 import Data.Functor.Classes
+import Relude.Extra
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -141,7 +142,7 @@ data Expr a
   | -- | Product type pattern matching
     PMatch
       { pairKind :: PairKind,
-        condTy :: Maybe (Ty a),
+        condTy :: Maybe (Ty a, Ty a),
         cond :: Expr a,
         lBinder :: Maybe Binder,
         rBinder :: Maybe Binder,
@@ -156,14 +157,17 @@ data Expr a
         inj :: Expr a
       }
   | -- | Oblivious sum projections
-    OProj {projKind :: OProjKind, expr :: Expr a}
+    OProj
+      { projKind :: OProjKind,
+        condTy :: Maybe (Ty a, Ty a),
+        expr :: Expr a
+      }
   | -- | Oblivious sum type pattern matching
     --
     -- This does not appear in the core language, as it is just syntax sugar for
     -- oblivious if and oblivious sum projections.
     OMatch
-      { condTy :: Maybe (Ty a),
-        cond :: Expr a,
+      { cond :: Expr a,
         lBinder :: Maybe Binder,
         lBnd :: Scope () Expr a,
         rBinder :: Maybe Binder,
@@ -228,7 +232,8 @@ data DefB f a
     FunDef
       { loc :: Int,
         ty :: f a,
-        expr :: f a
+        expr :: f a,
+        label :: LLabel
       }
   | -- | Algebraic data type
     --
@@ -243,7 +248,8 @@ data DefB f a
   | -- | Builtin operation
     BuiltinDef
       { paraTypes :: [f a],
-        resType :: f a
+        resType :: f a,
+        label :: LLabel
       }
   deriving stock (Eq, Show, Functor, Foldable, Traversable)
 
@@ -314,16 +320,20 @@ instance Monad Expr where
     PMatch
       { cond = cond >>= f,
         bnd2 = bnd2 >>>= f,
-        condTy = condTy <&> (>>= f),
+        condTy = condTy <&> bimapBoth (>>= f),
         ..
       }
   OSum {..} >>= f = OSum {left = left >>= f, right = right >>= f}
   OInj {..} >>= f = OInj {injTy = injTy <&> (>>= f), inj = inj >>= f, ..}
-  OProj {..} >>= f = OProj {expr = expr >>= f, ..}
+  OProj {..} >>= f =
+    OProj
+      { expr = expr >>= f,
+        condTy = condTy <&> bimapBoth (>>= f),
+        ..
+      }
   OMatch {..} >>= f =
     OMatch
-      { condTy = condTy <&> (>>= f),
-        cond = cond >>= f,
+      { cond = cond >>= f,
         lBnd = lBnd >>>= f,
         rBnd = rBnd >>>= f,
         ..
@@ -460,7 +470,7 @@ instance PlateM (Expr Name) where
     right' <- f right
     return Pair {left = left', right = right', ..}
   plateM f PMatch {..} = do
-    condTy' <- mapM f condTy
+    condTy' <- mapM (traverseBoth f) condTy
     cond' <- f cond
     ((xl, xr), body) <- unbind2 bnd2
     body' <- f body
@@ -480,10 +490,10 @@ instance PlateM (Expr Name) where
     inj' <- f inj
     return OInj {injTy = injTy', inj = inj', ..}
   plateM f OProj {..} = do
+    condTy' <- mapM (traverseBoth f) condTy
     expr' <- f expr
-    return OProj {expr = expr', ..}
+    return OProj {condTy = condTy', expr = expr', ..}
   plateM f OMatch {..} = do
-    condTy' <- mapM f condTy
     cond' <- f cond
     (xl, lBody) <- unbind1 lBnd
     lBody' <- f lBody
@@ -491,8 +501,7 @@ instance PlateM (Expr Name) where
     rBody' <- f rBody
     return
       OMatch
-        { condTy = condTy',
-          cond = cond',
+        { cond = cond',
           lBnd = abstract_ xl lBody',
           rBnd = abstract_ xr rBody',
           ..
@@ -573,8 +582,7 @@ omatch_ ::
   Expr a
 omatch_ cond lBinder lBody rBinder rBody =
   OMatch
-    { condTy = Nothing,
-      lBinder = Just lBinder,
+    { lBinder = Just lBinder,
       lBnd = abstractBinder lBinder lBody,
       rBinder = Just rBinder,
       rBnd = abstractBinder rBinder rBody,

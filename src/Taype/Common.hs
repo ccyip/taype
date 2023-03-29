@@ -16,6 +16,8 @@ module Taype.Common
     LLabel (..),
     OLabel (..),
     PairKind (..),
+    pairKindOfOLabel,
+    olabelOfPairKind,
     OProjKind (..),
     AppKind (..),
     MatchAlt (..),
@@ -106,6 +108,14 @@ data OLabel = PublicL | OblivL
 -- | Product kinds
 data PairKind = PublicP | OblivP
   deriving stock (Eq, Ord, Show)
+
+pairKindOfOLabel :: OLabel -> PairKind
+pairKindOfOLabel PublicL = PublicP
+pairKindOfOLabel OblivL = OblivP
+
+olabelOfPairKind :: PairKind -> OLabel
+olabelOfPairKind PublicP = PublicL
+olabelOfPairKind OblivP = OblivL
 
 -- | Oblivious sum projection kinds
 data OProjKind = TagP | LeftP | RightP

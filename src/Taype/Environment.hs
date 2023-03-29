@@ -34,12 +34,10 @@ module Taype.Environment
     lookupBinder,
     extendCtx,
     extendCtx1,
-    withLabel,
     withLoc,
     mayWithLoc,
     withCur,
     withOption,
-    withOptPrintLabels,
 
     -- * Prelude context
     preludeGCtx,
@@ -50,9 +48,9 @@ module Taype.Environment
 where
 
 import Data.HashMap.Strict ((!?))
-import qualified Data.HashMap.Strict as M
+import Data.HashMap.Strict qualified as M
 import Data.List (lookup)
-import qualified GHC.Exts as E
+import GHC.Exts qualified as E
 import Relude.Extra.Bifunctor
 import Relude.Extra.Tuple
 import Taype.Binder
@@ -86,9 +84,7 @@ data Env = Env
     -- | Current expression for error reporting
     cur :: Expr Name,
     -- | Location of the current expression for error reporting
-    loc :: Int,
-    -- | Default label for inference
-    label :: Label
+    loc :: Int
   }
 
 instance HasOptions Env where
@@ -104,7 +100,6 @@ initEnv options gsctx gdctx =
       bctx = BCtx [],
       loc = -1,
       cur = V 0,
-      label = LeakyL,
       ..
     }
 
@@ -129,11 +124,11 @@ defsFromGCtx (GCtx gctx) = fmapToSnd go
 fromClosedDefs :: Defs a -> Defs b
 fromClosedDefs = secondF fromClosed
 
-newtype TCtx a = TCtx {unTCtx :: [(a, (Ty a, Label))]}
+newtype TCtx a = TCtx {unTCtx :: [(a, Ty a)]}
   deriving stock (Functor, Foldable, Traversable)
 
 instance BiplateM (TCtx Name) (Ty Name) where
-  biplateM f (TCtx tctx) = TCtx <$> forM tctx (secondM $ firstM f)
+  biplateM f (TCtx tctx) = TCtx <$> forM tctx (secondM f)
 
 newtype BCtx a = BCtx {unBCtx :: [(a, Binder)]}
   deriving stock (Functor, Foldable, Traversable)
@@ -169,7 +164,7 @@ lookupGDef x = do
   return $ lookupGCtx x gctx
 
 -- | Look up a type and its label in the typing context.
-lookupTy :: MonadReader Env m => Name -> m (Maybe (Ty Name, Label))
+lookupTy :: MonadReader Env m => Name -> m (Maybe (Ty Name))
 lookupTy x = do
   TCtx tctx <- asks tctx
   return $ lookup x tctx
@@ -185,7 +180,7 @@ lookupBinder x = do
 -- To maintain the invariant, the given types have to be well-kinded and in core
 -- taype ANF.
 extendCtx ::
-  MonadReader Env m => [(Name, Ty Name, Label, Maybe Binder)] -> m a -> m a
+  MonadReader Env m => [(Name, Ty Name, Maybe Binder)] -> m a -> m a
 extendCtx xs = local go
   where
     go Env {tctx = TCtx tctx, bctx = BCtx bctx, ..} =
@@ -194,16 +189,13 @@ extendCtx xs = local go
           bctx = BCtx $ mapMaybe bctx1 xs <> bctx,
           ..
         }
-    ctx1 (x, t, l, _) = (x, (t, l))
-    bctx1 (x, _, _, mb) = (x,) <$> mb
+    ctx1 (x, t, _) = (x, t)
+    bctx1 (x, _, mb) = (x,) <$> mb
 
 -- | Extend the typing context with one entry.
 extendCtx1 ::
-  MonadReader Env m => Name -> Ty Name -> Label -> Maybe Binder -> m a -> m a
-extendCtx1 x t l mb = extendCtx [(x, t, l, mb)]
-
-withLabel :: MonadReader Env m => Label -> m a -> m a
-withLabel l = local $ \Env {..} -> Env {label = l, ..}
+  MonadReader Env m => Name -> Ty Name -> Maybe Binder -> m a -> m a
+extendCtx1 x t mb = extendCtx [(x, t, mb)]
 
 withLoc :: MonadReader Env m => Int -> m a -> m a
 withLoc l = local $ \Env {..} -> Env {loc = l, ..}
@@ -218,9 +210,6 @@ withCur e = local (\Env {..} -> Env {cur = e, ..})
 withOption :: MonadReader Env m => (Options -> Options) -> m a -> m a
 withOption f = local $ \Env {..} -> Env {options = f options, ..}
 
-withOptPrintLabels :: MonadReader Env m => m a -> m a
-withOptPrintLabels = withOption $ \opt -> opt {optPrintLabels = True}
-
 ----------------------------------------------------------------
 -- Prelude context
 
@@ -230,32 +219,120 @@ preludeGCtx =
   GCtx $
     fromList $
       builtin
-        <$> [ ("+", [TInt, TInt], TInt, JoinStrategy),
-              (oblivName "+", [OInt, OInt], OInt, SafeStrategy),
-              ("-", [TInt, TInt], TInt, JoinStrategy),
-              (oblivName "-", [OInt, OInt], OInt, SafeStrategy),
-              ("*", [TInt, TInt], TInt, JoinStrategy),
-              (oblivName "*", [OInt, OInt], OInt, SafeStrategy),
-              ("/", [TInt, TInt], TInt, JoinStrategy),
-              (oblivName "/", [OInt, OInt], OInt, SafeStrategy),
-              ("&&", [TBool, TBool], TBool, JoinStrategy),
-              (oblivName "&&", [OBool, OBool], OBool, SafeStrategy),
-              ("||", [TBool, TBool], TBool, JoinStrategy),
-              (oblivName "||", [OBool, OBool], OBool, SafeStrategy),
-              ("not", [TBool], TBool, JoinStrategy),
-              (oblivName "not", [OBool], OBool, SafeStrategy),
-              ("==", [TInt, TInt], TBool, JoinStrategy),
-              (oblivName "==", [OInt, OInt], OBool, SafeStrategy),
-              ("<=", [TInt, TInt], TBool, JoinStrategy),
-              (oblivName "<=", [OInt, OInt], OBool, SafeStrategy),
-              (sectionName "bool", [TBool], OBool, JoinStrategy),
-              (retractionName "bool", [OBool], TBool, LeakyStrategy),
-              (sectionName "int", [TInt], OInt, JoinStrategy),
-              (retractionName "int", [OInt], TInt, LeakyStrategy)
+        <$> [ ( "+",
+                [TInt PublicL, TInt PublicL],
+                TInt PublicL,
+                SafeL
+              ),
+              ( oblivName "+",
+                [TInt OblivL, TInt OblivL],
+                TInt OblivL,
+                SafeL
+              ),
+              ( "-",
+                [TInt PublicL, TInt PublicL],
+                TInt PublicL,
+                SafeL
+              ),
+              ( oblivName "-",
+                [TInt OblivL, TInt OblivL],
+                TInt OblivL,
+                SafeL
+              ),
+              ( "*",
+                [TInt PublicL, TInt PublicL],
+                TInt PublicL,
+                SafeL
+              ),
+              ( oblivName "*",
+                [TInt OblivL, TInt OblivL],
+                TInt OblivL,
+                SafeL
+              ),
+              ( "/",
+                [TInt PublicL, TInt PublicL],
+                TInt PublicL,
+                SafeL
+              ),
+              ( oblivName "/",
+                [TInt OblivL, TInt OblivL],
+                TInt OblivL,
+                SafeL
+              ),
+              ( "&&",
+                [TBool PublicL, TBool PublicL],
+                TBool PublicL,
+                SafeL
+              ),
+              ( oblivName "&&",
+                [TBool OblivL, TBool OblivL],
+                TBool OblivL,
+                SafeL
+              ),
+              ( "||",
+                [TBool PublicL, TBool PublicL],
+                TBool PublicL,
+                SafeL
+              ),
+              ( oblivName "||",
+                [TBool OblivL, TBool OblivL],
+                TBool OblivL,
+                SafeL
+              ),
+              ( "not",
+                [TBool PublicL],
+                TBool PublicL,
+                SafeL
+              ),
+              ( oblivName "not",
+                [TBool OblivL],
+                TBool OblivL,
+                SafeL
+              ),
+              ( "==",
+                [TInt PublicL, TInt PublicL],
+                TBool PublicL,
+                SafeL
+              ),
+              ( oblivName "==",
+                [TInt OblivL, TInt OblivL],
+                TBool OblivL,
+                SafeL
+              ),
+              ( "<=",
+                [TInt PublicL, TInt PublicL],
+                TBool PublicL,
+                SafeL
+              ),
+              ( oblivName "<=",
+                [TInt OblivL, TInt OblivL],
+                TBool OblivL,
+                SafeL
+              ),
+              ( sectionName $ oblivName "bool",
+                [TBool PublicL],
+                TBool OblivL,
+                SafeL
+              ),
+              ( retractionName $ oblivName "bool",
+                [TBool OblivL],
+                TBool PublicL,
+                LeakyL
+              ),
+              ( sectionName $ oblivName "int",
+                [TInt PublicL],
+                TInt OblivL,
+                SafeL
+              ),
+              ( retractionName $ oblivName "int",
+                [TInt OblivL],
+                TInt PublicL,
+                LeakyL
+              )
             ]
 
-builtin :: (Text, [Ty a], Ty a, LabelPolyStrategy) -> NamedDef a
-builtin (name, paraTypes, resType, strategy) = (name, BuiltinDef {..})
+builtin :: (Text, [Ty a], Ty a, LLabel) -> NamedDef a
+builtin (name, paraTypes, resType, label) = (name, BuiltinDef {..})
 
 ----------------------------------------------------------------
 -- Pretty printer
@@ -270,4 +347,4 @@ instance Cute (TCtx Text) where
           <> hardline
           <> if null tctx then "<empty>" else sepWith hardline docs
     where
-      go (x, (t, l)) = cuteBinder x (Just l) (Just t)
+      go (x, t) = cuteBinder x (Just t)

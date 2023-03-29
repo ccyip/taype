@@ -1,4 +1,3 @@
-- `AppKind` can be deprecated?
 - Add program context for better inference
 - Error messages for `isProd` / `isOProd` / `isPi` could be confusing in
   introduction form
@@ -7,7 +6,7 @@
 - Syntax highlight for VSCode and Emacs
 - Add floating points
 - More descriptive field names for syntax?
-- Support tuple patterns in dependent case?
+- Support tuple patterns in lambda binders?
 - Unordered oblivious case?
 - Support nondeterministic oblivious value (of any oblivious type)?
   + May need to support bottom in the public computation, as a correspondence
@@ -18,7 +17,4 @@
 - Remove unnecessary dead code elimination?
 - Need to rename section / retraction functions before tupling?
 - More partial evaluation on numbers and booleans?
-
-- Known bug: early-tape optimization can cause non-termination in some cases.
-  This can be fixed by keeping the public values (until we can't) in the
-  oblivious array backends.
+- Pretty print only works for `Name`?

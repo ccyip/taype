@@ -62,8 +62,8 @@ library
                        Taype.Syntax
                        Taype.Lexer
                        Taype.Parser
-                       -- Taype.Environment
-                       -- Taype.TypeChecker
+                       Taype.Environment
+                       Taype.TypeChecker
                        -- Oil.Syntax
                        -- Oil.Translation
                        -- Oil.Optimization

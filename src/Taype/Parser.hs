@@ -149,7 +149,7 @@ grammar = mdo
             ty <- pType
             pToken L.Equals
             expr <- pExpr
-            return (name, FunDef {..})
+            return (name, FunDef {label = LeakyL, ..})
         ]
 
   -- Expression

@@ -23,12 +23,12 @@ import Options.Applicative
 import System.FilePath
 import Taype.Common
 import Taype.Cute
--- import Taype.Environment
+import Taype.Environment
 import Taype.Error
 import Taype.Lexer
 import Taype.Parser
 import Taype.Syntax
--- import Taype.TypeChecker
+import Taype.TypeChecker
 
 run :: Options -> IO ()
 run options@Options {optFile = file} = do
@@ -49,12 +49,12 @@ process options@Options {optFile = file, optCode = code, ..} = do
       srcDefs = closeDefs namedDefs
       srcDoc = cuteDefs options srcDefs
   when optPrintSource $ printDoc options srcDoc
-  -- gctx <- checkDefs options srcDefs
-  -- let coreDefs = defsFromGCtx gctx names
-  --     coreDefs' = if optReadable then readableDefs coreDefs else coreDefs
-  --     coreDoc =
-  --       cuteDefs options {optPrintLabels = True} (fromClosedDefs coreDefs')
-  -- when optPrintCore $ printDoc options coreDoc
+  gctx <- checkDefs options srcDefs
+  let coreDefs = defsFromGCtx gctx names
+      coreDefs' = if optReadable then readableDefs coreDefs else coreDefs
+      coreDoc =
+        cuteDefs options (fromClosedDefs coreDefs')
+  when optPrintCore $ printDoc options coreDoc
   -- printToFile (file -<.> "tpc") coreDoc
   -- prog <- lift $ toOilProgram options gctx coreDefs
   -- let (preludeOil, preludeML) = preludeDocs options
