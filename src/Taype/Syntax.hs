@@ -242,7 +242,12 @@ data DefB f a
   | -- | Oblivious algebraic data type
     --
     -- It takes a single argument for now.
-    OADTDef {loc :: Int, argTy :: f a, binder :: Maybe Binder, bnd :: Scope () f a}
+    OADTDef
+      { loc :: Int,
+        argTy :: f a,
+        binder :: Maybe Binder,
+        bnd :: Scope () f a
+      }
   | -- | Constructor
     CtorDef {paraTypes :: [f a], dataType :: Text}
   | -- | Builtin operation
@@ -772,9 +777,13 @@ cuteDef :: Options -> Text -> Def Text -> Doc
 cuteDef options name = \case
   FunDef {..} ->
     hang $
-      "fn"
+      "fn" <> leakyDoc
         <+> go (cuteBinder name (Just ty))
         <+> equals <> go (cuteLam True expr)
+    where
+      leakyDoc = case label of
+        LeakyL -> "'"
+        _ -> ""
   ADTDef {..} ->
     hang $
       "data"

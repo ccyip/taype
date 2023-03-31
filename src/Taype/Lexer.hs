@@ -52,7 +52,7 @@ data Token
   | ILit Int
   | Data
   | Obliv
-  | Fn
+  | Fn LLabel
   | Let
   | In
   | If
@@ -102,7 +102,8 @@ pToken =
       choice
         [ Data <$ symbol "data",
           Obliv <$ symbol "obliv",
-          Fn <$ symbol "fn",
+          Fn LeakyL <$ symbol "fn'",
+          Fn SafeL <$ symbol "fn",
           Let <$ symbol "let",
           In <$ symbol "in",
           If <$ symbol "if",
@@ -167,6 +168,7 @@ reserved =
     "data",
     "obliv",
     "fn",
+    "fn'",
     "let",
     "in",
     "if",

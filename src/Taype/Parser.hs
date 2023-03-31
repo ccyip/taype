@@ -45,6 +45,15 @@ pLocatedToken expected = terminal match
 pToken :: Token -> Parser r ()
 pToken = void <$> pLocatedToken
 
+pLocatedFn :: Parser r (Int, LLabel)
+pLocatedFn = pLocatedTerminal match
+  where
+    match (L.Fn l) = Just l
+    match _ = Nothing
+
+pFn :: Parser r LLabel
+pFn = snd <$> pLocatedFn
+
 pLocatedIdent :: Parser r (Int, Text)
 pLocatedIdent = pLocatedTerminal match
   where
@@ -143,13 +152,13 @@ grammar = mdo
               ),
           -- Function definition
           do
-            pToken L.Fn
+            label <- pFn
             ~(loc, name) <- pLocatedIdent
             pToken L.Colon
             ty <- pType
             pToken L.Equals
             expr <- pExpr
-            return (name, FunDef {label = LeakyL, ..})
+            return (name, FunDef {..})
         ]
 
   -- Expression
@@ -448,8 +457,8 @@ grammar = mdo
           let go left right = Loc {expr = former left right, loc = getLoc left}
            in setLoc loc $ foldr go end prefix
       -- Application-like
-      pApp former pFn = do
-        fn <- pFn
+      pApp former pHd = do
+        fn <- pHd
         args <- some1 pAtomExpr
         return $ Loc {loc = getLoc fn, expr = former fn $ toList args}
       -- Parenthesized
@@ -550,7 +559,8 @@ renderToken = \case
   L.ILit _ -> "integer literal"
   L.Data -> "data"
   L.Obliv -> "obliv"
-  L.Fn -> "fn"
+  L.Fn SafeL -> "fn"
+  L.Fn LeakyL -> "fn'"
   L.Let -> "let"
   L.In -> "in"
   L.If -> "if"
