@@ -734,13 +734,15 @@ instance Cute (Expr Text) where
       [inj]
     where
       cuteInjType ty = angles <$> cute ty
-  cute OProj {..} =
-    cute $
-      oblivName $
-        "pi" <> case projKind of
-          TagP -> "0"
-          LeftP -> "1"
-          RightP -> "2"
+  cute OProj {..} = do
+    projDoc <-
+      cute $
+        oblivName $
+          "pi" <> case projKind of
+            TagP -> "0"
+            LeftP -> "1"
+            RightP -> "2"
+    cuteApp_ projDoc [expr]
   cute OMatch {..} = do
     condDoc <- cute cond
     (xl, lBody) <- unbind1NameOrBinder lBinder lBnd
