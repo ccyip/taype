@@ -46,6 +46,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
   namedDefs <- parse tokens
   let names = fst <$> namedDefs
+      srcDefs :: Defs a
       srcDefs = closeDefs namedDefs
       srcDoc = cuteDefs options srcDefs
   when optPrintSource $ printDoc options srcDoc
