@@ -1403,7 +1403,7 @@ preCheckDefs allDefs = do
         (name,)
           <$> runTcM
             (initEnv options name gctx0 mempty)
-            (preCheckDef allDefs name def)
+            (preCheckDef allDefs def)
   -- Extend global signature context with the ADTs and their constructors. Note
   -- that the types of all constructors are already in the right form after
   -- pre-check.
@@ -1433,7 +1433,7 @@ preCheckDefs allDefs = do
       def' <-
         lift $
           runTcM (initEnv options name gctx mempty) $
-            preCheckDef allDefs name def
+            preCheckDef allDefs def
       gctx' <- extendGCtx1 gctx name def'
       go gctx' defs
 
@@ -1492,8 +1492,8 @@ preCheckName (defName, def) = do
 -- | Pre-check a global definition signature.
 --
 -- The first argument is the definitions for peeking ahead.
-preCheckDef :: Defs Name -> Text -> Def Name -> TcM (Def Name)
-preCheckDef defs name = \case
+preCheckDef :: Defs Name -> Def Name -> TcM (Def Name)
+preCheckDef defs = \case
   FunDef {..} -> withLabel label $ do
     ty' <- kinded ty
     return FunDef {ty = ty', ..}
@@ -1506,15 +1506,17 @@ preCheckDef defs name = \case
     return OADTDef {pubTy = pubTy', argTy = argTy', ..}
   _ -> oops "Pre-checking constructor or builtin definitions"
   where
-    inferPubTy = case lookup (sectionName name) defs of
-      Just FunDef {..} -> do
-        (_, _, bnd) <- isPi ty
-        (_, body) <- unbind1 bnd
-        (t, _, _) <- isPi body
-        maybeGV t >>= \case
-          Just (ref, ADTDef {}) -> return ref
-          _ -> return ""
-      _ -> return ""
+    inferPubTy = do
+      name <- asks defName
+      case lookup (sectionName name) defs of
+        Just FunDef {..} -> do
+          (_, _, bnd) <- isPi ty
+          (_, body) <- unbind1 bnd
+          (t, _, _) <- isPi body
+          maybeGV t >>= \case
+            Just (ref, ADTDef {}) -> return ref
+            _ -> return ""
+        _ -> return ""
 
 -- | Ensure OADT structures are well-formed.
 --
