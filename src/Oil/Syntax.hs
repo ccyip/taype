@@ -18,21 +18,15 @@ module Oil.Syntax
     Expr (..),
     Ty (..),
     sizeTy,
-    Def (..),
+    Def,
+    DefB (..),
     NamedDef,
     Defs,
     Program (..),
 
     -- * Smart constructors
     Apply (..),
-    adtDef_,
-    funDef_,
-    ar_,
-    lam_,
-    lams_,
-    let_,
-    lets_,
-    case_,
+    arrows_,
     ite_,
     prod_,
     pair_,
@@ -41,7 +35,7 @@ module Oil.Syntax
     lamsB,
     letB,
     letsB,
-    caseB,
+    matchB,
     lam',
     lams',
     let',
@@ -99,48 +93,46 @@ data Expr a
         rhs :: Expr a,
         bnd :: Scope () Expr a
       }
-  | -- | Case analysis
-    Case
+  | -- | ADT pattern matching
+    Match
       { cond :: Expr a,
-        alts :: [CaseAlt Expr a]
+        alts :: [MatchAlt Expr a]
       }
   deriving stock (Functor, Foldable, Traversable)
 
-data Ty a
-  = -- | Local type variable
-    TV {name :: a}
-  | -- | Integer type
+data Ty
+  = -- | Integer type
     TInt
   | -- | Oblivious array
     OArray
   | -- | Function type
-    Arrow {dom :: Ty a, cod :: Ty a}
+    Arrow {dom :: Ty, cod :: Ty}
   | -- | Type application
-    TApp {tctor :: Text, args :: [Ty a]}
-  deriving stock (Functor, Foldable, Traversable, Eq)
+    --
+    -- This includes types with no argument, such as ADTs.
+    TApp {tctor :: Text, args :: [Ty]}
+  deriving stock (Eq)
 
 -- | The type of data size
 --
 -- We reuse the integer type for size type for convenience, and ignore the
 -- issues of overflow, potential negative values, etc.
-sizeTy :: Ty a
+sizeTy :: Ty
 sizeTy = TInt
 
 -- | Global definition
---
--- Technically, 'Ty' and 'Expr' should take different type variables, but here
--- they take the same type variable for simplicity.
-data Def a
+type Def = DefB Expr
+
+-- | Generalized global definition
+data DefB f a
   = -- | Function
     FunDef
-      { binders :: [Maybe Binder],
-        tyBnd :: Scope Int Ty a,
-        expr :: Expr a
+      { ty :: Ty,
+        expr :: f a
       }
   | -- | Algebraic data type
     ADTDef
-      { binders :: [Maybe Binder],
-        ctors :: [(Text, [Scope Int Ty a])]
+      { ctors :: [(Text, [Ty])]
       }
   deriving stock (Functor, Foldable, Traversable)
 
@@ -178,9 +170,6 @@ aSlice :: Text
 aSlice = "@slice"
 
 -- | Multiplexer
---
--- Unlike the multiplexer expressions in taype, this also takes an extra
--- argument for the size of the oblivious array.
 aMux :: Text
 aMux = "@mux"
 
@@ -203,7 +192,7 @@ instance Monad Expr where
         bnd = bnd >>>= f,
         ..
       }
-  Case {..} >>= f = Case {cond = cond >>= f, alts = alts <&> (>>>= f)}
+  Match {..} >>= f = Match {cond = cond >>= f, alts = alts <&> (>>>= f)}
 
 instance Eq1 Expr where
   liftEq eq V {name} V {name = name'} = eq name name'
@@ -214,7 +203,7 @@ instance Eq1 Expr where
     liftEq eq fn fn' && liftEq (liftEq eq) args args'
   liftEq eq Let {rhs, bnd} Let {rhs = rhs', bnd = bnd'} =
     liftEq eq rhs rhs' && liftEq eq bnd bnd'
-  liftEq eq Case {cond, alts} Case {cond = cond', alts = alts'} =
+  liftEq eq Match {cond, alts} Match {cond = cond', alts = alts'} =
     liftEq eq cond cond' && liftEq (liftEq eq) alts alts'
   liftEq _ _ _ = False
 
@@ -234,38 +223,11 @@ instance PlateM (Expr Name) where
     (x, body) <- unbind1 bnd
     body' <- f body
     return Let {rhs = rhs', bnd = abstract_ x body', ..}
-  plateM f Case {..} = do
+  plateM f Match {..} = do
     cond' <- f cond
     alts' <- mapM (biplateM f) alts
-    return Case {cond = cond', alts = alts'}
+    return Match {cond = cond', alts = alts'}
   plateM _ e = return e
-
-instance IsString a => IsString (Expr a) where
-  fromString = return . fromString
-
-instance Applicative Ty where
-  pure = TV
-  (<*>) = ap
-
-instance Monad Ty where
-  TV {..} >>= f = f name
-  TInt >>= _ = TInt
-  OArray >>= _ = OArray
-  Arrow {..} >>= f = Arrow {dom = dom >>= f, cod = cod >>= f}
-  TApp {..} >>= f = TApp {args = args <&> (>>= f), ..}
-
-instance IsString a => IsString (Ty a) where
-  fromString = return . fromString
-
-instance PlateM (Ty Name) where
-  plateM f Arrow {..} = do
-    dom' <- f dom
-    cod' <- f cod
-    return Arrow {dom = dom', cod = cod'}
-  plateM f TApp {..} = do
-    args' <- mapM f args
-    return TApp {args = args', ..}
-  plateM _ t = return t
 
 instance BiplateM (Def Name) (Expr Name) where
   biplateM f FunDef {..} = do
@@ -276,23 +238,6 @@ instance BiplateM (Def Name) (Expr Name) where
 instance BiplateM (Defs Name) (Expr Name) where
   biplateM f = mapM $ secondM $ biplateM f
 
--- | A specialized 'Bound' instance
---
--- Similar to '>>>=', but handle both variable classes (one for expressions and
--- one for types). Perhaps we should introduce a @Bibound@ class.
-boundDef :: (a -> Expr b) -> (a -> Ty b) -> Def a -> Def b
-boundDef f g FunDef {..} =
-  FunDef
-    { tyBnd = tyBnd >>>= g,
-      expr = expr >>= f,
-      ..
-    }
-boundDef _ g ADTDef {..} =
-  ADTDef
-    { ctors = ctors <&> second ((>>>= g) <$>),
-      ..
-    }
-
 ----------------------------------------------------------------
 -- Smart constructors
 
@@ -301,88 +246,36 @@ class Apply a b | a -> b where
 
 infixl 2 @@
 
-adtDef_ :: Text -> [Binder] -> [(Text, [Ty Text])] -> NamedDef a
-adtDef_ name binders ctors = (name, boundDef GV close def)
-  where
-    def =
-      ADTDef
-        { binders = Just <$> binders,
-          ctors = ctors <&> second (abstractBinder binders <$>)
-        }
-    close "$self" = tGV name
-    close x = tGV x
-
-funDef_ :: Text -> [Binder] -> Ty Text -> Expr Text -> NamedDef a
-funDef_ name binders ty expr = (name, boundDef close tGV def)
-  where
-    def =
-      FunDef
-        { binders = Just <$> binders,
-          tyBnd = abstractBinder binders ty,
-          ..
-        }
-    close "$self" = GV name
-    close x = GV x
-
-ar_ :: [Ty a] -> Ty a
-ar_ [] = oops "Arrow without type"
-ar_ [t] = t
-ar_ (t : ts) = Arrow t $ ar_ ts
-
-lam_ :: a ~ Text => BinderM a -> Expr a -> Expr a
-lam_ binder body =
-  Lam
-    { binder = Just binder,
-      bnd = abstractBinder binder body
-    }
-
-lams_ :: a ~ Text => [BinderM a] -> Expr a -> Expr a
-lams_ = flip $ foldr lam_
-
-let_ :: a ~ Text => BinderM a -> Expr a -> Expr a -> Expr a
-let_ binder rhs body =
-  Let
-    { binder = Just binder,
-      bnd = abstractBinder binder body,
-      ..
-    }
-
-lets_ :: a ~ Text => [(BinderM a, Expr a)] -> Expr a -> Expr a
-lets_ = flip $ foldr $ uncurry let_
-
 instance Apply (Expr a) (Expr a) where
   fn @@ args = App {..}
 
-case_ :: a ~ Text => Expr a -> [(Text, [BinderM a], Expr a)] -> Expr a
-case_ cond alts =
-  Case
-    { alts = uncurry3 caseAlt_ <$> alts,
-      ..
-    }
+instance Apply Ty Text where
+  tctor @@ args = TApp {..}
 
--- Do not reuse 'case_' to avoid the constraint on @a@.
+arrows_ :: [Ty] -> Ty
+arrows_ [] = oops "Arrow without type"
+arrows_ [t] = t
+arrows_ (t : ts) = Arrow t $ arrows_ ts
+
 ite_ :: Eq a => Expr a -> Expr a -> Expr a -> Expr a
 ite_ cond left right =
-  Case
+  Match
     { alts =
-        [ CaseAlt {ctor = "False", binders = [], bnd = abstract_ [] right},
-          CaseAlt {ctor = "True", binders = [], bnd = abstract_ [] left}
+        [ MatchAlt {ctor = "False", binders = [], bnd = abstract_ [] right},
+          MatchAlt {ctor = "True", binders = [], bnd = abstract_ [] left}
         ],
       ..
     }
 
-prod_ :: Ty a -> Ty a -> Ty a
+prod_ :: Ty -> Ty -> Ty
 prod_ a b = "*" @@ [a, b]
 
 pair_ :: Expr a -> Expr a -> Expr a
 pair_ a b = GV "(,)" @@ [a, b]
 
 -- | Global type, i.e. type constructor without argument
-tGV :: Text -> Ty a
+tGV :: Text -> Ty
 tGV tctor = TApp {args = [], ..}
-
-instance Apply (Ty a) Text where
-  tctor @@ args = TApp {..}
 
 ----------------------------------------------------------------
 -- Smart constructors that work with 'Name's
@@ -404,12 +297,12 @@ letB x binder rhs body =
 letsB :: [(Name, Maybe Binder, Expr Name)] -> Expr Name -> Expr Name
 letsB = flip $ foldr $ uncurry3 letB
 
-caseB :: Expr Name -> [(Text, [(Name, Maybe Binder)], Expr Name)] -> Expr Name
-caseB cond alts = Case {alts = go <$> alts, ..}
+matchB :: Expr Name -> [(Text, [(Name, Maybe Binder)], Expr Name)] -> Expr Name
+matchB cond alts = Match {alts = go <$> alts, ..}
   where
     go (ctor, namedBinders, body) =
       let (xs, binders) = unzip namedBinders
-       in CaseAlt {bnd = abstract_ xs body, ..}
+       in MatchAlt {bnd = abstract_ xs body, ..}
 
 lam' :: Name -> Expr Name -> Expr Name
 lam' x = lamB x Nothing
@@ -433,7 +326,7 @@ instance Cute (Expr Text) where
   cute e@Lam {} = cuteLam False e
   cute e@App {fn = GV {..}, args = [left, right]}
     | isInfix ref = cuteInfix e ref left right
-  cute App {fn = GV "(,)", args = [left, right]} = cutePair "" left right
+  cute App {fn = GV "(,)", args = [left, right]} = cutePair PublicP left right
   cute App {..} = cuteApp fn args
   cute e@Let {} = do
     (bindingDocs, bodyDoc) <- go e
@@ -447,26 +340,25 @@ instance Cute (Expr Text) where
         return ((binderDoc, rhsDoc) : bindingDocs, bodyDoc)
       go expr = ([],) <$> cute expr
   cute
-    Case
+    Match
       { alts =
-          [ CaseAlt {ctor = "False", binders = [], bnd = rBnd},
-            CaseAlt {ctor = "True", binders = [], bnd = lBnd}
+          [ MatchAlt {ctor = "False", binders = [], bnd = rBnd},
+            MatchAlt {ctor = "True", binders = [], bnd = lBnd}
             ],
         ..
       } = do
       (_, left) <- unbindManyNamesOrBinders [] lBnd
       (_, right) <- unbindManyNamesOrBinders [] rBnd
-      cuteIte "" cond left right
-  cute Case {alts = [CaseAlt {ctor = "(,)", ..}], ..} = do
+      cuteIte PublicL cond left right
+  cute Match {alts = [MatchAlt {ctor = "(,)", ..}], ..} = do
     (xs, body) <- unbindManyNamesOrBinders binders bnd
     case xs of
-      [xl, xr] -> cutePCase_ "" cond xl xr body
+      [xl, xr] -> cutePMatch_ PublicP cond xl xr body
       _ -> oops "Binder number does not match"
-  cute Case {..} = cuteCase "" True cond alts
+  cute Match {..} = cuteMatch PublicL True cond alts
 
 -- | Pretty printer for a type
-instance Cute (Ty Text) where
-  cute TV {..} = cute name
+instance Cute Ty where
   cute TInt = "int"
   cute OArray = cute aName
   cute e@Arrow {..} = do
@@ -481,34 +373,25 @@ instance Cute (Ty Text) where
 instance Cute (NamedDef Text) where
   cute (name, def) = case def of
     FunDef {..} -> do
-      (xs, ty) <- unbindManyNamesOrBinders binders tyBnd
       tyDoc <- cute ty
       doc <- cuteLam True expr
       return $
         hang $
           "fn"
             <+> pretty name
-              <> tyVarsDoc xs
               <> sep1_ name (colon <+> align (group tyDoc))
             <+> equals
               <> doc
     ADTDef {..} -> do
-      xs <- mapM freshNameOrBinder binders
-      ctorDocs <- mapM (cuteCtor xs) ctors
+      ctorDocs <- mapM cuteCtor ctors
       return $
         hang $
           "data"
             <+> adtName
-              <> tyVarsDoc xs
               <> sep1 (equals <+> sepWith (line <> pipe <> space) ctorDocs)
       where
-        cuteCtor xs (ctor, paraBnds) = do
-          let paraTypes = paraBnds <&> instantiateName xs
-          cuteApp_ (pretty ctor) paraTypes
+        cuteCtor (ctor, paraTypes) = cuteApp_ (pretty ctor) paraTypes
         adtName = if isInfix name then parens $ pretty name else pretty name
-    where
-      tyVarsDoc [] = ""
-      tyVarsDoc xs = softline <> brackets (sep $ pretty <$> xs)
 
 -- | Pretty printer for OIL definitions
 cuteDefs :: Options -> Defs Text -> Doc
@@ -535,12 +418,10 @@ instance HasPLevel (Expr a) where
     App {} -> 10
     _ -> 90
 
-instance HasPLevel (Ty a) where
+instance HasPLevel Ty where
   plevel = \case
-    TV {} -> 0
     TInt {} -> 0
     OArray {} -> 0
-    TApp {..} | tctor `elem` leakyInfixes -> 19
     TApp {..} | isInfix tctor -> 20
     TApp {args = []} -> 0
     TApp {} -> 10

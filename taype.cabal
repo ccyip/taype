@@ -64,7 +64,7 @@ library
                        Taype.Parser
                        Taype.Environment
                        Taype.TypeChecker
-                       -- Oil.Syntax
+                       Oil.Syntax
                        -- Oil.Translation
                        -- Oil.Optimization
                        -- Oil.ToOCaml
