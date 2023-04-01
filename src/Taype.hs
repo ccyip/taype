@@ -56,7 +56,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
       coreDoc =
         cuteDefs options (fromClosedDefs coreDefs')
   when optPrintCore $ printDoc options coreDoc
-  -- printToFile (file -<.> "tpc") coreDoc
+  printToFile (file -<.> "tpc") coreDoc
   -- prog <- lift $ toOilProgram options gctx coreDefs
   -- let (preludeOil, preludeML) = preludeDocs options
   --     Oil.Program {..} = fromClosed prog
@@ -87,10 +87,10 @@ process options@Options {optFile = file, optCode = code, ..} = do
   -- when (optPrintOCaml && optPrintPrelude) $ printDoc options preludeML
   -- when optPrintOCaml $ printDoc options $ mainML <> concealML <> revealML
   -- printToFiles "ml" mainML concealML revealML
-  -- where
+  where
   --   capitalize (h : t) = toUpper h : t
   --   capitalize "" = ""
-  --   printToFile f d = unless optNoFiles $ printDocToFile f d
+    printToFile f d = unless optNoFiles $ printDocToFile f d
   --   printToFiles ext mainDoc concealDoc revealDoc = do
   --     printToFile (file -<.> ext) mainDoc
   --     printToFile (dir </> (baseName <> "_conceal") <.> ext) concealDoc

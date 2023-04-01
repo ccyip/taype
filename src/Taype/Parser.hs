@@ -147,6 +147,7 @@ grammar = mdo
                 OADTDef
                   { bnd = abstractBinder binder body,
                     binder = Just binder,
+                    pubTy = "",
                     ..
                   }
               ),

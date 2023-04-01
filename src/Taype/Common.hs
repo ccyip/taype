@@ -27,7 +27,10 @@ module Taype.Common
     -- * Common names
     oblivAccent,
     oblivName,
+    instInfix,
+    sectionInstName,
     sectionName,
+    retractionInstName,
     retractionName,
     internalPrefix,
     internalName,
@@ -173,13 +176,23 @@ oblivAccent = "~"
 oblivName :: Text -> Text
 oblivName = (oblivAccent <>)
 
+-- | OADT instance connector
+instInfix :: Text
+instInfix = "#"
+
 -- | Section name
+sectionInstName :: Text
+sectionInstName = "s"
+
 sectionName :: Text -> Text
-sectionName = (<> "#s")
+sectionName x = x <> instInfix <> sectionInstName
 
 -- | Retraction name
+retractionInstName :: Text
+retractionInstName = "r"
+
 retractionName :: Text -> Text
-retractionName = (<> "#r")
+retractionName x = x <> instInfix <> retractionInstName
 
 -- | Internal name
 internalPrefix :: Text

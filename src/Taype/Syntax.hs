@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
 -- |
 -- Copyright: (c) 2022-2023 Qianchuan Ye
@@ -29,6 +30,7 @@ module Taype.Syntax
     lam_,
     pi_,
     app_,
+    tapp_,
     let_,
     ite_,
     oite_,
@@ -40,6 +42,8 @@ module Taype.Syntax
     let',
     lets',
     pmatch',
+    pi',
+    arrow',
 
     -- * Pretty printer
     cuteBinder,
@@ -244,6 +248,7 @@ data DefB f a
     -- It takes a single argument for now.
     OADTDef
       { loc :: Int,
+        pubTy :: Text,
         argTy :: f a,
         binder :: Maybe Binder,
         bnd :: Scope () f a
@@ -560,6 +565,9 @@ pi_ binder ty body =
 app_ :: Expr a -> [Expr a] -> Expr a
 app_ fn args = App {appKind = FunApp, ..}
 
+tapp_ :: Expr a -> [Expr a] -> Expr a
+tapp_ fn args = App {appKind = TypeApp, ..}
+
 let_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a -> Expr a
 let_ binder rhsTy rhs body =
   Let
@@ -687,6 +695,17 @@ pmatch' pairKind cond xl xr body =
       rBinder = Nothing,
       bnd2 = abstract_ (xl, xr) body,
       ..
+    }
+
+pi' :: Name -> Ty Name -> Ty Name -> Ty Name
+pi' x ty body = Pi {binder = Nothing, bnd = abstract_ x body, ..}
+
+arrow' :: Ty Name -> Ty Name -> Ty Name
+arrow' dom cod =
+  Pi
+    { ty = dom,
+      binder = Just Anon,
+      bnd = abstract (const Nothing) cod
     }
 
 ----------------------------------------------------------------

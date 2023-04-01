@@ -588,7 +588,7 @@ typing Asc {..} Nothing = do
   e' <- check expr ty'
   return (ty', e')
 
--- Check type but infer label.
+-- Check type.
 typing e (Just t) = do
   (t', e') <- infer e
   equate t t'
@@ -926,8 +926,20 @@ checkArity appKind ref args paraTypes =
 --
 -- They must be already well-kinded or well-typed, and in core taype.
 equate :: Expr Name -> Expr Name -> TcM ()
-equate e e' | e == e' = pass
-equate e e' = do
+equate e e' =
+  equate_ e e' `catchError` \_ ->
+    err
+      [ [DD "Could not match types"],
+        [DH "Expected", DC e],
+        [DH "Got", DC e']
+      ]
+
+-- | Check the equivalence of two expressions.
+--
+-- They must be already well-kinded or well-typed, and in core taype.
+equate_ :: Expr Name -> Expr Name -> TcM ()
+equate_ e e' | e == e' = pass
+equate_ e e' = do
   nf <- whnf e
   nf' <- whnf e'
   go nf nf'
@@ -937,25 +949,25 @@ equate e e' = do
     go nf@App {} nf' = equateApp nf nf'
     go nf nf'@App {} = equateApp nf nf'
     go Pi {ty, bnd} Pi {ty = ty', bnd = bnd'} = do
-      equate ty ty'
+      equate_ ty ty'
       (_, body, body') <- unbind1With bnd bnd'
-      equate body body'
+      equate_ body body'
     go Lam {bnd} Lam {bnd = bnd'} = do
       (_, body, body') <- unbind1With bnd bnd'
-      equate body body'
+      equate_ body body'
     go Let {rhs, bnd} Let {rhs = rhs', bnd = bnd'} = do
-      equate rhs rhs'
+      equate_ rhs rhs'
       (_, body, body') <- unbind1With bnd bnd'
-      equate body body'
+      equate_ body body'
     go
       Ite {cond, left, right}
       Ite {cond = cond', left = left', right = right'} = do
-        equate cond cond'
-        equate left left'
-        equate right right'
+        equate_ cond cond'
+        equate_ left left'
+        equate_ right right'
     go Match {cond, alts} Match {cond = cond', alts = alts'}
       | length alts == length alts' = do
-          equate cond cond'
+          equate_ cond cond'
           -- Since both match expressions are in core taype, the alternatives are
           -- in canonical order.
           NE.zipWithM_ goAlt alts alts'
@@ -966,45 +978,42 @@ equate e e' = do
             | ctor == ctor' && length binders == length binders' = do
                 let n = length binders
                 (_, body, body') <- unbindManyWith n bnd bnd'
-                equate body body'
-        goAlt _ _ = errEquate
+                equate_ body body'
+        goAlt _ _ = eqFail
     go
       OIte {cond, left, right}
       OIte {cond = cond', left = left', right = right'} = do
-        equate cond cond'
-        equate left left'
-        equate right right'
+        equate_ cond cond'
+        equate_ left left'
+        equate_ right right'
     go
       Prod {olabel, left, right}
       Prod {olabel = olabel', left = left', right = right'}
         | olabel == olabel' = do
-            equate left left'
-            equate right right'
+            equate_ left left'
+            equate_ right right'
     go
       Pair {pairKind, left, right}
       Pair {pairKind = pairKind', left = left', right = right'}
         | pairKind == pairKind' = do
-            equate left left'
-            equate right right'
+            equate_ left left'
+            equate_ right right'
     go
       PMatch {pairKind, cond, bnd2}
       PMatch {pairKind = pairKind', cond = cond', bnd2 = bnd2'}
         | pairKind == pairKind' = do
-            equate cond cond'
+            equate_ cond cond'
             (_, body, body') <- unbind2With bnd2 bnd2'
-            equate body body'
+            equate_ body body'
     go OSum {left, right} OSum {left = left', right = right'} = do
-      equate left left'
-      equate right right'
+      equate_ left left'
+      equate_ right right'
     go OInj {tag, inj} OInj {tag = tag', inj = inj'}
-      | tag == tag' = equate inj inj'
+      | tag == tag' = equate_ inj inj'
     go OProj {projKind, expr} OProj {projKind = projKind', expr = expr'}
-      | projKind == projKind' = equate expr expr'
+      | projKind == projKind' = equate_ expr expr'
     go nf nf' | nf == nf' = pass
-    go _ _ = errEquate
-
-    -- Equate two expressions, but throw away the error messages.
-    equate_ t t' = equate t t' `catchError` const errEquate
+    go _ _ = eqFail
 
     -- Equate two expressions with at least one being global variable.
     equateGV nf nf' | nf == nf' = pass
@@ -1014,31 +1023,26 @@ equate e e' = do
         _ ->
           tryUnfold nf' >>= \case
             Just expr' -> equate_ nf expr'
-            _ -> errEquate
+            _ -> eqFail
 
     -- Equate two expressions with at least one being application.
     equateApp :: Expr Name -> Expr Name -> TcM ()
     equateApp nf nf' = do
-      equateApp_ nf nf' `catchError` \appErr ->
+      equateApp_ nf nf' `catchError` \_ ->
         tryUnfoldApp nf >>= \case
           Just expr -> equate_ expr nf'
           _ ->
             tryUnfoldApp nf' >>= \case
               Just expr' -> equate_ nf expr'
-              _ -> throwError appErr
+              _ -> eqFail
 
     equateApp_ App {fn, args} App {fn = fn', args = args'}
       | length args == length args' = do
-          equate fn fn'
-          zipWithM_ equate args args'
-    equateApp_ _ _ = errEquate
+          equate_ fn fn'
+          zipWithM_ equate_ args args'
+    equateApp_ _ _ = eqFail
 
-    errEquate =
-      err
-        [ [DD "Could not match the type"],
-          [DH "Expected", DC e],
-          [DH "Got", DC e']
-        ]
+    eqFail = err_ (-1) ""
 
 equateSome :: NonEmpty (Expr Name) -> TcM ()
 equateSome (e :| es) = forM_ es $ equate e
@@ -1145,7 +1149,8 @@ mayLeak l = modify (l \/)
 checkLabelWith :: Int -> Text -> LLabel -> LLabel -> TcM ()
 checkLabelWith loc name l l' = do
   when (l < l') $
-    err_ loc $ "Definition" <+> pretty name <+> "cannot be leaky"
+    err_ loc $
+      "Definition" <+> pretty name <+> "cannot be" <+> show l'
 
 checkLabel :: Int -> Text -> LLabel -> TcM ()
 checkLabel loc name l = do
@@ -1280,16 +1285,19 @@ joinAlts alts ctors =
           return r
         _ ->
           err $
-            [ DH "Some constructors are missing from this pattern matching"
-                : andList missing
+            [ [ DH "Some constructors are missing from this pattern matching",
+                DD $ andList missing
+              ]
               | not $ null missing
             ]
-              <> [ DH "This pattern matching has some duplicate constructors"
-                     : andList dups
+              <> [ [ DH "This pattern matching has some duplicate constructors",
+                     DD $ andList dups
+                   ]
                    | not $ null dups
                  ]
-              <> [ DH "Some constructors do not belong to this ADT"
-                     : andList unknowns
+              <> [ [ DH "Some constructors do not belong to this ADT",
+                     DD $ andList unknowns
+                   ]
                    | not $ null unknowns
                  ]
   where
@@ -1318,7 +1326,7 @@ notAppearIn ty args = do
   unless (null xs) $
     err
       [ [DH "Some free variables appear in the inferred type", DC ty],
-        DH "These variables are" : andList xs,
+        [DH "These variables are", DD $ andList xs],
         [DD "Could not type this expression without dependent types"]
       ]
 
@@ -1351,11 +1359,7 @@ checkDefs options@Options {..} defs = runDcM options $ do
     go gsctx gdctx ((name, _) : defs') = do
       -- use the definition in the signature context because the signatures
       -- there have already been checked.
-      let def =
-            fromMaybe
-              (oops $ "Definition " <> name <> " does not exist")
-              (lookupGCtx name gsctx)
-      def' <- lift $ runTcM (initEnv options gsctx gdctx) $ checkDef name def
+      def' <- lift $ runTcM (initEnv options gsctx gdctx) $ checkDef name
       gdctx' <- extendGCtx1 gdctx name def'
       go gsctx gdctx' defs'
     simp def = if optNoFlattenLets then def else flattenLets def
@@ -1365,20 +1369,21 @@ checkDefs options@Options {..} defs = runDcM options $ do
 -- The signature of this definition must be checked already.
 --
 -- The returned definition must be in core taype ANF.
-checkDef :: Text -> Def Name -> TcM (Def Name)
-checkDef name = \case
-  FunDef {..} -> do
-    expr' <- check expr ty
-    checkLabel loc name label
-    return FunDef {expr = expr', ..}
-  OADTDef {..} -> do
-    (x, body) <- unbind1 bnd
-    body' <- extendCtx1 x argTy binder $ checkKind body OblivK
-    checkLabel loc name SafeL
-    return OADTDef {bnd = abstract_ x body', ..}
-  -- 'ADTDef' and 'CtorDef' have been checked in pre-checker, and 'BuiltinDef'
-  -- does not need to be checked.
-  def -> return def
+checkDef :: Text -> TcM (Def Name)
+checkDef name =
+  getGSig name >>= \case
+    FunDef {..} -> do
+      expr' <- check expr ty
+      checkLabel loc name label
+      return FunDef {expr = expr', ..}
+    OADTDef {..} -> do
+      (x, body) <- unbind1 bnd
+      body' <- extendCtx1 x argTy binder $ checkKind body OblivK
+      checkLabel loc name SafeL
+      return OADTDef {bnd = abstract_ x body', ..}
+    -- 'ADTDef' and 'CtorDef' have been checked in pre-checker, and 'BuiltinDef'
+    -- does not need to be checked.
+    def -> return def
 
 -- | Pre-check all global signatures to ensure they are well-formed, and their
 -- types are well-kinded and in core taype ANF.
@@ -1391,19 +1396,28 @@ preCheckDefs allDefs = do
   -- each other but do not contain dependent types.
   let (adtDefs, otherDefs) = partition isADTDef allDefs
   options <- ask
-  -- Note that @gctx@ trivially satisfies the invariant for global signature
+  -- Note that @gctx0@ trivially satisfies the invariant for global signature
   -- context, because it only contains ADTs (and prelude) at the moment.
-  gctx <- extendGCtx preludeGCtx adtDefs
+  gctx0 <- extendGCtx preludeGCtx adtDefs
   adtDefs' <-
     lift $
       forM adtDefs $ \(name, def) ->
-        (name,) <$> runTcM (initEnv options gctx mempty) (preCheckDef name def)
+        (name,)
+          <$> runTcM
+            (initEnv options gctx0 mempty)
+            (preCheckDef allDefs name def)
   -- Extend global signature context with the ADTs and their constructors. Note
   -- that the types of all constructors are already in the right form after
   -- pre-check.
-  gctx' <- extendGCtx preludeGCtx $ foldMap adtWithCtors adtDefs'
+  gctx <- extendGCtx preludeGCtx $ foldMap adtWithCtors adtDefs'
   -- Now we pre-check the rest of signatures in order.
-  go gctx' otherDefs
+  gctx' <- go gctx otherDefs
+  -- Make sure the OADT structures are well-formed.
+  forM_ otherDefs $ \(name, _) ->
+    lift $
+      runTcM (initEnv options gctx' mempty) $
+        preCheckOADTStruct name
+  return gctx'
   where
     isADTDef (_, ADTDef {}) = True
     isADTDef _ = False
@@ -1418,7 +1432,10 @@ preCheckDefs allDefs = do
     go gctx [] = return gctx
     go gctx ((name, def) : defs) = do
       options <- ask
-      def' <- lift $ runTcM (initEnv options gctx mempty) $ preCheckDef name def
+      def' <-
+        lift $
+          runTcM (initEnv options gctx mempty) $
+            preCheckDef allDefs name def
       gctx' <- extendGCtx1 gctx name def'
       go gctx' defs
 
@@ -1475,13 +1492,13 @@ preCheckName (defName, def) = do
     go e = return e
 
 -- | Pre-check a global definition signature.
-preCheckDef :: Text -> Def Name -> TcM (Def Name)
-preCheckDef name = \case
+--
+-- The first argument is the definitions for peeking ahead.
+preCheckDef :: Defs Name -> Text -> Def Name -> TcM (Def Name)
+preCheckDef defs name = \case
   FunDef {..} -> do
     ty' <- kinded ty
     checkLabel loc name label
-    -- TODO: check oblivious instances
-    -- TODO: check instances against label, e.g., section cannot be leaky
     return FunDef {ty = ty', ..}
   ADTDef {..} -> do
     ctors' <- forM ctors $ secondM $ mapM (`checkKind` PublicK)
@@ -1489,10 +1506,85 @@ preCheckDef name = \case
   OADTDef {..} -> do
     argTy' <- checkKind argTy PublicK
     checkLabel loc name SafeL
-    -- TODO: warn if section or retraction is not present
-    -- TODO: fill in its public type
-    return OADTDef {argTy = argTy', ..}
+    pubTy' <- inferPubTy `catchError` \_ -> return ""
+    return OADTDef {pubTy = pubTy', argTy = argTy', ..}
   _ -> oops "Pre-checking constructor or builtin definitions"
+  where
+    inferPubTy = case lookup (sectionName name) defs of
+      Just FunDef {..} -> do
+        (_, _, bnd) <- isPi ty
+        (_, body) <- unbind1 bnd
+        (t, _, _) <- isPi body
+        maybeGV t >>= \case
+          Just (ref, ADTDef {}) -> return ref
+          _ -> return ""
+      _ -> return ""
+
+-- | Ensure OADT structures are well-formed.
+--
+-- First, all instances of an OADT structure should be present. Second, these
+-- instances should have the right types and labels. Finally, there should not
+-- be any unrecognized instances.
+preCheckOADTStruct :: Text -> TcM ()
+preCheckOADTStruct name = getGSig name >>= go (instOfName name)
+  where
+    go UnknownInst def =
+      err_ (getDefLoc def) $
+        "Definition" <+> pretty name <+> "cannot be recognized as an instance"
+    go (KnownInst inst) FunDef {..} = do
+      (ty', l') <- typeOfInst loc inst
+      -- Check type.
+      equate ty ty' `catchError` \_ ->
+        errPlain
+          loc
+          [ [ DD $
+                "Function"
+                  <+> pretty name
+                  <+> "has the wrong type"
+            ],
+            [DH "Expected", DC ty'],
+            [DH "Got", DC ty]
+          ]
+      -- Check label.
+      checkLabelWith loc name l' label
+    go _ OADTDef {..} = do
+      -- We do not need to check @pubTy@ is an ADT.
+      missing <- filterM ((isNothing <$>) . lookupGSig) $ instNamesOfOADT name
+      unless (null missing) $
+        err_ loc $
+          "OADT definition"
+            <+> pretty name
+            <+> "lacks some instances:"
+              <> softline
+              <> andList missing
+    go _ _ = pass
+
+    typeOfInst loc (SectionInst oadtName) = do
+      (pubTy, argTy) <- isOADTDef loc oadtName
+      k <- fresh
+      return
+        ( pi' k argTy $ arrow' (GV pubTy) $ tapp_ (GV oadtName) [V k],
+          SafeL
+        )
+    typeOfInst loc (RetractionInst oadtName) = do
+      (pubTy, argTy) <- isOADTDef loc oadtName
+      k <- fresh
+      return
+        ( pi' k argTy $ arrow' (tapp_ (GV oadtName) [V k]) $ GV pubTy,
+          LeakyL
+        )
+
+    isOADTDef loc oadtName =
+      lookupGSig oadtName >>= \case
+        Just OADTDef {pubTy, argTy} -> return (pubTy, argTy)
+        _ ->
+          err_ loc $
+            "Function"
+              <+> pretty name
+              <+> "is an instance of"
+              <+> pretty oadtName <> ", but"
+              <+> pretty oadtName
+              <+> "is not an OADT"
 
 extendGCtx1 ::
   (MonadError Err m, MonadReader Options m) =>
@@ -1518,6 +1610,11 @@ extendGCtx ::
   Defs Name ->
   m (GCtx Name)
 extendGCtx = foldlM $ uncurry . extendGCtx1
+
+getGSig :: MonadReader Env m => Text -> m (Def Name)
+getGSig x =
+  lookupGSig x
+    <&> fromMaybe (oops $ "Definition " <> x <> " does not exist")
 
 -- | Flatten all nested let bindings and remove single variable bindings.
 --
@@ -1576,6 +1673,11 @@ err_ errLoc errMsg =
       { errCategory = "Typing Error",
         ..
       }
+
+errPlain :: Int -> [[D]] -> TcM a
+errPlain loc dss = do
+  doc <- cutie dss
+  err_ loc doc
 
 err :: [[D]] -> TcM a
 err dss = do
@@ -1643,11 +1745,11 @@ readableExpr = transformM go
 readableDefs :: Defs Name -> Defs Name
 readableDefs = secondF (runFreshM . biplateM readableExpr)
 
-andList :: [Text] -> [D]
-andList [] = []
-andList [x] = [DC x]
-andList [x, y] = [DC x, DD "and", DC y]
-andList (x : xs) = DC (x <> ",") : andList xs
+andList :: [Text] -> Doc
+andList [] = ""
+andList [x] = pretty x
+andList [x, y] = fillSep [pretty x, "and", pretty y]
+andList (x : xs) = pretty (x <> ",") <> softline <> andList xs
 
 -- | The definition checking monad
 type DcM = ReaderT Options (ExceptT Err IO)
