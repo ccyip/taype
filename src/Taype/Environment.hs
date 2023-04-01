@@ -38,6 +38,7 @@ module Taype.Environment
     mayWithLoc,
     withCur,
     withOption,
+    withLabel,
 
     -- * OADT structure
     OADTInst (..),
@@ -91,7 +92,11 @@ data Env = Env
     -- | Current expression for error reporting
     cur :: Expr Name,
     -- | Location of the current expression for error reporting
-    loc :: Int
+    loc :: Int,
+    -- | Leakage label constraint
+    label :: LLabel,
+    -- | Current definition
+    defName :: Text
   }
 
 instance HasOptions Env where
@@ -100,13 +105,14 @@ instance HasOptions Env where
 -- | Make an initial environment.
 --
 -- Some fields are intantiated arbitrarily, because they will be replaced later.
-initEnv :: Options -> GCtx Name -> GCtx Name -> Env
-initEnv options gsctx gdctx =
+initEnv :: Options -> Text -> GCtx Name -> GCtx Name -> Env
+initEnv options defName gsctx gdctx =
   Env
     { tctx = TCtx [],
       bctx = BCtx [],
       loc = -1,
       cur = V 0,
+      label = SafeL,
       ..
     }
 
@@ -212,10 +218,13 @@ mayWithLoc (Just l) = withLoc l
 mayWithLoc _ = id
 
 withCur :: MonadReader Env m => Expr Name -> m a -> m a
-withCur e = local (\Env {..} -> Env {cur = e, ..})
+withCur e = local $ \Env {..} -> Env {cur = e, ..}
 
 withOption :: MonadReader Env m => (Options -> Options) -> m a -> m a
 withOption f = local $ \Env {..} -> Env {options = f options, ..}
+
+withLabel :: MonadReader Env m => LLabel -> m a -> m a
+withLabel l = local $ \Env {..} -> Env {label = l, ..}
 
 ----------------------------------------------------------------
 -- OADT structure

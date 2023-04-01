@@ -107,7 +107,7 @@ typing e@V {..} Nothing =
 typing e@GV {..} Nothing =
   lookupGSig ref >>= \case
     Just FunDef {..} -> do
-      mayLeak label
+      checkLabel label
       return (ty, e)
     Just CtorDef {..} -> do
       checkArity CtorApp ref [] paraTypes
@@ -119,7 +119,7 @@ typing e@GV {..} Nothing =
         )
     Just BuiltinDef {..} -> do
       checkArity BuiltinApp ref [] paraTypes
-      mayLeak label
+      checkLabel label
       return
         ( resType,
           -- All builtin functions are in application form even if they have
@@ -179,7 +179,7 @@ typing App {..} Nothing =
   where
     -- Application for constructors and builtin functions
     typeFullApp f paraTypes resType appKind' label = do
-      mayLeak label
+      checkLabel label
       checkArity appKind' f args paraTypes
       args' <- zipWithM check args paraTypes
       xs <- freshes $ length args'
@@ -514,7 +514,7 @@ typing OIte {..} mt = do
   (t', left') <- typing left mt
   right' <- check right t'
   label' <- (checkKind t' OblivK $> SafeL) `catchError` \_ -> return LeakyL
-  mayLeak label'
+  checkLabel label'
   x <- fresh
   return
     ( t',
@@ -561,7 +561,7 @@ typing OMatch {..} mt = do
     extendCtx1 xr rightTy' rBinder $
       check rBody t'
   label' <- (checkKind t' OblivK $> SafeL) `catchError` \_ -> return LeakyL
-  mayLeak label'
+  checkLabel label'
   x <- fresh
   y <- fresh
   let condTy = Just (leftTy', rightTy')
@@ -1140,22 +1140,22 @@ maybeGV GV {..} = (ref,) <<$>> lookupGSig ref
 maybeGV Loc {..} = maybeGV expr
 maybeGV _ = return Nothing
 
-getLabel :: MonadState LLabel m => m LLabel
-getLabel = get
-
-mayLeak :: MonadState LLabel m => LLabel -> m ()
-mayLeak l = modify (l \/)
-
-checkLabelWith :: Int -> Text -> LLabel -> LLabel -> TcM ()
-checkLabelWith loc name l l' = do
+checkDefLabel :: Int -> Text -> LLabel -> LLabel -> TcM ()
+checkDefLabel loc name l l' = do
   when (l < l') $
     err_ loc $
       "Definition" <+> pretty name <+> "cannot be" <+> show l'
 
-checkLabel :: Int -> Text -> LLabel -> TcM ()
-checkLabel loc name l = do
-  l' <- getLabel
-  checkLabelWith loc name l l'
+checkLabel :: LLabel -> TcM ()
+checkLabel l' = do
+  Env {..} <- ask
+  when (label < l') $
+    err
+      [ [DD $ "Used a" <+> show l' <+> "expression"],
+        [ DD $
+            "But the definition" <+> pretty defName <+> "cannot be" <+> show l'
+        ]
+      ]
 
 -- | Check if a type is a pi-type and return its components.
 --
@@ -1359,7 +1359,7 @@ checkDefs options@Options {..} defs = runDcM options $ do
     go gsctx gdctx ((name, _) : defs') = do
       -- use the definition in the signature context because the signatures
       -- there have already been checked.
-      def' <- lift $ runTcM (initEnv options gsctx gdctx) $ checkDef name
+      def' <- lift $ runTcM (initEnv options name gsctx gdctx) $ checkDef name
       gdctx' <- extendGCtx1 gdctx name def'
       go gsctx gdctx' defs'
     simp def = if optNoFlattenLets then def else flattenLets def
@@ -1372,14 +1372,12 @@ checkDefs options@Options {..} defs = runDcM options $ do
 checkDef :: Text -> TcM (Def Name)
 checkDef name =
   getGSig name >>= \case
-    FunDef {..} -> do
+    FunDef {..} -> withLabel label $ do
       expr' <- check expr ty
-      checkLabel loc name label
       return FunDef {expr = expr', ..}
     OADTDef {..} -> do
       (x, body) <- unbind1 bnd
       body' <- extendCtx1 x argTy binder $ checkKind body OblivK
-      checkLabel loc name SafeL
       return OADTDef {bnd = abstract_ x body', ..}
     -- 'ADTDef' and 'CtorDef' have been checked in pre-checker, and 'BuiltinDef'
     -- does not need to be checked.
@@ -1404,7 +1402,7 @@ preCheckDefs allDefs = do
       forM adtDefs $ \(name, def) ->
         (name,)
           <$> runTcM
-            (initEnv options gctx0 mempty)
+            (initEnv options name gctx0 mempty)
             (preCheckDef allDefs name def)
   -- Extend global signature context with the ADTs and their constructors. Note
   -- that the types of all constructors are already in the right form after
@@ -1415,7 +1413,7 @@ preCheckDefs allDefs = do
   -- Make sure the OADT structures are well-formed.
   forM_ otherDefs $ \(name, _) ->
     lift $
-      runTcM (initEnv options gctx' mempty) $
+      runTcM (initEnv options name gctx' mempty) $
         preCheckOADTStruct name
   return gctx'
   where
@@ -1434,7 +1432,7 @@ preCheckDefs allDefs = do
       options <- ask
       def' <-
         lift $
-          runTcM (initEnv options gctx mempty) $
+          runTcM (initEnv options name gctx mempty) $
             preCheckDef allDefs name def
       gctx' <- extendGCtx1 gctx name def'
       go gctx' defs
@@ -1496,16 +1494,14 @@ preCheckName (defName, def) = do
 -- The first argument is the definitions for peeking ahead.
 preCheckDef :: Defs Name -> Text -> Def Name -> TcM (Def Name)
 preCheckDef defs name = \case
-  FunDef {..} -> do
+  FunDef {..} -> withLabel label $ do
     ty' <- kinded ty
-    checkLabel loc name label
     return FunDef {ty = ty', ..}
   ADTDef {..} -> do
     ctors' <- forM ctors $ secondM $ mapM (`checkKind` PublicK)
     return ADTDef {ctors = ctors', ..}
   OADTDef {..} -> do
     argTy' <- checkKind argTy PublicK
-    checkLabel loc name SafeL
     pubTy' <- inferPubTy `catchError` \_ -> return ""
     return OADTDef {pubTy = pubTy', argTy = argTy', ..}
   _ -> oops "Pre-checking constructor or builtin definitions"
@@ -1546,7 +1542,7 @@ preCheckOADTStruct name = getGSig name >>= go (instOfName name)
             [DH "Got", DC ty]
           ]
       -- Check label.
-      checkLabelWith loc name l' label
+      checkDefLabel loc name l' label
     go _ OADTDef {..} = do
       -- We do not need to check @pubTy@ is an ADT.
       missing <- filterM ((isNothing <$>) . lookupGSig) $ instNamesOfOADT name
@@ -1758,17 +1754,16 @@ runDcM :: Options -> DcM a -> ExceptT Err IO a
 runDcM = usingReaderT
 
 -- | The type checking monad
-newtype TcM a = TcM (FreshT (ReaderT Env (StateT LLabel (ExceptT Err IO))) a)
+newtype TcM a = TcM (FreshT (ReaderT Env (ExceptT Err IO)) a)
   deriving newtype
     ( Functor,
       Applicative,
       Monad,
       MonadFresh,
       MonadReader Env,
-      MonadState LLabel,
       MonadError Err,
       MonadIO
     )
 
 runTcM :: Env -> TcM a -> ExceptT Err IO a
-runTcM env (TcM m) = evaluatingStateT SafeL $ runReaderT (runFreshT m) env
+runTcM env (TcM m) = runReaderT (runFreshT m) env
