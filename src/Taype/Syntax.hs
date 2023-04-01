@@ -744,9 +744,9 @@ instance Cute (Expr Text) where
   cute BLit {..} = if bLit then "True" else "False"
   cute TInt {..} = cute $ accentOfOLabel olabel <> "int"
   cute ILit {..} = cute iLit
-  cute Ite {..} = cuteIte "" cond left right
-  cute Match {..} = cuteMatch "" True cond alts
-  cute OIte {..} = cuteIte oblivAccent cond left right
+  cute Ite {..} = cuteIte PublicL cond left right
+  cute Match {..} = cuteMatch PublicL True cond alts
+  cute OIte {..} = cuteIte OblivL cond left right
   cute e@Prod {..} = cuteInfix e (accentOfOLabel olabel <> "*") left right
   cute Pair {..} = cutePair pairKind left right
   cute PMatch {..} = cutePMatch pairKind cond lBinder rBinder bnd2
@@ -774,7 +774,7 @@ instance Cute (Expr Text) where
     lBodyDoc <- cute lBody
     rBodyDoc <- cute rBody
     return $
-      cuteMatchDoc oblivAccent True condDoc $
+      cuteMatchDoc OblivL True condDoc $
         cuteAltDocs
           [ (oblivName "inl", [xl], lBodyDoc),
             (oblivName "inr", [xr], rBodyDoc)

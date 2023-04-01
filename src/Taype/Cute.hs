@@ -318,22 +318,22 @@ cuteInfix super infixT left right = do
   rightDoc <- cuteSub super right
   return $ cuteInfixDoc infixT leftDoc rightDoc
 
-cuteIteDoc :: Text -> Doc -> Doc -> Doc -> Doc
-cuteIteDoc accent condDoc leftDoc rightDoc =
+cuteIteDoc :: OLabel -> Doc -> Doc -> Doc -> Doc
+cuteIteDoc l condDoc leftDoc rightDoc =
   group $
-    pretty accent <> "if"
+    pretty (accentOfOLabel l) <> "if"
       <+> condDoc
         <> line
         <> hang ("then" <> sep1 leftDoc)
         <> line
         <> hang ("else" <> sep1 rightDoc)
 
-cuteIte :: Cute e => Text -> e -> e -> e -> CuteM Doc
-cuteIte accent cond left right = do
+cuteIte :: Cute e => OLabel -> e -> e -> e -> CuteM Doc
+cuteIte l cond left right = do
   condDoc <- cute cond
   leftDoc <- cute left
   rightDoc <- cute right
-  return $ cuteIteDoc accent condDoc leftDoc rightDoc
+  return $ cuteIteDoc l condDoc leftDoc rightDoc
 
 cutePairDoc :: PairKind -> Doc -> Doc -> Doc
 cutePairDoc pKind leftDoc rightDoc =
@@ -346,10 +346,10 @@ cutePair pKind left right = do
   rightDoc <- cute right
   return $ cutePairDoc pKind leftDoc rightDoc
 
-cuteMatchDoc :: Foldable t => Text -> Bool -> Doc -> t Doc -> Doc
-cuteMatchDoc accent usePipe condDoc altDocs =
+cuteMatchDoc :: Foldable t => OLabel -> Bool -> Doc -> t Doc -> Doc
+cuteMatchDoc l usePipe condDoc altDocs =
   align $
-    pretty accent <> "match"
+    pretty (accentOfOLabel l) <> "match"
       <+> condDoc
       <+> "with"
         <> ( if usePipe
@@ -361,15 +361,15 @@ cuteMatchDoc accent usePipe condDoc altDocs =
 
 cuteMatch ::
   (Traversable t, Monad f, Cute (f Text)) =>
-  Text ->
+  OLabel ->
   Bool ->
   f Text ->
   t (MatchAlt f Text) ->
   CuteM Doc
-cuteMatch accent usePipe cond alts = do
+cuteMatch l usePipe cond alts = do
   condDoc <- cute cond
   altDocs <- mapM cute alts
-  return $ cuteMatchDoc accent usePipe condDoc altDocs
+  return $ cuteMatchDoc l usePipe condDoc altDocs
 
 cuteAltDoc :: Text -> [Text] -> Doc -> Doc
 cuteAltDoc ctor xs bodyDoc =
@@ -386,7 +386,7 @@ cuteAltDocs = (go <$>)
 cutePMatchDoc :: PairKind -> Doc -> Text -> Text -> Doc -> Doc
 cutePMatchDoc pKind condDoc xl xr bodyDoc =
   cuteMatchDoc
-    (accentOfPairKind pKind)
+    (olabelOfPairKind pKind)
     False
     condDoc
     [ hang $
