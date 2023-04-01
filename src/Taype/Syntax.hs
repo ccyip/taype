@@ -43,7 +43,7 @@ module Taype.Syntax
     lets',
     pmatch',
     pi',
-    arrow',
+    arrow_,
 
     -- * Pretty printer
     cuteBinder,
@@ -562,6 +562,14 @@ pi_ binder ty body =
       ..
     }
 
+arrow_ :: Ty a -> Ty a -> Ty a
+arrow_ dom cod =
+  Pi
+    { ty = dom,
+      binder = Just Anon,
+      bnd = abstract (const Nothing) cod
+    }
+
 app_ :: Expr a -> [Expr a] -> Expr a
 app_ fn args = App {appKind = FunApp, ..}
 
@@ -699,14 +707,6 @@ pmatch' pairKind cond xl xr body =
 
 pi' :: Name -> Ty Name -> Ty Name -> Ty Name
 pi' x ty body = Pi {binder = Nothing, bnd = abstract_ x body, ..}
-
-arrow' :: Ty Name -> Ty Name -> Ty Name
-arrow' dom cod =
-  Pi
-    { ty = dom,
-      binder = Just Anon,
-      bnd = abstract (const Nothing) cod
-    }
 
 ----------------------------------------------------------------
 -- Pretty printer

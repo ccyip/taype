@@ -1561,14 +1561,14 @@ preCheckOADTStruct name = getGSig name >>= go (instOfName name)
       (pubTy, argTy) <- isOADTDef loc oadtName
       k <- fresh
       return
-        ( pi' k argTy $ arrow' (GV pubTy) $ tapp_ (GV oadtName) [V k],
+        ( pi' k argTy $ arrow_ (GV pubTy) $ tapp_ (GV oadtName) [V k],
           SafeL
         )
     typeOfInst loc (RetractionInst oadtName) = do
       (pubTy, argTy) <- isOADTDef loc oadtName
       k <- fresh
       return
-        ( pi' k argTy $ arrow' (tapp_ (GV oadtName) [V k]) $ GV pubTy,
+        ( pi' k argTy $ arrow_ (tapp_ (GV oadtName) [V k]) $ GV pubTy,
           LeakyL
         )
 
