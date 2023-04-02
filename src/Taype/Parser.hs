@@ -269,13 +269,8 @@ grammar = mdo
           -- Oblivious injection
           do
             ~(loc, tag) <- pLocatedOInj
-            injTy <- optional $ do
-              pToken L.LAngle
-              ty <- pType
-              pToken L.RAngle
-              return ty
             inj <- pAtomExpr
-            return Loc {expr = OInj {..}, ..},
+            return Loc {expr = oinj_ tag inj, ..},
           -- Next precedence
           pAtomExpr
         ]
@@ -546,8 +541,6 @@ renderToken = \case
   L.Colon -> squotes colon
   L.Bar -> squotes pipe
   L.Comma -> squotes comma
-  L.LAngle -> squotes "<"
-  L.RAngle -> squotes ">"
   L.LParen -> squotes lparen
   L.LOParen -> dquotes $ pretty oblivAccent <> lparen
   L.RParen -> squotes rparen

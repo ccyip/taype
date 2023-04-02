@@ -522,32 +522,16 @@ typing OIte {..} mt = do
         [(x, TBool OblivL, cond')]
         OIte {label = label', cond = V x, left = left', right = right'}
     )
-typing OInj {injTy = Just t, ..} Nothing = do
-  (leftTy', rightTy') <- withLoc_ t $ isOSum t
-  let injTy' = if tag then leftTy' else rightTy'
-  inj' <- check inj injTy'
-  let t' = OSum {left = leftTy', right = rightTy'}
-  x <- fresh
-  return
-    ( t',
-      lets'
-        [(x, injTy', inj')]
-        OInj {injTy = Just t', inj = V x, ..}
-    )
 typing OInj {..} (Just t) = do
-  whenJust injTy $ \injTy' -> do
-    t' <- checkKind injTy' OblivK
-    equate t t'
   (leftTy', rightTy') <- isOSum t
   let injTy' = if tag then leftTy' else rightTy'
   inj' <- check inj injTy'
-  let t' = OSum {left = leftTy', right = rightTy'}
   x <- fresh
   return
     ( t,
       lets'
         [(x, injTy', inj')]
-        OInj {injTy = Just t', inj = V x, ..}
+        OInj {injTy = Just (leftTy', rightTy'), inj = V x, ..}
     )
 typing OMatch {..} mt = do
   (t, cond') <- infer cond

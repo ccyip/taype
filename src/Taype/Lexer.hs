@@ -38,8 +38,6 @@ data Token
   | Colon
   | Bar
   | Comma
-  | LAngle
-  | RAngle
   | LParen
   | LOParen
   | RParen
@@ -130,8 +128,6 @@ pToken =
       Bar <$ symbol "|",
       Comma <$ symbol ",",
       Underscore <$ symbol "_",
-      LAngle <$ symbol "<",
-      RAngle <$ symbol ">",
       LParen <$ symbol "(",
       LOParen <$ symbol (oblivName "("),
       RParen <$ symbol ")"

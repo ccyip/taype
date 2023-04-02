@@ -34,6 +34,7 @@ module Taype.Syntax
     let_,
     ite_,
     oite_,
+    oinj_,
     match_,
     omatch_,
     omatchPat_,
@@ -156,7 +157,7 @@ data Expr a
     OSum {left :: Ty a, right :: Ty a}
   | -- | Oblivious injection
     OInj
-      { injTy :: Maybe (Ty a),
+      { injTy :: Maybe (Ty a, Ty a),
         tag :: Bool,
         inj :: Expr a
       }
@@ -334,7 +335,12 @@ instance Monad Expr where
         ..
       }
   OSum {..} >>= f = OSum {left = left >>= f, right = right >>= f}
-  OInj {..} >>= f = OInj {injTy = injTy <&> (>>= f), inj = inj >>= f, ..}
+  OInj {..} >>= f =
+    OInj
+      { injTy = injTy <&> bimapBoth (>>= f),
+        inj = inj >>= f,
+        ..
+      }
   OProj {..} >>= f =
     OProj
       { expr = expr >>= f,
@@ -496,7 +502,7 @@ instance PlateM (Expr Name) where
     right' <- f right
     return OSum {left = left', right = right'}
   plateM f OInj {..} = do
-    injTy' <- mapM f injTy
+    injTy' <- mapM (traverseBoth f) injTy
     inj' <- f inj
     return OInj {injTy = injTy', inj = inj', ..}
   plateM f OProj {..} = do
@@ -589,6 +595,9 @@ ite_ cond left right = Ite {..}
 
 oite_ :: Expr a -> Expr a -> Expr a -> Expr a
 oite_ cond left right = OIte {label = LeakyL, ..}
+
+oinj_ :: Bool -> Expr a -> Expr a
+oinj_ tag inj = OInj {injTy = Nothing, ..}
 
 match_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 match_ cond alts = Match {alts = uncurry3 matchAlt_ <$> alts, ..}
@@ -752,12 +761,9 @@ instance Cute (Expr Text) where
   cute PMatch {..} = cutePMatch pairKind cond lBinder rBinder bnd2
   cute e@OSum {..} = cuteInfix e (oblivName "+") left right
   cute OInj {..} = do
-    tyDoc <- fromMaybe "" <$> mapM cuteInjType injTy
     cuteApp_
-      (pretty (oblivName $ if tag then "inl" else "inr") <> tyDoc)
+      (pretty (oblivName $ if tag then "inl" else "inr"))
       [inj]
-    where
-      cuteInjType ty = angles <$> cute ty
   cute OProj {..} = do
     projDoc <-
       cute $
