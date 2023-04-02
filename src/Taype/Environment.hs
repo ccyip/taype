@@ -42,7 +42,7 @@ module Taype.Environment
 
     -- * OADT structure
     OADTInst (..),
-    OADTInstResult (..),
+    OADTInstAttr (..),
     instOfName,
     instNamesOfOADT,
 
@@ -236,13 +236,13 @@ data OADTInst
     RetractionInst {oadtName :: Text}
   deriving stock (Eq, Show)
 
-data OADTInstResult
+data OADTInstAttr
   = KnownInst OADTInst
   | UnknownInst
   | NotAnInst
 
 -- | Parse an instance from the given name.
-instOfName :: Text -> OADTInstResult
+instOfName :: Text -> OADTInstAttr
 instOfName x = case T.splitOn instInfix x of
   [_] -> NotAnInst
   ["", _] -> UnknownInst
