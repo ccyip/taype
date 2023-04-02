@@ -21,7 +21,7 @@ module Taype.Common
     OProjKind (..),
     AppKind (..),
     MatchAlt (..),
-    caseAlt_,
+    matchAlt_,
     fromClosed,
 
     -- * Common names
@@ -155,8 +155,8 @@ instance (Monad f, PlateM (f Name)) => BiplateM (MatchAlt f Name) (f Name) where
     return MatchAlt {bnd = abstract_ xs body', ..}
 
 -- | Smart constructor for 'MatchAlt'
-caseAlt_ :: (Monad f, a ~ Text) => Text -> [BinderM a] -> f a -> MatchAlt f a
-caseAlt_ ctor binders body =
+matchAlt_ :: (Monad f, a ~ Text) => Text -> [BinderM a] -> f a -> MatchAlt f a
+matchAlt_ ctor binders body =
   MatchAlt
     { binders = Just <$> binders,
       bnd = abstractBinder binders body,

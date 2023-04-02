@@ -591,7 +591,7 @@ oite_ :: Expr a -> Expr a -> Expr a -> Expr a
 oite_ cond left right = OIte {label = LeakyL, ..}
 
 match_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
-match_ cond alts = Match {alts = uncurry3 caseAlt_ <$> alts, ..}
+match_ cond alts = Match {alts = uncurry3 matchAlt_ <$> alts, ..}
 
 omatch_ ::
   a ~ Text =>
