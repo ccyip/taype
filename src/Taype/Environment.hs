@@ -40,12 +40,6 @@ module Taype.Environment
     withOption,
     withLabel,
 
-    -- * OADT structure
-    OADTInst (..),
-    OADTInstAttr (..),
-    instOfName,
-    instNamesOfOADT,
-
     -- * Prelude context
     preludeGCtx,
 
@@ -57,7 +51,6 @@ where
 import Data.HashMap.Strict ((!?))
 import Data.HashMap.Strict qualified as M
 import Data.List (lookup)
-import Data.Text qualified as T
 import GHC.Exts qualified as E
 import Relude.Extra.Bifunctor
 import Relude.Extra.Tuple
@@ -225,38 +218,6 @@ withOption f = local $ \Env {..} -> Env {options = f options, ..}
 
 withLabel :: MonadReader Env m => LLabel -> m a -> m a
 withLabel l = local $ \Env {..} -> Env {label = l, ..}
-
-----------------------------------------------------------------
--- OADT structure
-
-data OADTInst
-  = -- | Section
-    SectionInst {oadtName :: Text}
-  | -- | Retraction
-    RetractionInst {oadtName :: Text}
-  deriving stock (Eq, Show)
-
-data OADTInstAttr
-  = KnownInst OADTInst
-  | UnknownInst
-  | NotAnInst
-
--- | Parse an instance from the given name.
-instOfName :: Text -> OADTInstAttr
-instOfName x = case T.splitOn instInfix x of
-  [_] -> NotAnInst
-  ["", _] -> UnknownInst
-  [oadtName, instName]
-    | instName == sectionInstName ->
-        KnownInst $ SectionInst {..}
-  [oadtName, instName]
-    | instName == retractionInstName ->
-        KnownInst $ RetractionInst {..}
-  _ -> UnknownInst
-
--- | Return a list of instance names given an OADT name.
-instNamesOfOADT :: Text -> [Text]
-instNamesOfOADT x = [sectionName x, retractionName x]
 
 ----------------------------------------------------------------
 -- Prelude context

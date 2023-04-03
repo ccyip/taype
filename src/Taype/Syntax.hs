@@ -26,6 +26,13 @@ module Taype.Syntax
     closeDefs,
     Pat (..),
 
+    -- * OADT structure
+    OADTInst (..),
+    OADTInstAttr (..),
+    attrOfName,
+    instNamesOfOADT,
+    isSection,
+
     -- * Smart constructors
     lam_,
     pi_,
@@ -58,6 +65,7 @@ import Algebra.PartialOrd
 import Bound
 import Control.Monad
 import Data.Functor.Classes
+import Data.Text qualified as T
 import Relude.Extra
 import Taype.Binder
 import Taype.Common
@@ -236,6 +244,7 @@ data DefB f a
   = -- | Function
     FunDef
       { loc :: Int,
+        attr :: OADTInstAttr,
         ty :: f a,
         expr :: f a,
         label :: LLabel
@@ -280,6 +289,44 @@ closeDefs = (second (>>>= GV) <$>)
 
 -- | A rudimentary pattern that only supports pairs
 data Pat a = VarP (BinderM a) | PairP Int (Pat a) (Pat a)
+
+----------------------------------------------------------------
+-- OADT structure
+
+data OADTInst
+  = -- | Section
+    SectionInst {oadtName :: Text}
+  | -- | Retraction
+    RetractionInst {oadtName :: Text}
+  deriving stock (Eq, Show)
+
+data OADTInstAttr
+  = KnownInst OADTInst
+  | UnknownInst
+  | NotAnInst
+  deriving stock (Eq, Show)
+
+-- | Parse an instance from the given name.
+attrOfName :: Text -> OADTInstAttr
+attrOfName x = case T.splitOn instInfix x of
+  [_] -> NotAnInst
+  ["", _] -> UnknownInst
+  [oadtName, instName]
+    | instName == sectionInstName ->
+        KnownInst $ SectionInst {..}
+  [oadtName, instName]
+    | instName == retractionInstName ->
+        KnownInst $ RetractionInst {..}
+  _ -> UnknownInst
+
+-- | Return a list of instance names given an OADT name.
+instNamesOfOADT :: Text -> [Text]
+instNamesOfOADT x = [sectionName x, retractionName x]
+
+-- | Check if a definition is a section by OADT attribute.
+isSection :: OADTInstAttr -> Bool
+isSection (KnownInst (SectionInst _)) = True
+isSection _ = False
 
 ----------------------------------------------------------------
 -- Instances of expressions and definitions

@@ -19,7 +19,6 @@ import Oil.Optimization
 import Oil.Syntax
 import Relude.Extra.Bifunctor
 import Taype.Common
-import Taype.Environment (OADTInst (..), OADTInstAttr (..), instOfName)
 import Taype.Name
 import Taype.Plate
 import Taype.Prelude
@@ -337,10 +336,7 @@ filterConceal allDefs = [def | def@(name, _) <- defs, name `member` concealSet]
     defs = [def | def@(_, T.FunDef {}) <- allDefs]
     (graph, fromVertex, toVertex) = graphFromEdges $ mkDepGraph defs
     sectionDefs =
-      [name | (name, _) <- defs, isSection (instOfName name)]
-    -- TODO: refactor
-    isSection (KnownInst (SectionInst _)) = True
-    isSection _ = False
+      [name | (name, T.FunDef {..}) <- defs, T.isSection attr]
     reachableSet name =
       fromList $ maybe [] (toNames . reachable graph) $ toVertex name
     toNames vs = [name | (_, name, _) <- fromVertex <$> vs]

@@ -963,7 +963,7 @@ equate_ e e' = do
                 let n = length binders
                 (_, body, body') <- unbindManyWith n bnd bnd'
                 equate_ body body'
-        goAlt _ _ = eqFail
+        goAlt _ _ = errDummy
     go
       OIte {cond, left, right}
       OIte {cond = cond', left = left', right = right'} = do
@@ -997,7 +997,7 @@ equate_ e e' = do
     go OProj {projKind, expr} OProj {projKind = projKind', expr = expr'}
       | projKind == projKind' = equate_ expr expr'
     go nf nf' | nf == nf' = pass
-    go _ _ = eqFail
+    go _ _ = errDummy
 
     -- Equate two expressions with at least one being global variable.
     equateGV nf nf' | nf == nf' = pass
@@ -1007,7 +1007,7 @@ equate_ e e' = do
         _ ->
           tryUnfold nf' >>= \case
             Just expr' -> equate_ nf expr'
-            _ -> eqFail
+            _ -> errDummy
 
     -- Equate two expressions with at least one being application.
     equateApp :: Expr Name -> Expr Name -> TcM ()
@@ -1018,15 +1018,13 @@ equate_ e e' = do
           _ ->
             tryUnfoldApp nf' >>= \case
               Just expr' -> equate_ nf expr'
-              _ -> eqFail
+              _ -> errDummy
 
     equateApp_ App {fn, args} App {fn = fn', args = args'}
       | length args == length args' = do
           equate_ fn fn'
           zipWithM_ equate_ args args'
-    equateApp_ _ _ = eqFail
-
-    eqFail = err_ (-1) ""
+    equateApp_ _ _ = errDummy
 
 equateSome :: NonEmpty (Expr Name) -> TcM ()
 equateSome (e :| es) = forM_ es $ equate e
@@ -1387,19 +1385,13 @@ preCheckDefs allDefs = do
         (name,)
           <$> runTcM
             (initEnv options name gctx0 mempty)
-            (preCheckDef allDefs def)
+            (preCheckDef allDefs name def)
   -- Extend global signature context with the ADTs and their constructors. Note
   -- that the types of all constructors are already in the right form after
   -- pre-check.
   gctx <- extendGCtx preludeGCtx $ foldMap adtWithCtors adtDefs'
   -- Now we pre-check the rest of signatures in order.
-  gctx' <- go gctx otherDefs
-  -- Make sure the OADT structures are well-formed.
-  forM_ otherDefs $ \(name, _) ->
-    lift $
-      runTcM (initEnv options name gctx' mempty) $
-        preCheckOADTStruct name
-  return gctx'
+  go gctx otherDefs
   where
     isADTDef (_, ADTDef {}) = True
     isADTDef _ = False
@@ -1417,7 +1409,7 @@ preCheckDefs allDefs = do
       def' <-
         lift $
           runTcM (initEnv options name gctx mempty) $
-            preCheckDef allDefs def
+            preCheckDef allDefs name def
       gctx' <- extendGCtx1 gctx name def'
       go gctx' defs
 
@@ -1476,22 +1468,48 @@ preCheckName (defName, def) = do
 -- | Pre-check a global definition signature.
 --
 -- The first argument is the definitions for peeking ahead.
-preCheckDef :: Defs Name -> Def Name -> TcM (Def Name)
-preCheckDef defs = \case
-  FunDef {..} -> withLabel label $ do
-    ty' <- kinded ty
-    return FunDef {ty = ty', ..}
-  ADTDef {..} -> do
-    ctors' <- forM ctors $ secondM $ mapM (`checkKind` PublicK)
-    return ADTDef {ctors = ctors', ..}
-  OADTDef {..} -> do
-    argTy' <- checkKind argTy PublicK
-    pubTy' <- inferPubTy `catchError` \_ -> return ""
-    return OADTDef {pubTy = pubTy', argTy = argTy', ..}
-  _ -> oops "Pre-checking constructor or builtin definitions"
+--
+-- This routine also ensures all OADT structures are well-formed. First, all
+-- instances of an OADT structure should be present. Second, these instances
+-- should have the right types and labels. Finally, there should not be any
+-- unrecognized instances.
+preCheckDef :: Defs Name -> Text -> Def Name -> TcM (Def Name)
+preCheckDef defs name def = do
+  let attr' = attrOfName name
+  checkAttr attr'
+  case def of
+    FunDef {..} -> withLabel label $ do
+      ty' <- kinded ty
+      case attr' of
+        KnownInst inst -> do
+          (instTy, l') <- typeOfInst loc inst
+          -- Check type against OADT instance signature.
+          equate instTy ty' `catchError` \_ ->
+            errPlain
+              loc
+              [ [ DD $
+                    "Function"
+                      <+> pretty name
+                      <+> "has the wrong type"
+                ],
+                [DH "Expected", DC instTy],
+                [DH "Got", DC ty']
+              ]
+          -- Check label against OADT instance signature.
+          checkDefLabel loc name l' label
+        _ -> pass
+      return FunDef {ty = ty', attr = attr', ..}
+    ADTDef {..} -> do
+      ctors' <- forM ctors $ secondM $ mapM (`checkKind` PublicK)
+      return ADTDef {ctors = ctors', ..}
+    OADTDef {..} -> do
+      argTy' <- checkKind argTy PublicK
+      checkInsts loc
+      pubTy' <- inferPubTy `catchError` \_ -> return "?ADT"
+      return OADTDef {pubTy = pubTy', argTy = argTy', ..}
+    _ -> oops "Pre-checking constructor or builtin definitions"
   where
-    inferPubTy = do
-      name <- asks defName
+    inferPubTy =
       case lookup (sectionName name) defs of
         Just FunDef {..} -> do
           (_, _, bnd) <- isPi ty
@@ -1499,39 +1517,16 @@ preCheckDef defs = \case
           (t, _, _) <- isPi body
           maybeGV t >>= \case
             Just (ref, ADTDef {}) -> return ref
-            _ -> return ""
-        _ -> return ""
+            _ -> errDummy
+        _ -> oops "Section instance does not exist"
 
--- | Ensure OADT structures are well-formed.
---
--- First, all instances of an OADT structure should be present. Second, these
--- instances should have the right types and labels. Finally, there should not
--- be any unrecognized instances.
-preCheckOADTStruct :: Text -> TcM ()
-preCheckOADTStruct name = getGSig name >>= go (instOfName name)
-  where
-    go UnknownInst def =
+    checkAttr UnknownInst =
       err_ (getDefLoc def) $
         "Definition" <+> pretty name <+> "cannot be recognized as an instance"
-    go (KnownInst inst) FunDef {..} = do
-      (ty', l') <- typeOfInst loc inst
-      -- Check type.
-      equate ty ty' `catchError` \_ ->
-        errPlain
-          loc
-          [ [ DD $
-                "Function"
-                  <+> pretty name
-                  <+> "has the wrong type"
-            ],
-            [DH "Expected", DC ty'],
-            [DH "Got", DC ty]
-          ]
-      -- Check label.
-      checkDefLabel loc name l' label
-    go _ OADTDef {..} = do
-      -- We do not need to check @pubTy@ is an ADT.
-      missing <- filterM ((isNothing <$>) . lookupGSig) $ instNamesOfOADT name
+    checkAttr _ = pass
+
+    checkInsts loc = do
+      let missing = filter (isNothing . flip lookup defs) $ instNamesOfOADT name
       unless (null missing) $
         err_ loc $
           "OADT definition"
@@ -1539,7 +1534,6 @@ preCheckOADTStruct name = getGSig name >>= go (instOfName name)
             <+> "lacks some instances:"
               <> softline
               <> andList missing
-    go _ _ = pass
 
     typeOfInst loc (SectionInst oadtName) = do
       (pubTy, argTy) <- isOADTDef loc oadtName
@@ -1566,7 +1560,7 @@ preCheckOADTStruct name = getGSig name >>= go (instOfName name)
               <+> "is an instance of"
               <+> pretty oadtName <> ", but"
               <+> pretty oadtName
-              <+> "is not an OADT"
+              <+> "is not an OADT or not in scope"
 
 extendGCtx1 ::
   (MonadError Err m, MonadReader Options m) =>
@@ -1660,6 +1654,9 @@ errPlain :: Int -> [[D]] -> TcM a
 errPlain loc dss = do
   doc <- cutie dss
   err_ loc doc
+
+errDummy :: TcM a
+errDummy = err_ (-1) ""
 
 err :: [[D]] -> TcM a
 err dss = do
