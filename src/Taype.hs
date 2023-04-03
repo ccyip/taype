@@ -16,9 +16,9 @@ module Taype
 where
 
 import Data.Char (toUpper)
--- import qualified Oil.Syntax as Oil (Program (..), cuteDefs)
+import Oil.Syntax qualified as Oil (Program (..), cuteDefs)
 -- import qualified Oil.ToOCaml as Oil (toOCaml)
--- import Oil.Translation (prelude, toOilProgram)
+import Oil.Translation (toOilProgram)
 import Options.Applicative
 import System.FilePath
 import Taype.Common
@@ -57,15 +57,13 @@ process options@Options {optFile = file, optCode = code, ..} = do
         cuteDefs options (fromClosedDefs coreDefs')
   when optPrintCore $ printDoc options coreDoc
   printToFile (file -<.> "tpc") coreDoc
-  -- prog <- lift $ toOilProgram options gctx coreDefs
-  -- let (preludeOil, preludeML) = preludeDocs options
-  --     Oil.Program {..} = fromClosed prog
-  --     mainOil = Oil.cuteDefs options mainDefs
-  --     concealOil = Oil.cuteDefs options concealDefs
-  --     revealOil = Oil.cuteDefs options revealDefs
-  -- when (optPrintOil && optPrintPrelude) $ printDoc options preludeOil
-  -- when optPrintOil $ printDoc options $ mainOil <> concealOil <> revealOil
-  -- printToFiles "oil" mainOil concealOil revealOil
+  prog <- lift $ toOilProgram options coreDefs
+  let Oil.Program {..} = fromClosed prog
+      mainOil = cuteOilDoc "Computation phase" mainDefs
+      concealOil = cuteOilDoc "Conceal phase" concealDefs
+      revealOil = cuteOilDoc "Reveal phase" revealDefs
+  when optPrintOil $ printDoc options $ mainOil <> concealOil <> revealOil
+  printToFiles "oil" mainOil concealOil revealOil
   -- let mainML =
   --       Oil.toOCaml
   --         options
@@ -84,20 +82,23 @@ process options@Options {optFile = file, optCode = code, ..} = do
   --         (mkHeader "the retraction functions for the reveal phase")
   --         ["Driver", "Prelude", modName]
   --         revealDefs
-  -- when (optPrintOCaml && optPrintPrelude) $ printDoc options preludeML
   -- when optPrintOCaml $ printDoc options $ mainML <> concealML <> revealML
   -- printToFiles "ml" mainML concealML revealML
+  pass
   where
-  --   capitalize (h : t) = toUpper h : t
-  --   capitalize "" = ""
     printToFile f d = unless optNoFiles $ printDocToFile f d
-  --   printToFiles ext mainDoc concealDoc revealDoc = do
-  --     printToFile (file -<.> ext) mainDoc
-  --     printToFile (dir </> (baseName <> "_conceal") <.> ext) concealDoc
-  --     printToFile (dir </> (baseName <> "_reveal") <.> ext) revealDoc
-  --   dir = takeDirectory file
-  --   baseName = takeBaseName file
-  --   modName = toText $ capitalize baseName
+    printToFiles ext mainDoc concealDoc revealDoc = do
+      printToFile (file -<.> ext) mainDoc
+      printToFile (dir </> (baseName <> "_conceal") <.> ext) concealDoc
+      printToFile (dir </> (baseName <> "_reveal") <.> ext) revealDoc
+    dir = takeDirectory file
+    baseName = takeBaseName file
+    cuteOilDoc comment defs =
+      "--" <+> comment <> hardline2 <> Oil.cuteDefs options defs
+
+-- modName = toText $ capitalize baseName
+--   capitalize (h : t) = toUpper h : t
+--   capitalize "" = ""
 
 mkHeader :: Text -> Text
 mkHeader what =
@@ -149,10 +150,6 @@ opts = do
     switch $
       long "print-core"
         <> help "Whether to print the generated core taype programs"
-  optPrintPrelude <-
-    switch $
-      long "print-prelude"
-        <> help "Whether to print the OIL prelude"
   optPrintOil <-
     switch $
       long "print-oil"

@@ -69,7 +69,6 @@ data Options = Options
     optFlagNoSimplify :: Bool,
     optFlagNoTupling :: Bool,
     optPrintCore :: Bool,
-    optPrintPrelude :: Bool,
     optPrintOil :: Bool,
     optPrintOCaml :: Bool,
     optPrintTokens :: Bool,
