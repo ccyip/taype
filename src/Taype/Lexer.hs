@@ -137,14 +137,19 @@ isIdent0 :: Char -> Bool
 isIdent0 c = isLetter c || c == '_'
 
 isIdent :: Char -> Bool
-isIdent c = isAlphaNum c || c == '_' || c == '\'' || c == '#'
+isIdent c = isAlphaNum c || c == '_' || c == '\''
 
-pIdent :: Parser Token
-pIdent = lexeme . try $ do
+pIdentComp :: Parser Text
+pIdentComp = do
   accent <- option "" $ symbol oblivAccent
   x <- satisfy isIdent0
   xs <- takeWhileP Nothing isIdent
-  let ident = accent <> T.cons x xs
+  return $ accent <> T.cons x xs
+
+pIdent :: Parser Token
+pIdent = lexeme . try $ do
+  comps <- sepBy1 pIdentComp $ single '#'
+  let ident = T.intercalate "#" comps
   guard (ident `notElem` reserved)
   return $ Ident ident
 
