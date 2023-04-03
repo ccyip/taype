@@ -16,8 +16,8 @@ module Taype
 where
 
 import Data.Char (toUpper)
-import Oil.Syntax qualified as Oil (Program (..), cuteDefs)
--- import qualified Oil.ToOCaml as Oil (toOCaml)
+import Oil.Syntax qualified as Oil (Defs, Program (..), cuteDefs)
+import Oil.ToOCaml qualified as Oil (toOCaml)
 import Oil.Translation (toOilProgram)
 import Options.Applicative
 import System.FilePath
@@ -58,34 +58,41 @@ process options@Options {optFile = file, optCode = code, ..} = do
   when optPrintCore $ printDoc options coreDoc
   printToFile (file -<.> "tpc") coreDoc
   prog <- lift $ toOilProgram options coreDefs
-  let Oil.Program {..} = fromClosed prog
-      mainOil = cuteOilDoc "Computation phase" mainDefs
-      concealOil = cuteOilDoc "Conceal phase" concealDefs
-      revealOil = cuteOilDoc "Reveal phase" revealDefs
+  let Oil.Program {..} = prog
+      mainDefs' :: Oil.Defs a
+      mainDefs' = fromClosedDefs mainDefs
+      concealDefs' :: Oil.Defs a
+      concealDefs' = fromClosedDefs concealDefs
+      revealDefs' :: Oil.Defs a
+      revealDefs' = fromClosedDefs revealDefs
+      mainOil = cuteOilDoc "Computation phase" mainDefs'
+      concealOil = cuteOilDoc "Conceal phase" concealDefs'
+      revealOil = cuteOilDoc "Reveal phase" revealDefs'
   when optPrintOil $ printDoc options $ mainOil <> concealOil <> revealOil
   printToFiles "oil" mainOil concealOil revealOil
-  -- let mainML =
-  --       Oil.toOCaml
-  --         options
-  --         (mkHeader "the main programs as a library")
-  --         ["Driver", "Prelude"]
-  --         mainDefs
-  --     concealML =
-  --       Oil.toOCaml
-  --         options
-  --         (mkHeader "the section functions for the conceal phase")
-  --         ["Driver", "Prelude", modName]
-  --         concealDefs
-  --     revealML =
-  --       Oil.toOCaml
-  --         options
-  --         (mkHeader "the retraction functions for the reveal phase")
-  --         ["Driver", "Prelude", modName]
-  --         revealDefs
-  -- when optPrintOCaml $ printDoc options $ mainML <> concealML <> revealML
-  -- printToFiles "ml" mainML concealML revealML
-  pass
+  let mainML =
+        Oil.toOCaml
+          options
+          (mkHeader "the main programs as a library")
+          ["Driver", "Prelude"]
+          mainDefs'
+      concealML =
+        Oil.toOCaml
+          options
+          (mkHeader "the section functions for the conceal phase")
+          ["Driver", "Prelude", modName]
+          concealDefs'
+      revealML =
+        Oil.toOCaml
+          options
+          (mkHeader "the retraction functions for the reveal phase")
+          ["Driver", "Prelude", modName]
+          revealDefs'
+  when optPrintOCaml $ printDoc options $ mainML <> concealML <> revealML
+  printToFiles "ml" mainML concealML revealML
   where
+    cuteOilDoc comment defs =
+      "--" <+> comment <> hardline2 <> Oil.cuteDefs options defs
     printToFile f d = unless optNoFiles $ printDocToFile f d
     printToFiles ext mainDoc concealDoc revealDoc = do
       printToFile (file -<.> ext) mainDoc
@@ -93,12 +100,9 @@ process options@Options {optFile = file, optCode = code, ..} = do
       printToFile (dir </> (baseName <> "_reveal") <.> ext) revealDoc
     dir = takeDirectory file
     baseName = takeBaseName file
-    cuteOilDoc comment defs =
-      "--" <+> comment <> hardline2 <> Oil.cuteDefs options defs
-
--- modName = toText $ capitalize baseName
---   capitalize (h : t) = toUpper h : t
---   capitalize "" = ""
+    modName = toText $ capitalize baseName
+    capitalize [] = []
+    capitalize (h : t) = toUpper h : t
 
 mkHeader :: Text -> Text
 mkHeader what =

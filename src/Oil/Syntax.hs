@@ -229,6 +229,16 @@ instance PlateM (Expr Name) where
     return Match {cond = cond', alts = alts'}
   plateM _ e = return e
 
+instance PlateM Ty where
+  plateM f Arrow {..} = do
+    dom' <- f dom
+    cod' <- f cod
+    return Arrow {dom = dom', cod = cod'}
+  plateM f TApp {..} = do
+    args' <- mapM f args
+    return TApp {args = args', ..}
+  plateM _ t = return t
+
 instance BiplateM (Def Name) (Expr Name) where
   biplateM f FunDef {..} = do
     expr' <- f expr

@@ -19,7 +19,6 @@ module Taype.Environment
     -- * Contexts
     GCtx (..),
     defsFromGCtx,
-    fromClosedDefs,
     TCtx (..),
     BCtx (..),
 
@@ -52,7 +51,6 @@ import Data.HashMap.Strict ((!?))
 import Data.HashMap.Strict qualified as M
 import Data.List (lookup)
 import GHC.Exts qualified as E
-import Relude.Extra.Bifunctor
 import Relude.Extra.Tuple
 import Taype.Binder
 import Taype.Common
@@ -126,9 +124,6 @@ defsFromGCtx :: GCtx a -> [Text] -> Defs a
 defsFromGCtx (GCtx gctx) = fmapToSnd go
   where
     go name = fromMaybe (oops "Definition not in context") (gctx !? name)
-
-fromClosedDefs :: Defs a -> Defs b
-fromClosedDefs = secondF fromClosed
 
 newtype TCtx a = TCtx {unTCtx :: [(a, Ty a)]}
   deriving stock (Functor, Foldable, Traversable)

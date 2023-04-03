@@ -18,3 +18,4 @@
 - `unsafe!if` -> `if` and `unsafe!r_bool`
 - More restrictive ANF in Taype?
 - Oil syntax ANF by construction?
+- MUX takes thunks?

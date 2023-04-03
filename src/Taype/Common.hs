@@ -23,6 +23,7 @@ module Taype.Common
     MatchAlt (..),
     matchAlt_,
     fromClosed,
+    fromClosedDefs,
 
     -- * Common names
     oblivAccent,
@@ -34,10 +35,6 @@ module Taype.Common
     retractionName,
     internalPrefix,
     internalName,
-    unsafePrefix,
-    unsafeName,
-    privPrefix,
-    privName,
     infixes,
     oblivInfixes,
     allInfixes,
@@ -52,6 +49,7 @@ import Bound
 import Data.Functor.Classes
 import Data.Maybe (fromJust)
 import Prettyprinter
+import Relude.Extra.Bifunctor
 import Taype.Binder
 import Taype.Name
 import Taype.Plate
@@ -165,6 +163,9 @@ matchAlt_ ctor binders body =
 fromClosed :: Traversable f => f a -> f b
 fromClosed a = fromJust $ closed a
 
+fromClosedDefs :: Traversable f => [(n, f a)] -> [(n, f b)]
+fromClosedDefs = secondF fromClosed
+
 ----------------------------------------------------------------
 -- Common names
 
@@ -199,20 +200,6 @@ internalPrefix = "$"
 
 internalName :: Text -> Text
 internalName = (internalPrefix <>)
-
--- | Unsafe name
-unsafePrefix :: Text
-unsafePrefix = "unsafe!"
-
-unsafeName :: Text -> Text
-unsafeName = (unsafePrefix <>)
-
--- | Private name
-privPrefix :: Text
-privPrefix = "private!"
-
-privName :: Text -> Text
-privName = (privPrefix <>)
 
 -- | The infix operators
 infixes :: [Text]
