@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -18,6 +19,7 @@ import Data.Maybe (fromJust)
 import Oil.Optimization
 import Oil.Syntax
 import Relude.Extra.Bifunctor
+import Taype.Binder
 import Taype.Common
 import Taype.Name
 import Taype.Plate
@@ -235,7 +237,7 @@ boolSection = runFreshM $ do
   b <- fresh
   return $
     lamB b (Just "b") $
-      GV (sectionName "int") @@ [ite_ (V b) (ILit 1) (ILit 0)]
+      GV (sectionName (oblivName "int")) @@ [ite_ (V b) (ILit 1) (ILit 0)]
 
 -- | Build an oblivious injection.
 --
@@ -271,7 +273,7 @@ oblivInjDef tag = runFreshM $ do
         ),
         ( t,
           Just "t",
-          GV (sectionName "int") @@ [if tag then ILit 1 else ILit 0]
+          GV (sectionName (oblivName "int")) @@ [if tag then ILit 1 else ILit 0]
         )
       ]
     $ GV aConcat @@ [V d, V t]
@@ -287,9 +289,11 @@ oblivInjDef tag = runFreshM $ do
 -- reveal phase.
 toOilProgram :: Options -> T.Defs Name -> IO (Program Name)
 toOilProgram options@Options {..} defs = do
-  mainDefs' <- optimize options $ go False <$> mainDefs
-  concealDefs' <- optimize options $ go False <$> concealDefs
-  revealDefs' <- optimize options $ go True <$> revealDefs
+  mainDefs' <- optimize options $ go False mainDefs
+  -- Do not optimize code for conceal phase, as primitive sections are effectful
+  -- in conceal phase.
+  let concealDefs' = go False concealDefs
+  revealDefs' <- optimize options $ go True revealDefs
   return
     Program
       { mainDefs = simp optReadable mainDefs',
@@ -299,7 +303,8 @@ toOilProgram options@Options {..} defs = do
         revealDefs = simp optReadable revealDefs'
       }
   where
-    go revealing = second $ runTslM Env {..} . toOilDef
+    go revealing =
+      secondF $ unfoldBuiltin . runTslM Env {..} . toOilDef
     (mainDefs, revealDefs) = partition (isSafe . snd) defs
     concealDefs = filterConceal defs
 
@@ -307,8 +312,7 @@ toOilProgram options@Options {..} defs = do
     isSafe _ = True
 
     simp readable =
-      secondF $
-        (if readable then readableDef else id) . simpDef
+      secondF $ (if readable then readableDef else id) . simpDef
 
 -- | Translate a taype definition to the corresponding OIL definition.
 toOilDef :: T.Def Name -> TslM (Def Name)
@@ -351,6 +355,24 @@ mkDepGraph defs =
       deps <- universeM expr
       return $ hashNub [x | T.GV x <- deps]
     go _ = return []
+
+-- | Unfold all builtin definitions that are not primitive.
+unfoldBuiltin :: Def Name -> Def Name
+unfoldBuiltin = runFreshM . transformBiM go
+  where
+    go e@App {fn = GV {..}, ..} =
+      if
+          | ref == sectionName (oblivName "bool") -> unfoldWith boolSection
+          | ref == oblivName "inl" -> unfoldWith $ oblivInjDef True
+          | ref == oblivName "inr" -> unfoldWith $ oblivInjDef False
+          | otherwise -> return e
+      where
+        unfoldWith e' = do
+          x <- fresh
+          return $
+            letB x (Just (toBinder ref)) e' $
+              V x @@ args
+    go e = return e
 
 ----------------------------------------------------------------
 -- Simplification of OIL expressions
