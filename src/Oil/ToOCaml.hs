@@ -347,11 +347,16 @@ toOCamlLam isRoot e = do
 toOCamlLet :: Doc -> Doc -> Doc -> Doc
 toOCamlLet binderDoc rhsDoc bodyDoc =
   align $
-    "let"
-      <+> hang (binderDoc <+> equals <> sep1 rhsDoc)
-      <+> "in"
-        <> hardline
-        <> bodyDoc
+    group
+      ( hang
+          ( "let"
+              <+> (binderDoc <+> equals <> sep1 rhsDoc)
+          )
+          <> line
+          <> "in"
+      )
+      <> hardline
+      <> bodyDoc
 
 toOCamlTuple :: [Doc] -> Doc
 toOCamlTuple = parens . align . sepWith (comma <> line)
