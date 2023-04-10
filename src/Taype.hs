@@ -92,7 +92,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   printToFiles "ml" mainML concealML revealML
   where
     cuteOilDoc comment defs =
-      "--" <+> comment <> hardline2 <> Oil.cuteDefs options defs
+      pretty commentDelim <+> comment <> hardline2 <> Oil.cuteDefs options defs
     printToFile f d = unless optNoFiles $ printDocToFile f d
     printToFiles ext mainDoc concealDoc revealDoc = do
       printToFile (file -<.> ext) mainDoc

@@ -26,6 +26,7 @@ module Taype.Common
     fromClosedDefs,
 
     -- * Common names
+    commentDelim,
     oblivAccent,
     oblivName,
     instInfix,
@@ -168,6 +169,9 @@ fromClosedDefs = secondF fromClosed
 
 ----------------------------------------------------------------
 -- Common names
+
+commentDelim :: Text
+commentDelim = "//"
 
 -- | Oblivious accent
 oblivAccent :: Text

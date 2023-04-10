@@ -73,7 +73,7 @@ data LocatedToken = LocatedToken {token :: Token, offset :: Int}
 type Parser = Parsec Void Text
 
 space :: Parser ()
-space = L.space C.space1 (L.skipLineComment "--") empty
+space = L.space C.space1 (L.skipLineComment commentDelim) empty
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme space
