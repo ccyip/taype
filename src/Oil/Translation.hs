@@ -287,7 +287,7 @@ oblivInjDef tag = runFreshM $ do
 -- oblivious computation phase, the section functions with their dependencies
 -- for the conceal phase, and the leaky functions (e.g., retractions) for the
 -- reveal phase.
-toOilProgram :: Options -> T.Defs Name -> IO (Program Name)
+toOilProgram :: Options -> T.Defs Name -> IO Program
 toOilProgram options@Options {..} defs = do
   mainDefs' <- optimize options $ go False mainDefs
   -- Do not optimize code for conceal phase, as primitive sections are effectful
@@ -296,11 +296,11 @@ toOilProgram options@Options {..} defs = do
   revealDefs' <- optimize options $ go True revealDefs
   return
     Program
-      { mainDefs = simp optReadable mainDefs',
+      { mainDefs = fromClosedDefs $ simp optReadable mainDefs',
         -- In the conceal phase, we keep the ANF form because the evaluation
         -- order is crucial.
-        concealDefs = simp False concealDefs',
-        revealDefs = simp optReadable revealDefs'
+        concealDefs = fromClosedDefs $ simp False concealDefs',
+        revealDefs = fromClosedDefs $ simp optReadable revealDefs'
       }
   where
     go revealing =

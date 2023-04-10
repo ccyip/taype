@@ -49,7 +49,7 @@ module Oil.Syntax
     aMux,
 
     -- * Pretty printer
-    cuteDefs,
+    cuteProgramDoc,
   )
 where
 
@@ -141,12 +141,11 @@ type NamedDef a = (Text, Def a)
 type Defs a = [NamedDef a]
 
 -- | OIL program
-data Program a = Program
-  { mainDefs :: Defs a,
-    concealDefs :: Defs a,
-    revealDefs :: Defs a
+data Program = Program
+  { mainDefs :: forall a. Defs a,
+    concealDefs :: forall a. Defs a,
+    revealDefs :: forall a. Defs a
   }
-  deriving stock (Functor, Foldable, Traversable)
 
 ----------------------------------------------------------------
 -- Array operations
@@ -207,7 +206,7 @@ instance Eq1 Expr where
     liftEq eq cond cond' && liftEq (liftEq eq) alts alts'
   liftEq _ _ _ = False
 
-instance Eq a => Eq (Expr a) where (==) = eq1
+instance (Eq a) => Eq (Expr a) where (==) = eq1
 
 instance PlateM (Expr Name) where
   plateM f Lam {..} = do
@@ -267,7 +266,7 @@ arrows_ [] = oops "Arrow without type"
 arrows_ [t] = t
 arrows_ (t : ts) = Arrow t $ arrows_ ts
 
-ite_ :: Eq a => Expr a -> Expr a -> Expr a -> Expr a
+ite_ :: (Eq a) => Expr a -> Expr a -> Expr a -> Expr a
 ite_ cond left right =
   Match
     { alts =
@@ -380,33 +379,41 @@ instance Cute Ty where
   cute TApp {..} = cuteApp_ (pretty tctor) args
 
 -- | Pretty printer for a definition
-instance Cute (NamedDef Text) where
-  cute (name, def) = case def of
-    FunDef {..} -> do
-      tyDoc <- cute ty
-      doc <- cuteLam True expr
-      return $
-        hang $
-          "fn"
-            <+> pretty name
-              <> sep1_ name (colon <+> align (group tyDoc))
-            <+> equals
-              <> doc
-    ADTDef {..} -> do
-      ctorDocs <- mapM cuteCtor ctors
-      return $
-        hang $
-          "data"
-            <+> adtName
-              <> sep1 (equals <+> sepWith (line <> pipe <> space) ctorDocs)
-      where
-        cuteCtor (ctor, paraTypes) = cuteApp_ (pretty ctor) paraTypes
-        adtName = if isInfix name then parens $ pretty name else pretty name
+cuteDefDoc :: Options -> Text -> Def Text -> Doc
+cuteDefDoc options name = \case
+  FunDef {..} ->
+    hang $
+      "fn"
+        <+> pretty name
+          <> sep1_ name (colon <+> align (group $ go (cute ty)))
+        <+> equals
+          <> go (cuteLam True expr)
+  ADTDef {..} ->
+    hang $
+      "data"
+        <+> adtName
+          <> sep1
+            (equals <+> sepWith (line <> pipe <> space) (cuteCtor <$> ctors))
+  where
+    cuteCtor (ctor, paraTypes) = go $ cuteApp_ (pretty ctor) paraTypes
+    adtName = if isInfix name then parens $ pretty name else pretty name
+    go = runCuteM options
 
 -- | Pretty printer for OIL definitions
-cuteDefs :: Options -> Defs Text -> Doc
-cuteDefs options =
-  foldMap $ \def -> runCuteM options (cute def) <> hardline2
+cuteDefsDoc :: Options -> Defs Text -> Doc
+cuteDefsDoc options = foldMap go
+  where
+    go (name, def) = cuteDefDoc options name def <> hardline2
+
+-- | Pretty printer for an OIL program
+cuteProgramDoc :: Options -> Program -> Doc
+cuteProgramDoc options Program {..} =
+  go "Computation phase" mainDefs
+    <> go "Conceal phase" concealDefs
+    <> go "Reveal phase" revealDefs
+  where
+    go comment defs =
+      pretty commentDelim <+> comment <> hardline2 <> cuteDefsDoc options defs
 
 cuteLam :: Bool -> Expr Text -> CuteM Doc
 cuteLam isRoot e = do

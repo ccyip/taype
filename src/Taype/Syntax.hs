@@ -55,7 +55,7 @@ module Taype.Syntax
 
     -- * Pretty printer
     cuteBinder,
-    cuteDefs,
+    cuteDefsDoc,
   )
 where
 
@@ -839,14 +839,14 @@ instance Cute (Expr Text) where
   cute Loc {..} = cute expr
 
 -- | Pretty printer for taype definitions
-cuteDefs :: Options -> Defs Text -> Doc
-cuteDefs options = foldMap go
+cuteDefsDoc :: Options -> Defs Text -> Doc
+cuteDefsDoc options = foldMap go
   where
-    go (name, def) = cuteDef options name def <> hardline2
+    go (name, def) = cuteDefDoc options name def <> hardline2
 
 -- | Pretty printer for a definition
-cuteDef :: Options -> Text -> Def Text -> Doc
-cuteDef options name = \case
+cuteDefDoc :: Options -> Text -> Def Text -> Doc
+cuteDefDoc options name = \case
   FunDef {..} ->
     hang $
       "fn" <> leakyDoc

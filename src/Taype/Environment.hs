@@ -41,9 +41,6 @@ module Taype.Environment
 
     -- * Prelude context
     preludeGCtx,
-
-    -- * Pretty printer
-    cuteDefs,
   )
 where
 
