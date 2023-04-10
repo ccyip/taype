@@ -258,11 +258,11 @@ withNamePrefix prefix =
 ----------------------------------------------------------------
 --  Common routines for pretty printing expressions
 
-cuteLamDoc_ :: Doc -> Bool -> [Doc] -> Doc -> Doc
-cuteLamDoc_ _ True [] bodyDoc = sep1 bodyDoc
-cuteLamDoc_ _ False [] _ = oops "Lambda has no binder"
+cuteLamDoc_ :: Doc -> Doc -> Bool -> [Doc] -> Doc -> Doc
+cuteLamDoc_ _ _ True [] bodyDoc = sep1 bodyDoc
+cuteLamDoc_ _ _ False [] _ = oops "Lambda has no binder"
 -- Quite hacky here
-cuteLamDoc_ kw isRoot binderDocs bodyDoc =
+cuteLamDoc_ kw delim isRoot binderDocs bodyDoc =
   if isRoot
     then
       group
@@ -277,10 +277,10 @@ cuteLamDoc_ kw isRoot binderDocs bodyDoc =
           )
     else hang $ group mkBindersDoc <> sep1 bodyDoc
   where
-    mkBindersDoc = kw <> align (vsep binderDocs) <+> "=>"
+    mkBindersDoc = kw <> align (vsep binderDocs) <+> delim
 
 cuteLamDoc :: Bool -> [Doc] -> Doc -> Doc
-cuteLamDoc = cuteLamDoc_ backslash
+cuteLamDoc = cuteLamDoc_ backslash "=>"
 
 cuteLetDoc :: [(Doc, Doc)] -> Doc -> Doc
 cuteLetDoc [] bodyDoc = group $ align bodyDoc

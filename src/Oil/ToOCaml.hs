@@ -378,7 +378,7 @@ toOCamlApp_ fnDoc args = do
 toOCamlLam :: Bool -> Expr Text -> CuteM Doc
 toOCamlLam isRoot e = do
   (binderDocs, bodyDoc) <- go e
-  return $ cuteLamDoc_ ("fun" <> space) isRoot binderDocs bodyDoc
+  return $ cuteLamDoc_ ("fun" <> space) "->" isRoot binderDocs bodyDoc
   where
     go Lam {..} = do
       x <- toValidName <$> freshNameOrBinder binder
