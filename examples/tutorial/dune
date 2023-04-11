@@ -1,4 +1,4 @@
 (executables
  (names "test_elem" "test_insert")
  (flags (:standard -w -27-33))
- (libraries taype-driver-plaintext common prelude sexplib))
+ (libraries common sexplib))
