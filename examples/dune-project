@@ -1,5 +1,1 @@
 (lang dune 3.4)
-
-; NOTE: the dune files in this directory are not for compilation. They are only
-; here for IDE support and some quick testing. We use the shake build system to
-; compile and evaluate the examples.
