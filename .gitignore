@@ -88,15 +88,10 @@ TAGS
 /test
 examples/output*
 examples/figs
-examples/.*
+examples/.ipynb_checkpoints
 examples/**/*.ml
-examples/**/test_*
-examples/common/test
 !examples/common/*.ml
-examples/common/prelude.ml
 !examples/**/*helper.ml
 !examples/**/test_*.ml
-!examples/**/*.input
-!examples**/*.input.csv
 *.tpc
 *.oil
