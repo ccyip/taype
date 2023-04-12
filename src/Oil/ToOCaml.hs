@@ -192,9 +192,11 @@ toOCamlTy TApp {..} = do
 --   open Driver
 --   ... mainOil ...
 --   module Conceal = struct
+--     include Conceal
 --     ... concealOil ...
 --   end
 --   module Reveal = struct
+--     include Reveal
 --     ... revealOil ...
 --   end
 -- end
@@ -213,12 +215,13 @@ toOCaml options Program {..} =
           <> concealDoc
           <> hardline2
           <> revealDoc
+    -- Reexport functions in the Conceal and Reveal module.
     concealDoc =
       modDoc "Conceal" $
-        "open Conceal" <> hardline2 <> go concealDefs
+        "include Conceal" <> hardline2 <> go concealDefs
     revealDoc =
       modDoc "Reveal" $
-        "open Reveal" <> hardline2 <> go revealDefs
+        "include Reveal" <> hardline2 <> go revealDefs
     modDoc name body =
       align $
         "module"
