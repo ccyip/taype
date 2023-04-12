@@ -1,7 +1,5 @@
-open Taype_driver
 open Sexplib
-open Scanf
-open Fun
+open Taype_driver
 
 let this_party : party ref = ref PublicP
 let stat : int ref = ref (-1)
@@ -18,7 +16,7 @@ let driver_of_string = function
   | _ -> failwith "Unknown driver: only supports plaintext and emp"
 
 let scan_line () =
-  scanf "%s@:%s@\n" (fun p s -> (party_of_string (String.trim p), s))
+  Scanf.scanf "%s@:%s@\n" (fun p s -> (party_of_string (String.trim p), s))
 
 let parse_options () =
   if Array.length Sys.argv < 3 then failwith "Not enough arguments";
@@ -35,7 +33,7 @@ let get_public_int () = get_public Conv.int_of_sexp
 let get_public_bool () = get_public Conv.bool_of_sexp
 
 let get_expected of_sexp =
-  let s = scanf "expected :%s@\n" id in
+  let s = Scanf.scanf "expected :%s@\n" Fun.id in
   Sexp.of_string_conv_exn s of_sexp
 
 let get_expected_int () = get_expected Conv.int_of_sexp
