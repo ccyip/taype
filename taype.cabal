@@ -108,6 +108,8 @@ executable runner
                      , cassava
                      , unliftio
                      , typed-process
+                     , directory
+                     , filepath
   ghc-options:         -threaded
                        -rtsopts
                        -with-rtsopts=-N

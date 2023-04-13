@@ -21,6 +21,8 @@ import Options.Applicative
 import System.IO (hClose, withBinaryFile)
 import System.Process.Typed
 import UnliftIO.Temporary (withSystemTempFile)
+import System.Directory
+import System.FilePath
 
 run :: Options -> IO ()
 run options@Options {..} = do
@@ -42,6 +44,7 @@ run options@Options {..} = do
         Csv.encode $
           ("stat" : ["public" | "public" <- hd])
             : (filterOutput ("stat" : hd) <$> reverse output)
+  createDirectoryIfMissing True $ takeDirectory optOutput
   writeFileLBS optOutput res
   where
     go _ _ [] _ acc = return acc
@@ -82,7 +85,7 @@ run1 Options {..} hd fields =
       setStdout createPipe $
         setStdin (useHandleClose handle) $
           proc optProg $
-            toString party : optArgs
+            toString optDriver : toString party : optArgs
 
 withInput :: [Text] -> [Text] -> [Text] -> ([Handle] -> IO a) -> IO a
 withInput parties owners fields f = go [] parties
@@ -129,6 +132,7 @@ main = run =<< execParser (info (opts <**> helper) helpMod)
 
 data Options = Options
   { optProg :: FilePath,
+    optDriver :: String,
     optParties :: [Text],
     optRounds :: Int,
     optInput :: FilePath,
@@ -141,6 +145,9 @@ opts = do
   optProg <-
     strArgument $
       metavar "PROGRAM" <> help "Testing program"
+  optDriver <-
+    strArgument $
+      metavar "DRIVER" <> help "Driver"
   parties <-
     strArgument $
       metavar "PARTIES" <> help "Participating parties, comma separated"

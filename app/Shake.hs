@@ -10,11 +10,11 @@
 -- Build system.
 module Main (main) where
 
-import qualified Data.String as S
+import Data.String qualified as S
 import Development.Shake
 import Development.Shake.FilePath
 import System.Console.GetOpt
-import qualified Text.Read as R
+import Text.Read qualified as R
 
 main :: IO ()
 main = shakeArgsWith shakeOptions {shakeColor = True} flags $
@@ -44,23 +44,24 @@ main = shakeArgsWith shakeOptions {shakeColor = True} flags $
       let Options {optRound = rnd, optOutputDir = outDir} =
             flipfoldl' ($) defaultOptions args
       examples <- getExamples
-      rulesForCommon
-      bins <- foldMapM rulesForExample examples
-      want bins
+      mls <- foldMapM rulesForExample examples
+      want ["build"]
+
+      "build" ~> do
+        need mls
+        mlCmd ["build"]
 
       "clean" ~> do
-        need $ "clean/common" : (("clean/" <>) <$> examples)
+        need $ ("clean/" <>) <$> examples
+        mlCmd ["clean"]
 
       mapM_ (rulesForRunner rnd outDir) examples
 
       "run" ~> do
         need $ ("run/" <>) <$> examples
 
-      "run/clean" ~> do
-        removeFilesAfter outDir ["//"]
-
       "cleanall" ~> do
-        need ["clean", "run/clean"]
+        need ["clean"]
         ShakeOptions {shakeFiles} <- getShakeOptions
         removeFilesAfter shakeFiles ["//*"]
 
@@ -82,9 +83,6 @@ drivers = ["plaintext", "emp"]
 exampleDir :: FilePath
 exampleDir = "examples"
 
-commonDir :: FilePath
-commonDir = exampleDir </> "common"
-
 taypeCmd :: [String] -> Action ()
 taypeCmd args = do
   flags <- getEnv "TAYPE_FLAGS"
@@ -96,112 +94,59 @@ runnerCmd args =
   command_ [Traced "RUNNER"] "cabal" $ ["run", "runner", "--"] <> args
 
 mlCmd :: [String] -> Action ()
-mlCmd args =
-  command_ [Traced "OCAMLOPT"] "ocamlfind" $ ["ocamlopt"] <> args
+mlCmd = command_ [Traced "DUNE", Cwd exampleDir] "dune"
 
 garbages :: [FilePattern]
-garbages = ["*.cmi", "*.cmx", "*.o", "*.tpc", "*.oil"]
+garbages = ["*.tpc", "*.oil"]
 
-getExamples :: MonadIO m => m [FilePath]
+getExamples :: (MonadIO m) => m [FilePath]
 getExamples = do
   files <- liftIO $ getDirectoryFilesIO exampleDir ["*/*.tp"]
   return $ hashNub $ takeDirectory1 <$> files
 
-getTaypeFilesIn :: MonadIO m => FilePath -> m [FilePath]
+getTaypeFilesIn :: (MonadIO m) => FilePath -> m [FilePath]
 getTaypeFilesIn example =
   liftIO $ getDirectoryFilesIO (exampleDir </> example) ["*.tp"]
 
-getMLFromTaype :: FilePath -> [FilePath]
-getMLFromTaype file =
-  [ prefix,
-    prefix <> "_conceal",
-    prefix <> "_reveal"
-  ]
-    <&> (<.> "ml")
-  where
-    prefix = dropExtension file
-
-getTestSrcIn :: MonadIO m => FilePath -> m [FilePath]
+getTestSrcIn :: (MonadIO m) => FilePath -> m [FilePath]
 getTestSrcIn example =
   liftIO $ getDirectoryFilesIO (exampleDir </> example) ["test_*.ml"]
 
-mkTestBin :: FilePath -> String -> FilePath
-mkTestBin file driver = file <> "_" <> driver <.> exe
+getBinPath :: FilePath -> FilePath -> FilePath
+getBinPath example name = "_build" </> "default" </> example </> name <.> "exe"
 
 rulesForExample :: FilePath -> Rules [FilePath]
 rulesForExample example = do
   let dir = exampleDir </> example
   tpNames <- getTaypeFilesIn example
-  mls <- foldMapM rulesFromTaypeFile $ (dir </>) <$> tpNames
+  mls <- mapM rulesFromTaypeFile $ (dir </>) <$> tpNames
   srcNames <- getTestSrcIn example
-  helpers <- liftIO $ (dir </>) <<$>> getDirectoryFilesIO dir ["*helper.ml"]
-  bins <- flip foldMapM srcNames $ \srcName ->
-    forM drivers $ \driver -> do
-      let bin = mkTestBin (dir </> takeBaseName srcName) driver
-          allMls =
-            ((commonDir </>) <$> ["prelude.ml", "common.ml"])
-              <> mls
-              <> helpers
-              <> [dir </> srcName]
-      bin %> \out -> do
-        need allMls
-        mlCmd $
-          [ "-o",
-            out,
-            "-linkpkg",
-            "-package",
-            "sexplib",
-            "-package",
-            "taype-driver-" <> driver,
-            "-I",
-            commonDir,
-            "-I",
-            dir
-          ]
-            <> allMls
-      return bin
+  forM_ srcNames $ \srcName -> do
+    let name = dropExtensions srcName
+        bin = getBinPath example name
+    ("build/" <> example <> "/" <> name) ~> do
+      need mls
+      mlCmd ["build", bin]
 
-  ("build/" <> example) ~> need bins
+  ("build/" <> example) ~> do
+    need mls
+    mlCmd ["build", "@@" <> example <> "/default"]
 
   ("clean/" <> example) ~> do
-    removeFilesAfter "." $ mls <> bins
+    removeFilesAfter "." mls
     removeFilesAfter dir garbages
-  return bins
-
-rulesFromTaypeFile :: FilePath -> Rules [FilePath]
-rulesFromTaypeFile tp = do
-  let mls = getMLFromTaype tp
-  mls &%> \_ -> do
-    need [tp]
-    taypeCmd [tp]
   return mls
 
-rulesForCommon :: Rules ()
-rulesForCommon = do
-  let bin = commonDir </> "test"
-      preludeML = commonDir </> "prelude.ml"
+rulesFromTaypeFile :: FilePath -> Rules FilePath
+rulesFromTaypeFile tp = do
+  let ml = tp -<.> "ml"
+  ml %> \_ -> do
+    alwaysRerun
+    need [tp]
+    taypeCmd [tp]
+  return ml
 
-  bin %> \out -> do
-    let mls = [preludeML, out <.> "ml"]
-    need mls
-    mlCmd $
-      [ "-o",
-        out,
-        "-linkpkg",
-        "-package",
-        "taype-driver-plaintext"
-      ]
-        <> mls
-
-  preludeML %> \out -> do
-    taypeCmd ["--generate-prelude", dropExtension out]
-
-  "build/common" ~> need [bin, preludeML]
-
-  "clean/common" ~> do
-    removeFilesAfter commonDir $ ["test", "prelude.ml"] <> garbages
-
-getInputCsvIn :: MonadIO m => FilePath -> m [FilePath]
+getInputCsvIn :: (MonadIO m) => FilePath -> m [FilePath]
 getInputCsvIn example =
   liftIO $ getDirectoryFilesIO (exampleDir </> example) ["*.input.csv"]
 
@@ -211,31 +156,34 @@ rulesForRunner rnd outRoot example = do
   let inDir = exampleDir </> example
       outDir = outRoot </> example
       tgt = "run/" <> example
-  outputs <- flip foldMapM inputNames $ \inputName -> do
+  tgtWithNames <- forM inputNames $ \inputName -> do
     let testName = dropExtensions inputName
+        buildTgt = "build/" <> example <> "/" <> testName
+        bin = exampleDir </> getBinPath example testName
         tgtWithName = tgt <> "/" <> testName
 
-    outputs <- forM drivers $ \driver -> do
+    tgtWithDrivers <- forM drivers $ \driver -> do
       let input = inDir </> inputName
           output = outDir </> testName <.> driver <.> "output" <.> "csv"
-          isPlainText = driver == "plaintext"
-          bin = mkTestBin (inDir </> testName) driver
-          rnd' = if isPlainText then 1 else rnd
+          rnd' = if driver == "plaintext" then 1 else rnd
+          tgtWithDriver = tgtWithName <> "/" <> driver
 
-      output %> \out -> do
-        unless isPlainText alwaysRerun
-        need [bin, input]
-        runnerCmd [bin, partiesFromDriver driver, show rnd', input, out]
+      tgtWithDriver ~> do
+        need [buildTgt, input]
+        runnerCmd
+          [ bin,
+            driver,
+            partiesFromDriver driver,
+            show rnd',
+            input,
+            output
+          ]
+      return tgtWithDriver
 
-      tgtWithName <> "/" <> driver ~> need [output]
-      return output
+    tgtWithName ~> need tgtWithDrivers
+    return tgtWithName
 
-    tgtWithName ~> need outputs
-    return outputs
-
-  tgt ~> need outputs
-
-  "run/clean/" <> example ~> removeFilesAfter outDir ["*.output.csv"]
+  tgt ~> need tgtWithNames
 
 partiesFromDriver :: String -> String
 partiesFromDriver "plaintext" = "public"
