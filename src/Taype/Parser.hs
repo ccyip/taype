@@ -111,10 +111,85 @@ infixToTypeFormer x | x == oblivName "+" = OSum
 infixToTypeFormer _ = oops "unknown type infix"
 
 -- | The grammar for taype language
-grammar :: Grammar r (Parser r (Defs Text))
+grammar :: forall r. Grammar r (Parser r (Defs Text))
 grammar = mdo
   -- A program is a list of global definitions.
   pProg <- rule $ many pDef
+
+  -- Common production rules
+  let -- Let-like binding
+      pLet pBody = do
+        let pBinding = do
+              binder <- pLocatedBinder
+              mTy <- optional $ pToken L.Colon *> pType
+              pToken L.Equals
+              rhs <- pExpr
+              return (binder, mTy, rhs)
+        pToken L.Let
+        bindings <- some1 pBinding
+        pToken L.In
+        body <- pBody
+        return $
+          let go ((loc, binder), mTy, rhs) body' =
+                Loc {expr = let_ binder mTy rhs body', ..}
+           in foldr go body bindings
+      -- If-like conditional
+      pIf former ifToken pBranch = do
+        loc <- pLocatedToken ifToken
+        cond <- pExpr
+        pToken L.Then
+        left <- pBranch
+        pToken L.Else
+        right <- pBranch
+        return Loc {expr = former cond left right, ..}
+      -- Product-like elimination
+      pPMatch former matchToken pPairPat_ pBody = do
+        loc <- pLocatedToken matchToken
+        cond <- pExpr
+        pToken L.With
+        optional $ pToken L.Bar
+        pat <- pPairPat_
+        pToken L.DArrow
+        body <- pBody
+        pToken L.End
+        return Loc {expr = former cond pat body, ..}
+      -- Public match-like elimination
+      pMatch pBody = do
+        let pAlt = do
+              ctor <- pIdent
+              binders <- many pBinder
+              pToken L.DArrow
+              body <- pBody
+              return (ctor, binders, body)
+        loc <- pLocatedToken L.Match
+        cond <- pExpr
+        pToken L.With
+        optional $ pToken L.Bar
+        alts <- pAlt `sepBy1` pToken L.Bar
+        pToken L.End
+        return Loc {expr = match_ cond alts, ..}
+      -- Pair-like
+      pPair former openParenToken = do
+        loc <- pLocatedToken openParenToken
+        prefix <- some1 $ pExpr <* pToken L.Comma
+        end <- pExpr
+        pToken L.RParen
+        return $
+          let go left right = Loc {expr = former left right, loc = getLoc left}
+           in setLoc loc $ foldr go end prefix
+      -- Application-like
+      pApp former pHd = do
+        fn <- pHd
+        args <- some1 pAtomExpr
+        return $ Loc {loc = getLoc fn, expr = former fn $ toList args}
+      -- Parenthesized
+      pParen pBody = pToken L.LParen *> pBody <* pToken L.RParen
+      -- Infix
+      pInfix former ops pLeft pRight = do
+        left <- pLeft
+        ~(_, name) <- pLocatedInfix ops
+        right <- pRight
+        return Loc {expr = former name left right, loc = getLoc left, ..}
 
   -- Global definition
   pDef <-
@@ -186,6 +261,14 @@ grammar = mdo
           pPMatch (pmatchPat_ PublicP) L.Match pPairPat pExpr,
           -- Oblivious product elimination
           pPMatch (pmatchPat_ OblivP) L.OMatch pOPairPat pExpr,
+          -- Psi type elimination
+          pPMatch
+            ( \cond (lBinder, rBinder) body ->
+                pmatch_ PsiP cond lBinder rBinder body
+            )
+            L.Match
+            (pPPairPat :: Prod r Text LocatedToken (Binder, Binder))
+            pExpr,
           -- ADT elimination
           pMatch pExpr,
           -- Oblivious (possibly leaky) sum elimination
@@ -292,6 +375,8 @@ grammar = mdo
           pPair (Pair PublicP) L.LParen,
           -- Oblivious pair
           pPair (Pair OblivP) L.LOParen,
+          -- Dependent pair (Psi type)
+          pPair (Pair PsiP) L.LPParen,
           -- Ascription
           pParen $ do
             expr <- pExpr
@@ -385,86 +470,16 @@ grammar = mdo
           pLocatedToken L.TInt <&> \loc -> Loc {expr = TInt PublicL, ..},
           -- Oblivious integer type
           pLocatedToken L.OInt <&> \loc -> Loc {expr = TInt OblivL, ..},
+          -- Psi type
+          do
+            loc <- pLocatedToken L.Psi
+            oblivTy <- pIdent
+            return Loc {expr = Psi {..}, ..},
           -- Variable
           pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
           -- Parenthesized type
           pParen pType
         ]
-
-  -- Common production rules
-  let -- Let-like binding
-      pLet pBody = do
-        let pBinding = do
-              binder <- pLocatedBinder
-              mTy <- optional $ pToken L.Colon *> pType
-              pToken L.Equals
-              rhs <- pExpr
-              return (binder, mTy, rhs)
-        pToken L.Let
-        bindings <- some1 pBinding
-        pToken L.In
-        body <- pBody
-        return $
-          let go ((loc, binder), mTy, rhs) body' =
-                Loc {expr = let_ binder mTy rhs body', ..}
-           in foldr go body bindings
-      -- If-like conditional
-      pIf former ifToken pBranch = do
-        loc <- pLocatedToken ifToken
-        cond <- pExpr
-        pToken L.Then
-        left <- pBranch
-        pToken L.Else
-        right <- pBranch
-        return Loc {expr = former cond left right, ..}
-      -- Product-like elimination
-      pPMatch former matchToken pPairPat_ pBody = do
-        loc <- pLocatedToken matchToken
-        cond <- pExpr
-        pToken L.With
-        optional $ pToken L.Bar
-        pat <- pPairPat_
-        pToken L.DArrow
-        body <- pBody
-        pToken L.End
-        return Loc {expr = former cond pat body, ..}
-      -- Public match-like elimination
-      pMatch pBody = do
-        let pAlt = do
-              ctor <- pIdent
-              binders <- many pBinder
-              pToken L.DArrow
-              body <- pBody
-              return (ctor, binders, body)
-        loc <- pLocatedToken L.Match
-        cond <- pExpr
-        pToken L.With
-        optional $ pToken L.Bar
-        alts <- pAlt `sepBy1` pToken L.Bar
-        pToken L.End
-        return Loc {expr = match_ cond alts, ..}
-      -- Pair-like
-      pPair former openParenToken = do
-        loc <- pLocatedToken openParenToken
-        prefix <- some1 $ pExpr <* pToken L.Comma
-        end <- pExpr
-        pToken L.RParen
-        return $
-          let go left right = Loc {expr = former left right, loc = getLoc left}
-           in setLoc loc $ foldr go end prefix
-      -- Application-like
-      pApp former pHd = do
-        fn <- pHd
-        args <- some1 pAtomExpr
-        return $ Loc {loc = getLoc fn, expr = former fn $ toList args}
-      -- Parenthesized
-      pParen pBody = pToken L.LParen *> pBody <* pToken L.RParen
-      -- Infix
-      pInfix former ops pLeft pRight = do
-        left <- pLeft
-        ~(_, name) <- pLocatedInfix ops
-        right <- pRight
-        return Loc {expr = former name left right, loc = getLoc left, ..}
 
   -- Function argument
   pLocatedFunArg <-
@@ -507,11 +522,18 @@ grammar = mdo
   pLocatedPat <- pLocatedPatRule pLocatedPairPat
   pLocatedOPairPat <- pLocatedPairPatRule pLocatedOPat L.LOParen
   pLocatedOPat <- pLocatedPatRule pLocatedOPairPat
+  let pPPairPat = do
+        pToken L.LPParen
+        lBinder <- pBinder
+        pToken L.Comma
+        rBinder <- pBinder
+        pToken L.RParen
+        return (lBinder, rBinder)
 
   return pProg
 
 -- | Main parser
-parse :: MonadError Err m => [LocatedToken] -> m (Defs Text)
+parse :: (MonadError Err m) => [LocatedToken] -> m (Defs Text)
 parse tokens =
   case fullParses (parser grammar) tokens of
     ([], rpt) -> throwError $ renderParserError rpt
@@ -535,6 +557,7 @@ renderToken :: Token -> Doc
 renderToken = \case
   L.Lambda -> "lambda abstraction"
   L.Underscore -> squotes "_"
+  L.Psi -> squotes $ pretty psiAccent
   L.Arrow -> dquotes "->"
   L.DArrow -> dquotes "=>"
   L.Equals -> squotes equals
@@ -543,6 +566,7 @@ renderToken = \case
   L.Comma -> squotes comma
   L.LParen -> squotes lparen
   L.LOParen -> dquotes $ pretty oblivAccent <> lparen
+  L.LPParen -> dquotes $ pretty psiAccent <> lparen
   L.RParen -> squotes rparen
   L.TUnit -> "unit"
   L.TBool -> "bool"

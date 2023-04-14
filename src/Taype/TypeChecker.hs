@@ -302,7 +302,22 @@ typing Ite {..} mt = do
         ]
         (V y)
     )
-typing Pair {pairKind, ..} mt = do
+typing Pair {pairKind = pairKind@PsiP, ..} (Just t) = do
+  (argTy, oblivTy) <- isPsi t
+  let app x = tapp_ oblivTy [V x]
+  left' <- check left argTy
+  xl <- fresh
+  right' <- check right $ let' xl argTy left' $ app xl
+  xr <- fresh
+  return
+    ( t,
+      lets'
+        [ (xl, argTy, left'),
+          (xr, app xl, right')
+        ]
+        Pair {left = V xl, right = V xr, ..}
+    )
+typing Pair {pairKind, ..} mt | pairKind == OblivP || pairKind == PublicP = do
   (mLeftTy, mRightTy) <- NE.unzip <$> mapM (isProdLike pairKind) mt
   (leftTy', left') <- typing left mLeftTy
   (rightTy', right') <- typing right mRightTy
@@ -398,12 +413,9 @@ typing PMatch {pairKind = pairKind@OblivP, ..} mt = do
   (t, cond') <- infer cond
   (leftTy', rightTy') <- withLoc_ cond $ isOProd t
   ((xl, xr), body) <- unbind2 bnd2
-  (bodyTy', body') <-
-    extendCtx
-      [ (xl, leftTy', lBinder),
-        (xr, rightTy', rBinder)
-      ]
-      $ typing body mt
+  let ctx = [(xl, leftTy', lBinder), (xr, rightTy', rBinder)]
+  (bodyTy', body') <- extendCtx ctx $ typing body mt
+  notAppearIn bodyTy' ctx
   let condTy' = Prod {olabel = OblivL, left = leftTy', right = rightTy'}
   x <- fresh
   return
@@ -412,6 +424,28 @@ typing PMatch {pairKind = pairKind@OblivP, ..} mt = do
         [(x, condTy', cond')]
         PMatch
           { condTy = Just (leftTy', rightTy'),
+            cond = V x,
+            bnd2 = abstract_ (xl, xr) body',
+            ..
+          }
+    )
+-- NOTE: Technically the type of a Psi type elimination can depend on the
+-- discriminee, just like the public product elimination. But it does not seem
+-- necessary in the current use of Psi type.
+typing PMatch {pairKind = pairKind@PsiP, ..} mt = do
+  (t, cond') <- infer cond
+  (argTy, oblivTy) <- withLoc_ cond $ isPsi t
+  ((xl, xr), body) <- unbind2 bnd2
+  let ctx = [(xl, argTy, lBinder), (xr, tapp_ oblivTy [V xl], rBinder)]
+  (bodyTy', body') <- extendCtx ctx $ typing body mt
+  notAppearIn bodyTy' ctx
+  x <- fresh
+  return
+    ( bodyTy',
+      lets'
+        [(x, t, cond')]
+        PMatch
+          { condTy = Nothing,
             cond = V x,
             bnd2 = abstract_ (xl, xr) body',
             ..
@@ -762,6 +796,11 @@ kinding ty@GV {..} Nothing =
       err [[DD "Definition", DQ ref, DD "is not an ADT"]]
     _ ->
       err [[DD "Type", DQ ref, DD "is not in scope"]]
+kinding ty@Psi {..} Nothing = do
+  lookupGSig oblivTy >>= \case
+    Just OADTDef {} -> return (MixedK, ty)
+    Just _ -> err [[DD "Definition", DQ oblivTy, DD "is not an OADT"]]
+    _ -> err [[DD "Definition", DQ oblivTy, DD "is not in scope"]]
 kinding Prod {olabel = olabel@PublicL, ..} Nothing = do
   (leftK, left') <- inferKind left
   (rightK, right') <- inferKind right
@@ -1117,7 +1156,7 @@ kindOfOLabel :: OLabel -> Kind
 kindOfOLabel PublicL = PublicK
 kindOfOLabel OblivL = OblivK
 
-maybeGV :: MonadReader Env m => Expr Name -> m (Maybe (NamedDef Name))
+maybeGV :: (MonadReader Env m) => Expr Name -> m (Maybe (NamedDef Name))
 maybeGV GV {..} = (ref,) <<$>> lookupGSig ref
 maybeGV Loc {..} = maybeGV expr
 maybeGV _ = return Nothing
@@ -1194,10 +1233,24 @@ isOProd_ t = do
           [DH "But instead got", DC t]
         ]
 
+-- | Check if a type is a Psi type and return its components.
+isPsi :: Ty Name -> TcM (Ty Name, Text)
+isPsi Psi {..} =
+  lookupGSig oblivTy >>= \case
+    Just OADTDef {..} -> return (argTy, oblivTy)
+    _ -> oops "Not an oblivious definition"
+isPsi Loc {..} = isPsi expr
+isPsi t =
+  err
+    [ [DD "Expecting a dependent pair (Psi type)"],
+      [DH "But instead got", DC t]
+    ]
+
 -- | Check if a type is product-like and return its components.
 isProdLike :: PairKind -> Ty Name -> TcM (Ty Name, Ty Name)
 isProdLike PublicP = isProd
 isProdLike OblivP = isOProd
+isProdLike _ = oops "Psi type"
 
 -- | Check if a type is an oblivious sum type and return its components.
 --
@@ -1294,7 +1347,7 @@ peekLoc :: Expr Name -> Maybe Int
 peekLoc Loc {..} = Just loc
 peekLoc _ = Nothing
 
-withLoc_ :: MonadReader Env m => Expr Name -> m a -> m a
+withLoc_ :: (MonadReader Env m) => Expr Name -> m a -> m a
 withLoc_ e = mayWithLoc (peekLoc e)
 
 notAppearIn :: Ty Name -> [(Name, Ty Name, Maybe Binder)] -> TcM ()
@@ -1539,14 +1592,14 @@ preCheckDef defs name def = do
       (pubTy, argTy) <- isOADTDef loc oadtName
       k <- fresh
       return
-        ( pi' k argTy $ arrow_ (GV pubTy) $ tapp_ (GV oadtName) [V k],
+        ( pi' k argTy $ arrow_ (GV pubTy) $ tapp_ oadtName [V k],
           SafeL
         )
     typeOfInst loc (RetractionInst oadtName) = do
       (pubTy, argTy) <- isOADTDef loc oadtName
       k <- fresh
       return
-        ( pi' k argTy $ arrow_ (tapp_ (GV oadtName) [V k]) $ GV pubTy,
+        ( pi' k argTy $ arrow_ (tapp_ oadtName [V k]) $ GV pubTy,
           LeakyL
         )
 
@@ -1587,7 +1640,7 @@ extendGCtx ::
   m (GCtx Name)
 extendGCtx = foldlM $ uncurry . extendGCtx1
 
-getGSig :: MonadReader Env m => Text -> m (Def Name)
+getGSig :: (MonadReader Env m) => Text -> m (Def Name)
 getGSig x =
   lookupGSig x
     <&> fromMaybe (oops $ "Definition " <> x <> " does not exist")
@@ -1712,7 +1765,7 @@ errArity appKind ref actual expected =
 --
 -- This is only used for error reporting and printing, as the resulting
 -- expression is not in core taype ANF.
-readableExpr :: MonadFresh m => Expr Name -> m (Expr Name)
+readableExpr :: (MonadFresh m) => Expr Name -> m (Expr Name)
 readableExpr = transformM go
   where
     go Let {binder = Nothing, ..} = return $ instantiate_ rhs bnd

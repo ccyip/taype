@@ -32,6 +32,7 @@ import qualified Text.Megaparsec.Char.Lexer as L
 data Token
   = Lambda
   | Underscore
+  | Psi
   | Arrow
   | DArrow
   | Equals
@@ -40,6 +41,7 @@ data Token
   | Comma
   | LParen
   | LOParen
+  | LPParen
   | RParen
   | TUnit
   | TBool
@@ -130,7 +132,9 @@ pToken =
       Underscore <$ symbol "_",
       LParen <$ symbol "(",
       LOParen <$ symbol (oblivName "("),
-      RParen <$ symbol ")"
+      LPParen <$ symbol (psiName "("),
+      RParen <$ symbol ")",
+      Psi <$ symbol psiAccent
     ]
 
 isIdent0 :: Char -> Bool

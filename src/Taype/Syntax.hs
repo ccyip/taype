@@ -150,9 +150,11 @@ data Expr a
     --
     -- This definition includes public product and oblivious product.
     Prod {olabel :: OLabel, left :: Ty a, right :: Ty a}
-  | -- | Public and oblivious pairs
+  | -- | Psi type
+    Psi {oblivTy :: Text}
+  | -- | Public, oblivious, and dependent pairs
     Pair {pairKind :: PairKind, left :: Expr a, right :: Expr a}
-  | -- | Product type pattern matching
+  | -- | Product and Psi type pattern matching
     PMatch
       { pairKind :: PairKind,
         condTy :: Maybe (Ty a, Ty a),
@@ -373,6 +375,7 @@ instance Monad Expr where
         ..
       }
   Prod {..} >>= f = Prod {left = left >>= f, right = right >>= f, ..}
+  Psi {..} >>= _ = Psi {..}
   Pair {..} >>= f = Pair {left = left >>= f, right = right >>= f, ..}
   PMatch {..} >>= f =
     PMatch
@@ -458,6 +461,7 @@ instance Eq1 Expr where
     Prod {olabel, left, right}
     Prod {olabel = olabel', left = left', right = right'} =
       olabel == olabel' && liftEq eq left left' && liftEq eq right right'
+  liftEq _ Psi {oblivTy} Psi {oblivTy = oblivTy'} = oblivTy == oblivTy'
   liftEq eq Pair {left, right} Pair {left = left', right = right'} =
     liftEq eq left left' && liftEq eq right right'
   liftEq
@@ -487,7 +491,7 @@ instance Eq1 Expr where
   liftEq eq expr' Loc {expr} = liftEq eq expr' expr
   liftEq _ _ _ = False
 
-instance Eq a => Eq (Expr a) where (==) = eq1
+instance (Eq a) => Eq (Expr a) where (==) = eq1
 
 instance PlateM (Expr Name) where
   plateM f Let {..} = do
@@ -599,7 +603,7 @@ instance BiplateM (Def Name) (Expr Name) where
 ----------------------------------------------------------------
 -- Smart constructors
 
-lam_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a
+lam_ :: (a ~ Text) => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a
 lam_ binder argTy body =
   Lam
     { bnd = abstractBinder binder body,
@@ -607,7 +611,7 @@ lam_ binder argTy body =
       ..
     }
 
-pi_ :: a ~ Text => BinderM a -> Ty a -> Expr a -> Expr a
+pi_ :: (a ~ Text) => BinderM a -> Ty a -> Expr a -> Expr a
 pi_ binder ty body =
   Pi
     { bnd = abstractBinder binder body,
@@ -626,10 +630,10 @@ arrow_ dom cod =
 app_ :: Expr a -> [Expr a] -> Expr a
 app_ fn args = App {appKind = FunApp, ..}
 
-tapp_ :: Expr a -> [Expr a] -> Expr a
-tapp_ fn args = App {appKind = TypeApp, ..}
+tapp_ :: Text -> [Expr a] -> Expr a
+tapp_ fn args = App {appKind = TypeApp, fn = GV fn, ..}
 
-let_ :: a ~ Text => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a -> Expr a
+let_ :: (a ~ Text) => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a -> Expr a
 let_ binder rhsTy rhs body =
   Let
     { bnd = abstractBinder binder body,
@@ -646,11 +650,11 @@ oite_ cond left right = OIte {label = LeakyL, ..}
 oinj_ :: Bool -> Expr a -> Expr a
 oinj_ tag inj = OInj {injTy = Nothing, ..}
 
-match_ :: a ~ Text => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
+match_ :: (a ~ Text) => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 match_ cond alts = Match {alts = uncurry3 matchAlt_ <$> alts, ..}
 
 omatch_ ::
-  a ~ Text =>
+  (a ~ Text) =>
   Expr a ->
   BinderM a ->
   Expr a ->
@@ -667,7 +671,7 @@ omatch_ cond lBinder lBody rBinder rBody =
     }
 
 omatchPat_ ::
-  a ~ Text =>
+  (a ~ Text) =>
   Expr a ->
   Pat a ->
   Expr a ->
@@ -682,7 +686,7 @@ omatchPat_ cond lPat lBody rPat rBody = runFreshM $ do
   return $ omatch_ cond xl lBody' xr rBody'
 
 pmatch_ ::
-  a ~ Text => PairKind -> Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
+  (a ~ Text) => PairKind -> Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
 pmatch_ pairKind cond lBinder rBinder body =
   PMatch
     { condTy = Nothing,
@@ -693,7 +697,7 @@ pmatch_ pairKind cond lBinder rBinder body =
     }
 
 -- The pattern has to be 'PairP'.
-pmatchPat_ :: a ~ Text => PairKind -> Expr a -> Pat a -> Expr a -> Expr a
+pmatchPat_ :: (a ~ Text) => PairKind -> Expr a -> Pat a -> Expr a -> Expr a
 pmatchPat_ pairKind cond pat body =
   runFreshM $ elabPat (pmatch_ pairKind) pat cond body
 
@@ -804,6 +808,7 @@ instance Cute (Expr Text) where
   cute Match {..} = cuteMatch PublicL True cond alts
   cute OIte {..} = cuteIte OblivL cond left right
   cute e@Prod {..} = cuteInfix e (accentOfOLabel olabel <> "*") left right
+  cute Psi {..} = cute $ psiName oblivTy
   cute Pair {..} = cutePair pairKind left right
   cute PMatch {..} = cutePMatch pairKind cond lBinder rBinder bnd2
   cute e@OSum {..} = cuteInfix e (oblivName "+") left right
@@ -921,6 +926,7 @@ instance HasPLevel (Expr a) where
     -- Do not distinguish infix further.
     App {fn = GV {..}} | isInfix ref -> 20
     App {} -> 10
+    Psi {} -> 0
     TUnit -> 0
     VUnit -> 0
     TBool {} -> 0

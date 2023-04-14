@@ -29,6 +29,8 @@ module Taype.Common
     commentDelim,
     oblivAccent,
     oblivName,
+    psiAccent,
+    psiName,
     instInfix,
     sectionInstName,
     sectionName,
@@ -107,7 +109,7 @@ data OLabel = PublicL | OblivL
   deriving stock (Eq, Ord, Show)
 
 -- | Product kinds
-data PairKind = PublicP | OblivP
+data PairKind = PublicP | OblivP | PsiP
   deriving stock (Eq, Ord, Show)
 
 pairKindOfOLabel :: OLabel -> PairKind
@@ -117,6 +119,7 @@ pairKindOfOLabel OblivL = OblivP
 olabelOfPairKind :: PairKind -> OLabel
 olabelOfPairKind PublicP = PublicL
 olabelOfPairKind OblivP = OblivL
+olabelOfPairKind PsiP = PublicL
 
 -- | Oblivious sum projection kinds
 data OProjKind = TagP | LeftP | RightP
@@ -161,10 +164,10 @@ matchAlt_ ctor binders body =
       ..
     }
 
-fromClosed :: Traversable f => f a -> f b
+fromClosed :: (Traversable f) => f a -> f b
 fromClosed a = fromJust $ closed a
 
-fromClosedDefs :: Traversable f => [(n, f a)] -> [(n, f b)]
+fromClosedDefs :: (Traversable f) => [(n, f a)] -> [(n, f b)]
 fromClosedDefs = secondF fromClosed
 
 ----------------------------------------------------------------
@@ -179,6 +182,13 @@ oblivAccent = "~"
 
 oblivName :: Text -> Text
 oblivName = (oblivAccent <>)
+
+-- | Psi type accent
+psiAccent :: Text
+psiAccent = "#"
+
+psiName :: Text -> Text
+psiName = (psiAccent <>)
 
 -- | OADT instance connector
 instInfix :: Text
@@ -227,3 +237,4 @@ accentOfOLabel OblivL = oblivAccent
 accentOfPairKind :: PairKind -> Text
 accentOfPairKind PublicP = ""
 accentOfPairKind OblivP = oblivAccent
+accentOfPairKind PsiP = psiAccent
