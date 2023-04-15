@@ -127,7 +127,6 @@ toOilExpr T.OInj {..} = do
   lSize <- toOilSize leftTy
   rSize <- toOilSize rightTy
   let inj' = toOilVar inj
-  -- TODO:
   return $
     GV (oblivName $ if tag then "inl" else "inr")
       @@ [lSize, rSize, inj']
