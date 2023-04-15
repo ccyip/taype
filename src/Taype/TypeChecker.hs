@@ -62,6 +62,7 @@ import Bound
 import Control.Monad.Error.Class
 import Data.Char
 import Data.List (lookup, partition)
+import Data.Maybe (fromJust)
 import Data.Text qualified as T
 import Relude.Extra.Bifunctor
 import Taype.Binder
@@ -807,9 +808,9 @@ kinding ty@GV {..} Nothing =
       err [[DD "Definition", DQ ref, DD "is not an ADT"]]
     _ ->
       err [[DD "Type", DQ ref, DD "is not in scope"]]
-kinding ty@Psi {..} Nothing = do
+kinding Psi {oblivTy} Nothing = do
   lookupGSig oblivTy >>= \case
-    Just OADTDef {} -> return (MixedK, ty)
+    Just OADTDef {..} -> return (MixedK, Psi {argTy = Just argTy, ..})
     Just _ -> err [[DD "Definition", DQ oblivTy, DD "is not an OADT"]]
     _ -> err [[DD "Definition", DQ oblivTy, DD "is not in scope"]]
 kinding Prod {olabel = olabel@PublicL, ..} Nothing = do
@@ -1246,10 +1247,7 @@ isOProd_ t = do
 
 -- | Check if a type is a Psi type and return its components.
 isPsi :: Ty Name -> TcM (Ty Name, Text)
-isPsi Psi {..} =
-  lookupGSig oblivTy >>= \case
-    Just OADTDef {..} -> return (argTy, oblivTy)
-    _ -> oops "Not an oblivious definition"
+isPsi Psi {..} = return (fromJust argTy, oblivTy)
 isPsi Loc {..} = isPsi expr
 isPsi t =
   err

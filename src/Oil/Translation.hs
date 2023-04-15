@@ -99,19 +99,14 @@ toOilExpr T.OIte {..} = do
       else GV aMux @@ [toOilVar cond, left', right']
 toOilExpr T.Pair {..} = do
   let fn = case pairKind of
-        PublicP -> GV "(,)"
         OblivP -> GV aConcat
+        _ -> GV "(,)"
   return $ fn @@ (toOilVar <$> [left, right])
 toOilExpr T.PMatch {..} = do
   ((xl, xr), body) <- unbind2 bnd2
   body' <- toOilExpr body
   let cond' = toOilVar cond
   case pairKind of
-    PublicP ->
-      return $
-        matchB
-          cond'
-          [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
     OblivP -> do
       let (leftTy, rightTy) = fromJust condTy
       lSize <- toOilSize leftTy
@@ -122,6 +117,11 @@ toOilExpr T.PMatch {..} = do
             (xr, rBinder, GV aSlice @@ [cond', lSize, rSize])
           ]
           body'
+    _ ->
+      return $
+        matchB
+          cond'
+          [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
 toOilExpr T.OInj {..} = do
   let (leftTy, rightTy) = fromJust injTy
   lSize <- toOilSize leftTy
@@ -219,6 +219,9 @@ toOilTy (T.TBool PublicL) = tGV "bool"
 toOilTy (T.TInt PublicL) = TInt
 toOilTy T.GV {..} = tGV ref
 toOilTy T.Prod {..} = prod_ (toOilTy left) (toOilTy right)
+-- NOTE: Psi type is translated to a pair for now. This may change in the
+-- future.
+toOilTy T.Psi {..} = prod_ (toOilTy (fromJust argTy)) OArray
 toOilTy T.Pi {..} =
   let dom = toOilTy ty
       -- We instantiate the pi type argument with some arbitrary term, as the

@@ -478,7 +478,7 @@ grammar = mdo
           do
             loc <- pLocatedToken L.Psi
             oblivTy <- pIdent
-            return Loc {expr = Psi {..}, ..},
+            return Loc {expr = Psi {argTy = Nothing, ..}, ..},
           -- Variable
           pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
           -- Parenthesized type

@@ -151,7 +151,7 @@ data Expr a
     -- This definition includes public product and oblivious product.
     Prod {olabel :: OLabel, left :: Ty a, right :: Ty a}
   | -- | Psi type
-    Psi {oblivTy :: Text}
+    Psi {argTy :: Maybe (Ty a), oblivTy :: Text}
   | -- | Public, oblivious, and dependent pairs
     Pair {pairKind :: PairKind, left :: Expr a, right :: Expr a}
   | -- | Product and Psi type pattern matching
@@ -379,7 +379,7 @@ instance Monad Expr where
         ..
       }
   Prod {..} >>= f = Prod {left = left >>= f, right = right >>= f, ..}
-  Psi {..} >>= _ = Psi {..}
+  Psi {..} >>= f = Psi {argTy = argTy <&> (>>= f), ..}
   Pair {..} >>= f = Pair {left = left >>= f, right = right >>= f, ..}
   PMatch {..} >>= f =
     PMatch
@@ -536,6 +536,9 @@ instance PlateM (Expr Name) where
     left' <- f left
     right' <- f right
     return Prod {left = left', right = right', ..}
+  plateM f Psi {..} = do
+    argTy' <- mapM f argTy
+    return Psi {argTy = argTy', ..}
   plateM f Pair {..} = do
     left' <- f left
     right' <- f right
