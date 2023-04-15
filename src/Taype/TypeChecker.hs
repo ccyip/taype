@@ -226,7 +226,8 @@ typing App {..} Nothing =
 -- NOTE: checking mode for let is possible, but it requires a local definition
 -- context.
 typing Let {..} Nothing = do
-  (rhsTy', rhs') <- typing rhs rhsTy
+  mt <- mapM kinded rhsTy
+  (rhsTy', rhs') <- typing rhs mt
   (x, body) <- unbind1 bnd
   (t, body') <- extendCtx1 x rhsTy' binder $ infer body
   -- Unfortunately, we have to kind @t@ again even though it is kinded, because
