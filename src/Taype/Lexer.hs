@@ -65,6 +65,7 @@ data Token
   | With
   | End
   | OInj Bool
+  | OProj OProjKind
   | Ident Text
   | Infix Text
   deriving stock (Eq, Show)
@@ -116,7 +117,10 @@ pToken =
           With <$ symbol "with",
           End <$ symbol "end",
           OInj True <$ symbol (oblivName "inl"),
-          OInj False <$ symbol (oblivName "inr")
+          OInj False <$ symbol (oblivName "inr"),
+          OProj TagP <$ symbol (oblivName "prt"),
+          OProj LeftP <$ symbol (oblivName "prl"),
+          OProj RightP <$ symbol (oblivName "prr")
         ]
         <?> "keyword",
       choice

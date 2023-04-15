@@ -79,6 +79,12 @@ pLocatedOInj = pLocatedTerminal match
     match (L.OInj b) = Just b
     match _ = Nothing
 
+pLocatedOProj :: Parser r (Int, OProjKind)
+pLocatedOProj = pLocatedTerminal match
+  where
+    match (L.OProj k) = Just k
+    match _ = Nothing
+
 pLocatedBLit :: Parser r (Int, Bool)
 pLocatedBLit = pLocatedTerminal match
   where
@@ -352,8 +358,13 @@ grammar = mdo
           -- Oblivious injection
           do
             ~(loc, tag) <- pLocatedOInj
-            inj <- pAtomExpr
-            return Loc {expr = oinj_ tag inj, ..},
+            expr <- pAtomExpr
+            return Loc {expr = oinj_ tag expr,..},
+          -- Oblivious projection
+          do
+            ~(loc, tag) <- pLocatedOProj
+            expr <- pAtomExpr
+            return Loc {expr = oproj_ tag expr, ..},
           -- Next precedence
           pAtomExpr
         ]
@@ -595,5 +606,9 @@ renderToken = \case
   L.With -> "with"
   L.End -> "end"
   L.OInj tag -> pretty $ oblivName $ if tag then "inl" else "inr"
+  L.OProj tag -> pretty $ oblivName $ case tag of
+    TagP -> "prt"
+    LeftP -> "prl"
+    RightP -> "prr"
   L.Ident ident -> "identifier" <+> dquotes (pretty ident)
   L.Infix ident -> "infix" <+> dquotes (pretty ident)

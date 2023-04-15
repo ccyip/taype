@@ -560,13 +560,27 @@ typing OIte {..} mt = do
 typing OInj {..} (Just t) = do
   (leftTy', rightTy') <- isOSum t
   let injTy' = if tag then leftTy' else rightTy'
-  inj' <- check inj injTy'
+  e' <- check expr injTy'
   x <- fresh
   return
     ( t,
       lets'
-        [(x, injTy', inj')]
-        OInj {injTy = Just (leftTy', rightTy'), inj = V x, ..}
+        [(x, injTy', e')]
+        OInj {injTy = Just (leftTy', rightTy'), expr = V x, ..}
+    )
+typing OProj {..} Nothing = do
+  (t, e') <- infer expr
+  (leftTy', rightTy') <- withLoc_ expr $ isOSum t
+  let t' = case projKind of
+        TagP -> TBool OblivL
+        LeftP -> leftTy'
+        RightP -> rightTy'
+  x <- fresh
+  return
+    ( t',
+      lets'
+        [(x, t, e')]
+        OProj {projTy = Just (leftTy', rightTy'), expr = V x, ..}
     )
 typing OMatch {..} mt = do
   (t, cond') <- infer cond
@@ -583,7 +597,7 @@ typing OMatch {..} mt = do
   checkLabel label'
   x <- fresh
   y <- fresh
-  let condTy = Just (leftTy', rightTy')
+  let projTy = Just (leftTy', rightTy')
       condTy' = OSum {left = leftTy', right = rightTy'}
       expr = V x
   return
@@ -1043,8 +1057,8 @@ equate_ e e' = do
     go OSum {left, right} OSum {left = left', right = right'} = do
       equate_ left left'
       equate_ right right'
-    go OInj {tag, inj} OInj {tag = tag', inj = inj'}
-      | tag == tag' = equate_ inj inj'
+    go OInj {tag, expr} OInj {tag = tag', expr = expr'}
+      | tag == tag' = equate_ expr expr'
     go OProj {projKind, expr} OProj {projKind = projKind', expr = expr'}
       | projKind == projKind' = equate_ expr expr'
     go nf nf' | nf == nf' = pass

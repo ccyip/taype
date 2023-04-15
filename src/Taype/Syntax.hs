@@ -42,6 +42,7 @@ module Taype.Syntax
     ite_,
     oite_,
     oinj_,
+    oproj_,
     match_,
     omatch_,
     omatchPat_,
@@ -169,12 +170,12 @@ data Expr a
     OInj
       { injTy :: Maybe (Ty a, Ty a),
         tag :: Bool,
-        inj :: Expr a
+        expr :: Expr a
       }
   | -- | Oblivious sum projections
     OProj
-      { projKind :: OProjKind,
-        condTy :: Maybe (Ty a, Ty a),
+      { projTy :: Maybe (Ty a, Ty a),
+        projKind :: OProjKind,
         expr :: Expr a
       }
   | -- | Oblivious sum type pattern matching
@@ -392,13 +393,13 @@ instance Monad Expr where
   OInj {..} >>= f =
     OInj
       { injTy = injTy <&> bimapBoth (>>= f),
-        inj = inj >>= f,
+        expr = expr >>= f,
         ..
       }
   OProj {..} >>= f =
     OProj
       { expr = expr >>= f,
-        condTy = condTy <&> bimapBoth (>>= f),
+        projTy = projTy <&> bimapBoth (>>= f),
         ..
       }
   OMatch {..} >>= f =
@@ -478,9 +479,9 @@ instance Eq1 Expr where
         && liftEq eq bnd2 bnd2'
   liftEq eq OSum {left, right} OSum {left = left', right = right'} =
     liftEq eq left left' && liftEq eq right right'
-  liftEq eq OInj {tag, inj} OInj {tag = tag', inj = inj'} =
+  liftEq eq OInj {tag, expr} OInj {tag = tag', expr = expr'} =
     -- Ignore type annotations
-    tag == tag' && liftEq eq inj inj'
+    tag == tag' && liftEq eq expr expr'
   liftEq eq OProj {projKind, expr} OProj {projKind = projKind', expr = expr'} =
     projKind == projKind' && liftEq eq expr expr'
   liftEq
@@ -561,12 +562,12 @@ instance PlateM (Expr Name) where
     return OSum {left = left', right = right'}
   plateM f OInj {..} = do
     injTy' <- mapM (traverseBoth f) injTy
-    inj' <- f inj
-    return OInj {injTy = injTy', inj = inj', ..}
-  plateM f OProj {..} = do
-    condTy' <- mapM (traverseBoth f) condTy
     expr' <- f expr
-    return OProj {condTy = condTy', expr = expr', ..}
+    return OInj {injTy = injTy', expr = expr', ..}
+  plateM f OProj {..} = do
+    projTy' <- mapM (traverseBoth f) projTy
+    expr' <- f expr
+    return OProj {projTy = projTy', expr = expr', ..}
   plateM f OMatch {..} = do
     cond' <- f cond
     (xl, lBody) <- unbind1 lBnd
@@ -655,7 +656,10 @@ oite_ :: Expr a -> Expr a -> Expr a -> Expr a
 oite_ cond left right = OIte {label = LeakyL, ..}
 
 oinj_ :: Bool -> Expr a -> Expr a
-oinj_ tag inj = OInj {injTy = Nothing, ..}
+oinj_ tag expr = OInj {injTy = Nothing, ..}
+
+oproj_ :: OProjKind -> Expr a -> Expr a
+oproj_ projKind expr = OProj {projTy = Nothing, ..}
 
 match_ :: (a ~ Text) => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 match_ cond alts = Match {alts = uncurry3 matchAlt_ <$> alts, ..}
@@ -822,15 +826,15 @@ instance Cute (Expr Text) where
   cute OInj {..} = do
     cuteApp_
       (pretty (oblivName $ if tag then "inl" else "inr"))
-      [inj]
+      [expr]
   cute OProj {..} = do
     projDoc <-
       cute $
         oblivName $
-          "pi" <> case projKind of
-            TagP -> "0"
-            LeftP -> "1"
-            RightP -> "2"
+          "pr" <> case projKind of
+            TagP -> "t"
+            LeftP -> "l"
+            RightP -> "r"
     cuteApp_ projDoc [expr]
   cute OMatch {..} = do
     condDoc <- cute cond

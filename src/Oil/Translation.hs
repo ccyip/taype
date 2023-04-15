@@ -126,12 +126,12 @@ toOilExpr T.OInj {..} = do
   let (leftTy, rightTy) = fromJust injTy
   lSize <- toOilSize leftTy
   rSize <- toOilSize rightTy
-  let inj' = toOilVar inj
+  let expr' = toOilVar expr
   return $
     GV (oblivName $ if tag then "inl" else "inr")
-      @@ [lSize, rSize, inj']
+      @@ [lSize, rSize, expr']
 toOilExpr T.OProj {..} = do
-  let (leftTy, rightTy) = fromJust condTy
+  let (leftTy, rightTy) = fromJust projTy
       e = toOilVar expr
   tSize <- toOilSize $ T.TBool OblivL
   lSize <- toOilSize leftTy
