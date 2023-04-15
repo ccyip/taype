@@ -566,6 +566,7 @@ renderToken = \case
   L.DArrow -> dquotes "=>"
   L.Equals -> squotes equals
   L.Colon -> squotes colon
+  L.DoubleColon -> squotes $ colon <> colon
   L.Bar -> squotes pipe
   L.Comma -> squotes comma
   L.LParen -> squotes lparen
