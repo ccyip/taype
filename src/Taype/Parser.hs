@@ -380,7 +380,11 @@ grammar = mdo
           -- Ascription
           pParen $ do
             expr <- pExpr
-            loc <- pLocatedToken L.Colon
+            ~(loc, trustMe) <-
+              choice
+                [ (,False) <$> pLocatedToken L.Colon,
+                  (,True) <$> pLocatedToken L.DoubleColon
+                ]
             ty <- pType
             return Loc {expr = Asc {..}, ..},
           -- Parenthesized expression

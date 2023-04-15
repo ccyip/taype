@@ -37,6 +37,7 @@ data Token
   | DArrow
   | Equals
   | Colon
+  | DoubleColon
   | Bar
   | Comma
   | LParen
@@ -126,6 +127,7 @@ pToken =
         <?> "literal",
       Lambda <$ symbol "\\",
       Equals <$ symbol "=",
+      DoubleColon <$ symbol "::",
       Colon <$ symbol ":",
       Bar <$ symbol "|",
       Comma <$ symbol ",",

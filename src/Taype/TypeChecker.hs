@@ -603,7 +603,18 @@ typing OMatch {..} mt = do
 typing Loc {..} mt = withLoc loc $ withCur expr $ typing expr mt
 typing Asc {..} Nothing = do
   ty' <- kinded ty
-  e' <- check expr ty'
+  e' <-
+    if trustMe
+      then do
+        (infTy, e') <- infer expr
+        equate_ infTy ty' `catchError` \_ ->
+          warn
+            [ [DD "Assumed type equivalence"],
+              [DH "Inferred", DC infTy],
+              [DH "Assumed", DC ty']
+            ]
+        return e'
+      else check expr ty'
   return (ty', e')
 
 -- Check type.
@@ -1716,6 +1727,19 @@ err dss = do
   Env {..} <- ask
   doc <- reportDoc dss
   err_ loc doc
+
+warn :: [[D]] -> TcM ()
+warn dss = do
+  Env {..} <- ask
+  doc <- reportDoc dss
+  printDoc options $
+    runCuteM options $
+      cute $
+        Err
+          { errCategory = "Warning",
+            errLoc = loc,
+            errMsg = doc
+          }
 
 reportDoc :: [[D]] -> TcM Doc
 reportDoc dss = do

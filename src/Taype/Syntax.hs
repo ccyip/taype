@@ -190,8 +190,12 @@ data Expr a
       }
   | -- | Ascription
     --
+    -- Cheat if @trustMe@ is @True@: the type of @expr@ is @ty@ regardless of
+    -- them being equivalent or not. To avoid propagating this dangerous
+    -- operation too far, the type of @expr@ is always inferred.
+    --
     -- This does not appear in the core language.
-    Asc {ty :: Ty a, expr :: Expr a}
+    Asc {ty :: Ty a, expr :: Expr a, trustMe :: Bool}
   | -- | Location information for error reporting
     --
     -- This does not appear in the core language
@@ -576,7 +580,7 @@ instance PlateM (Expr Name) where
   plateM f Asc {..} = do
     ty' <- f ty
     expr' <- f expr
-    return Asc {ty = ty', expr = expr'}
+    return Asc {ty = ty', expr = expr', ..}
   plateM f Loc {..} = do
     expr' <- f expr
     return Loc {expr = expr', ..}
@@ -840,7 +844,11 @@ instance Cute (Expr Text) where
   cute Asc {..} = do
     tyDoc <- cute ty
     exprDoc <- cute expr
-    return $ parens $ hang $ align exprDoc <> sep1 (colon <+> tyDoc)
+    return $
+      parens $
+        hang $
+          align exprDoc
+            <> sep1 ((if trustMe then colon <> colon else colon) <+> tyDoc)
   cute Loc {..} = cute expr
 
 -- | Pretty printer for taype definitions
