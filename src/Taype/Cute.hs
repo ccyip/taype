@@ -76,7 +76,7 @@ import Bound
 import Data.Text qualified as T
 import Prettyprinter hiding (Doc, hang, indent)
 import Prettyprinter qualified as PP
-import Prettyprinter.Render.Text (hPutDoc, putDoc)
+import Prettyprinter.Render.Terminal (AnsiStyle, hPutDoc, putDoc)
 import Prettyprinter.Util (putDocW)
 import Taype.Binder
 import Taype.Common
@@ -85,7 +85,7 @@ import Taype.Prelude
 import Prelude hiding (group)
 
 -- | Document type for all sorts of printing
-type Doc = PP.Doc ()
+type Doc = PP.Doc AnsiStyle
 
 ----------------------------------------------------------------
 -- Utilities
@@ -102,7 +102,7 @@ indent = PP.indent indentLevel
 hardline2 :: Doc
 hardline2 = hardline <> hardline
 
-sepWith :: Foldable t => Doc -> t Doc -> Doc
+sepWith :: (Foldable t) => Doc -> t Doc -> Doc
 sepWith s = concatWith (\x y -> x <> s <> y)
 
 sep1 :: Doc -> Doc
@@ -111,10 +111,10 @@ sep1 = group . (line <>)
 sep1_ :: Text -> Doc -> Doc
 sep1_ x = if T.length x <= indentLevel then (space <>) else sep1
 
-printDoc :: MonadIO m => Options -> Doc -> m ()
+printDoc :: (MonadIO m) => Options -> Doc -> m ()
 printDoc Options {..} = liftIO . maybe putDoc putDocW optWidth
 
-printDocToFile :: MonadIO m => FilePath -> Doc -> m ()
+printDocToFile :: (MonadIO m) => FilePath -> Doc -> m ()
 printDocToFile file doc =
   liftIO $ withFile file WriteMode (`hPutDoc` doc)
 
@@ -131,13 +131,13 @@ runCuteM opts (CuteM m) = runReader (runFreshT m) opts
 contCuteM :: Options -> Int -> CuteM a -> a
 contCuteM opts n (CuteM m) = runReader (contFreshT m n) opts
 
-instance IsString a => IsString (CuteM a) where
+instance (IsString a) => IsString (CuteM a) where
   fromString = return . fromString
 
 -- | Pretty printer class with fresh name generator and options
 class Cute a where
   cute :: a -> CuteM Doc
-  default cute :: Pretty a => a -> CuteM Doc
+  default cute :: (Pretty a) => a -> CuteM Doc
   cute = return . pretty
 
 -- | Precedence level
@@ -166,9 +166,9 @@ data Disp m
   | -- | Display a document followed by a colon and possibly new line.
     DH Doc
   | -- | Display a 'MonadCute' instance.
-    forall a. MonadCute m a => DC a
+    forall a. (MonadCute m a) => DC a
   | -- | Display a quoted 'MonadCute' instance.
-    forall a. MonadCute m a => DQ a
+    forall a. (MonadCute m a) => DQ a
 
 ----------------------------------------------------------------
 -- Pretty printing instances
@@ -188,13 +188,13 @@ instance (Monad f, Cute (f Text)) => Cute (MatchAlt f Text) where
     bodyDoc <- cute body
     return $ cuteAltDoc ctor xs bodyDoc
 
-instance Monad m => MonadCute m (Disp m) where
+instance (Monad m) => MonadCute m (Disp m) where
   cutie (DD doc) = return doc
   cutie (DH doc) = return $ doc <> colon
   cutie (DC e) = cutie e
   cutie (DQ e) = dquotes <$> cutie e
 
-instance Monad m => MonadCute m [Disp m] where
+instance (Monad m) => MonadCute m [Disp m] where
   cutie [] = return mempty
   cutie (d : ds) = do
     doc <- cutie d
@@ -204,12 +204,12 @@ instance Monad m => MonadCute m [Disp m] where
         DH _ -> hang $ doc <> sep1 rest
         _ -> doc <> softline <> rest
 
-instance Monad m => MonadCute m [[Disp m]] where
+instance (Monad m) => MonadCute m [[Disp m]] where
   cutie dss = do
     docs <- mapM cutie dss
     return $ sepWith hardline docs
 
-debugDoc :: Monad m => [[Disp m]] -> m Doc
+debugDoc :: (Monad m) => [[Disp m]] -> m Doc
 debugDoc dss = do
   doc <- cutie dss
   return $ "Debug" <> colon <> hardline <> doc <> hardline <> hardline
@@ -236,11 +236,11 @@ freshNameOrBinder binder = do
   return $ nameOrBinder opt x binder
 
 unbind1NameOrBinder ::
-  Monad f => Maybe Binder -> Scope () f Text -> CuteM (Text, f Text)
+  (Monad f) => Maybe Binder -> Scope () f Text -> CuteM (Text, f Text)
 unbind1NameOrBinder = unbindBy . freshNameOrBinder
 
 unbind2NamesOrBinders ::
-  Monad f =>
+  (Monad f) =>
   (Maybe Binder, Maybe Binder) ->
   Scope Bool f Text ->
   CuteM ((Text, Text), f Text)
@@ -248,10 +248,10 @@ unbind2NamesOrBinders (binder1, binder2) =
   unbindBy $ (,) <$> freshNameOrBinder binder1 <*> freshNameOrBinder binder2
 
 unbindManyNamesOrBinders ::
-  Monad f => [Maybe Binder] -> Scope Int f Text -> CuteM ([Text], f Text)
+  (Monad f) => [Maybe Binder] -> Scope Int f Text -> CuteM ([Text], f Text)
 unbindManyNamesOrBinders = unbindBy . mapM freshNameOrBinder
 
-withNamePrefix :: MonadReader Options m => Text -> m a -> m a
+withNamePrefix :: (MonadReader Options m) => Text -> m a -> m a
 withNamePrefix prefix =
   local $ \Options {..} -> Options {optNamePrefix = prefix, ..}
 
@@ -328,7 +328,7 @@ cuteIteDoc l condDoc leftDoc rightDoc =
         <> line
         <> hang ("else" <> sep1 rightDoc)
 
-cuteIte :: Cute e => OLabel -> e -> e -> e -> CuteM Doc
+cuteIte :: (Cute e) => OLabel -> e -> e -> e -> CuteM Doc
 cuteIte l cond left right = do
   condDoc <- cute cond
   leftDoc <- cute left
@@ -340,13 +340,13 @@ cutePairDoc pKind leftDoc rightDoc =
   pretty (accentOfPairKind pKind)
     <> parens (align (leftDoc <> comma <> sep1 rightDoc))
 
-cutePair :: Cute e => PairKind -> e -> e -> CuteM Doc
+cutePair :: (Cute e) => PairKind -> e -> e -> CuteM Doc
 cutePair pKind left right = do
   leftDoc <- cute left
   rightDoc <- cute right
   return $ cutePairDoc pKind leftDoc rightDoc
 
-cuteMatchDoc :: Foldable t => OLabel -> Bool -> Doc -> t Doc -> Doc
+cuteMatchDoc :: (Foldable t) => OLabel -> Bool -> Doc -> t Doc -> Doc
 cuteMatchDoc l usePipe condDoc altDocs =
   align $
     pretty (accentOfOLabel l) <> "match"
@@ -393,7 +393,7 @@ cutePMatchDoc pKind condDoc xl xr bodyDoc =
         cutePairDoc pKind (pretty xl) (pretty xr) <+> "=>" <> sep1 bodyDoc
     ]
 
-cutePMatch_ :: Cute e => PairKind -> e -> Text -> Text -> e -> CuteM Doc
+cutePMatch_ :: (Cute e) => PairKind -> e -> Text -> Text -> e -> CuteM Doc
 cutePMatch_ pKind cond xl xr body = do
   condDoc <- cute cond
   bodyDoc <- cute body
@@ -412,7 +412,7 @@ cutePMatch pKind cond lBinder rBinder bnd2 = do
   cutePMatch_ pKind cond xl xr body
 
 -- | Add parentheses to the expressions according to their precedence level.
-cuteSubDoc :: HasPLevel e => e -> e -> Doc -> Doc
+cuteSubDoc :: (HasPLevel e) => e -> e -> Doc -> Doc
 cuteSubDoc super sub doc = cuteSubIfDoc doc $ plevel super > plevel sub
 
 cuteSub :: (Cute e, HasPLevel e) => e -> e -> CuteM Doc
@@ -421,7 +421,7 @@ cuteSub super sub = do
   return $ cuteSubDoc super sub doc
 
 -- | Add parentheses to the expressions more aggressively.
-cuteSubAggDoc :: HasPLevel e => e -> Doc -> Doc
+cuteSubAggDoc :: (HasPLevel e) => e -> Doc -> Doc
 cuteSubAggDoc sub doc = cuteSubIfDoc doc $ plevel sub == 0
 
 cuteSubAgg :: (Cute e, HasPLevel e) => e -> CuteM Doc

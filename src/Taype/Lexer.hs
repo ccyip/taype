@@ -224,7 +224,8 @@ renderLexerError ParseErrorBundle {bundleErrors = err :| _} =
   Err
     { errLoc = errorOffset err,
       errMsg = showError err,
-      errCategory = "Lexing Error"
+      errCategory = "Lexing Error",
+      errClass = ErrorC
     }
   where
     showError (TrivialError _ u _) = maybe "Unknown error" showUnexpected u

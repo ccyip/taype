@@ -75,6 +75,7 @@ library
                      , relude
                      , bound
                      , prettyprinter
+                     , prettyprinter-ansi-terminal
                      , megaparsec
                      , Earley
                      , parser-combinators

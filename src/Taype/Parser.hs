@@ -561,6 +561,7 @@ renderParserError Report {..} =
   Err
     { errLoc = maybe (-1) offset unexpectedToken,
       errCategory = "Parsing Error",
+      errClass = ErrorC,
       errMsg
     }
   where

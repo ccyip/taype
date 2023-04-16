@@ -1724,6 +1724,7 @@ err_ errLoc errMsg =
   throwError
     Err
       { errCategory = "Typing Error",
+        errClass = ErrorC,
         ..
       }
 
@@ -1750,6 +1751,7 @@ warn dss = do
       cute $
         Err
           { errCategory = "Warning",
+            errClass = WarningC,
             errLoc = loc,
             errMsg = doc
           }

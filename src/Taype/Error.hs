@@ -12,6 +12,7 @@
 -- Error reporting.
 module Taype.Error
   ( Err (..),
+    ErrClass (..),
     initPosState,
     getLocation,
     renderLocation,
@@ -21,7 +22,8 @@ module Taype.Error
   )
 where
 
-import qualified Data.Text as T
+import Data.Text qualified as T
+import Prettyprinter.Render.Terminal qualified as PP
 import Taype.Common
 import Taype.Cute
 import Text.Megaparsec
@@ -29,8 +31,12 @@ import Text.Megaparsec
 data Err = Err
   { errLoc :: Int,
     errMsg :: Doc,
-    errCategory :: Text
+    errCategory :: Text,
+    errClass :: ErrClass
   }
+  deriving stock (Show)
+
+data ErrClass = WarningC | ErrorC
   deriving stock (Show)
 
 initPosState :: FilePath -> Text -> PosState Text
@@ -98,11 +104,16 @@ instance Cute Err where
   cute Err {..} = do
     Options {optFile = file, optCode = code} <- ask
     return $
-      "!!!! "
-        <> pretty errCategory
-        <> " !!!!"
-        <> hardline
-        <> pretty (renderFancyLocation file code errLoc)
-        <> hardline2
-        <> errMsg
-        <> hardline
+      annotate (PP.color clr) $
+        "!!!! "
+          <> pretty errCategory
+          <> " !!!!"
+          <> hardline
+          <> pretty (renderFancyLocation file code errLoc)
+          <> hardline2
+          <> errMsg
+          <> hardline2
+    where
+      clr = case errClass of
+        WarningC -> PP.Yellow
+        ErrorC -> PP.Red
