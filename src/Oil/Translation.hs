@@ -226,7 +226,7 @@ toOilTy T.Pi {..} =
   let dom = toOilTy ty
       -- We instantiate the pi type argument with some arbitrary term, as the
       -- type translation does not care about the type index.
-      body = instantiateName (-1) bnd
+      body = instantiateName badName bnd
       cod = toOilTy body
    in Arrow {..}
 -- Oblivious types, including type level computation, are translated into

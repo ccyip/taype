@@ -25,6 +25,7 @@ module Taype.Name
     contFreshM,
     fresh,
     freshes,
+    badName,
 
     -- * Specialized locally nameless abstraction and instantiation
     ScopeOps (..),
@@ -114,6 +115,10 @@ freshes k = do
   n <- getFresh
   putFresh (n + k)
   return [n .. n + k - 1]
+
+-- | A name that never gets generated.
+badName :: Name
+badName = -1
 
 ----------------------------------------------------------------
 -- Specialized locally nameless abstraction and instantiation
