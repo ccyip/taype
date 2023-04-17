@@ -322,6 +322,8 @@ data OADTInst
     ReshapeInst {oadtName :: Text}
   | -- | Pattern matching
     MatchInst {oadtName :: Text}
+  | -- | Coercion between two OADTs
+    CoerceInst {oadtName :: Text, oadtTo :: Text}
   deriving stock (Eq, Show)
 
 data OADTInstAttr
@@ -344,6 +346,7 @@ attrOfName x = case T.splitOn instInfix x of
         | instName == "reshape" -> KnownInst $ ReshapeInst {..}
         | instName == "match" -> KnownInst $ MatchInst {..}
         | otherwise -> UnknownInst
+  [oadtName, oadtTo, "coerce"] -> KnownInst $ CoerceInst {..}
   _ -> UnknownInst
 
 -- | Return a list of must-have instance names, given an OADT name.
@@ -358,6 +361,7 @@ oadtNameOfInst = \case
   JoinInst {..} -> oadtName
   ReshapeInst {..} -> oadtName
   MatchInst {..} -> oadtName
+  CoerceInst {..} -> oadtName
 
 -- | Check if a definition is a section by OADT attribute.
 isSection :: OADTInstAttr -> Bool

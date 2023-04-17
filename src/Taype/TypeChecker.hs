@@ -1683,6 +1683,18 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
           pi' k argTy $
             pi' k' argTy $
               arrow_ (tapp_ oadtName [V k]) (tapp_ oadtName [V k'])
+      CoerceInst {..} -> do
+        (pubName', argTy') <- isOADTDef oadtTo
+        unless (pubName == pubName') $
+          err_ loc $
+            "Function"
+              <+> pretty name
+              <+> "coerces between incompatible types"
+        equateSig $
+          arrows_
+            [ Psi {argTy = Just argTy, oadtName = oadtName},
+              Psi {argTy = Just argTy', oadtName = oadtTo}
+            ]
       CtorInst {..} -> do
         argTs <- case isArrow ty of
           Just (argTs, Psi {oadtName = oadtName'})
