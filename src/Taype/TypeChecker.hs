@@ -1316,6 +1316,16 @@ isMatchCond cond condTy =
             [DH "It has type", DC condTy]
           ]
 
+-- | Check if a type is a non-dependent function type, and return the list of
+-- argument types and the return type.
+isArrow :: Ty Name -> Maybe ([Ty Name], Ty Name)
+isArrow Pi {..} = do
+  body <- instantiate0 bnd
+  (argTs, t) <- isArrow body
+  return (ty : argTs, t)
+isArrow Loc {..} = isArrow expr
+isArrow t = Just ([], t)
+
 -- | Join the pattern matching alternatives and the corresponding ADT's
 -- constructors list.
 --
@@ -1399,6 +1409,41 @@ depMatchErr t =
         DC t
       ]
     ]
+
+-- | Compute the given type's canonical public type if it has one.
+--
+-- The given type must be well-kinded.
+canonicalPubTy :: Ty Name -> TcM (Maybe (Ty Name))
+canonicalPubTy Prod {olabel = PublicL, ..} = do
+  left' <- canonicalPubTy left
+  right' <- canonicalPubTy right
+  return $ Prod PublicL <$> left' <*> right'
+canonicalPubTy Pi {..} = do
+  ty' <- canonicalPubTy ty
+  (_, body) <- unbind1 bnd
+  body' <- canonicalPubTy body
+  return $ arrow_ <$> ty' <*> body'
+canonicalPubTy GV {..} = return $ Just GV {..}
+canonicalPubTy TUnit = return $ Just TUnit
+canonicalPubTy TBool {} = return $ Just TBool {olabel = PublicL}
+canonicalPubTy TInt {} = return $ Just TInt {olabel = PublicL}
+canonicalPubTy Psi {..} =
+  lookupGSig oblivTy >>= \case
+    Just OADTDef {pubTy} -> return $ Just GV {ref = pubTy}
+    _ -> oops "No OADT definition available for Psi type"
+canonicalPubTy Loc {..} = canonicalPubTy expr
+canonicalPubTy _ = return Nothing
+
+compatible :: Ty Name -> Ty Name -> TcM Bool
+compatible t1 t2 = do
+  mt1 <- canonicalPubTy t1
+  mt2 <- canonicalPubTy t2
+  case (mt1, mt2) of
+    (Just t1', Just t2') -> return $ t1' == t2'
+    _ -> return False
+
+compatibleMany :: [Ty Name] -> [Ty Name] -> TcM Bool
+compatibleMany ts1 ts2 = and <$> zipWithM compatible ts1 ts2
 
 ----------------------------------------------------------------
 -- Definitions checker
@@ -1559,21 +1604,9 @@ preCheckDef defs name def = do
       ty' <- kinded ty
       case attr' of
         KnownInst inst -> do
-          (instTy, l') <- typeOfInst loc inst
-          -- Check type against OADT instance signature.
-          equate instTy ty' `catchError` \_ ->
-            errPlain
-              loc
-              [ [ DD $
-                    "Function"
-                      <+> pretty name
-                      <+> "has the wrong type"
-                ],
-                [DH "Expected", DC instTy],
-                [DH "Got", DC ty']
-              ]
+          preCheckInst loc name inst ty'
           -- Check label against OADT instance signature.
-          checkDefLabel loc name l' label
+          checkDefLabel loc name (labelOfInst inst) label
         _ -> pass
       return FunDef {ty = ty', attr = attr', ..}
     ADTDef {..} -> do
@@ -1581,8 +1614,8 @@ preCheckDef defs name def = do
       return ADTDef {ctors = ctors', ..}
     OADTDef {..} -> do
       argTy' <- checkKind argTy PublicK
-      checkInsts loc
-      pubTy' <- inferPubTy `catchError` \_ -> return "?ADT"
+      checkAvailInsts loc
+      pubTy' <- inferPubTy
       return OADTDef {pubTy = pubTy', argTy = argTy', ..}
     _ -> oops "Pre-checking constructor or builtin definitions"
   where
@@ -1594,7 +1627,11 @@ preCheckDef defs name def = do
           (t, _, _) <- isPi body
           maybeGV t >>= \case
             Just (ref, ADTDef {}) -> return ref
-            _ -> errDummy
+            _ ->
+              err_ loc $
+                "The type of section function"
+                  <+> pretty (sectionName name)
+                  <+> "is ill-formed"
         _ -> oops "Section instance does not exist"
 
     checkAttr UnknownInst =
@@ -1602,7 +1639,7 @@ preCheckDef defs name def = do
         "Definition" <+> pretty name <+> "cannot be recognized as an instance"
     checkAttr _ = pass
 
-    checkInsts loc = do
+    checkAvailInsts loc = do
       let missing = filter (isNothing . flip lookup defs) $ instNamesOfOADT name
       unless (null missing) $
         err_ loc $
@@ -1612,22 +1649,89 @@ preCheckDef defs name def = do
               <> softline
               <> andList missing
 
-    typeOfInst loc (SectionInst oadtName) = do
-      (pubTy, argTy) <- isOADTDef loc oadtName
-      k <- fresh
-      return
-        ( pi' k argTy $ arrow_ (GV pubTy) $ tapp_ oadtName [V k],
-          SafeL
-        )
-    typeOfInst loc (RetractionInst oadtName) = do
-      (pubTy, argTy) <- isOADTDef loc oadtName
-      k <- fresh
-      return
-        ( pi' k argTy $ arrow_ (tapp_ oadtName [V k]) $ GV pubTy,
-          LeakyL
-        )
+    labelOfInst RetractionInst {} = LeakyL
+    labelOfInst _ = SafeL
 
-    isOADTDef loc oadtName =
+-- | Check the type of the given OADT instance is well-formed.
+preCheckInst :: Int -> Text -> OADTInst -> Ty Name -> TcM ()
+preCheckInst loc name inst ty = isOADTDef (oadtName inst) >>= go
+  where
+    go (pubName, argTy) = case inst of
+      SectionInst {..} -> do
+        k <- fresh
+        equateSig $
+          pi' k argTy $
+            arrow_ (GV pubName) $
+              tapp_ oadtName [V k]
+      RetractionInst {..} -> do
+        k <- fresh
+        equateSig $
+          pi' k argTy $
+            arrow_ (tapp_ oadtName [V k]) $
+              GV pubName
+      CtorInst {..} -> do
+        argTs <- case isArrow ty of
+          Just (argTs, Psi {oblivTy})
+            | oblivTy == oadtName ->
+                return argTs
+          Just (_, t) ->
+            errPlain
+              loc
+              [ [ DD $
+                    "Function"
+                      <+> pretty name
+                      <+> "has the wrong return type"
+                ],
+                [ DH "Expected",
+                  DC (Psi {oblivTy = oadtName, argTy = Nothing} :: Ty Name)
+                ],
+                [DH "Got", DC t]
+              ]
+          Nothing ->
+            err_ loc $
+              "Function"
+                <+> pretty name
+                <+> "cannot have a dependent function type"
+        lookupGSig ctor >>= \case
+          Just (CtorDef {..})
+            | dataType == pubName -> do
+                unlessM (compatibleMany paraTypes argTs) $
+                  errPlain
+                    loc
+                    [ [ DD $
+                          "The argument types of function"
+                            <+> pretty name
+                            <+> "is not compatible with those of constructor"
+                            <+> pretty ctor
+                      ],
+                      DH "Expected types compatible with" : (DC <$> paraTypes),
+                      DH "Got" : (DC <$> argTs)
+                    ]
+          _ ->
+            err_ loc $
+              "Function"
+                <+> pretty name
+                <+> "is a constructor instance of the OADT"
+                <+> pretty oadtName <> ", but"
+                <+> pretty ctor
+                <+> "is not a constructor of the ADT"
+                <+> pretty pubName
+
+    -- Check type against OADT instance signature.
+    equateSig instTy =
+      equate instTy ty `catchError` \_ ->
+        errPlain
+          loc
+          [ [ DD $
+                "Function"
+                  <+> pretty name
+                  <+> "has the wrong type"
+            ],
+            [DH "Expected", DC instTy],
+            [DH "Got", DC ty]
+          ]
+
+    isOADTDef oadtName =
       lookupGSig oadtName >>= \case
         Just OADTDef {pubTy, argTy} -> return (pubTy, argTy)
         _ ->

@@ -1,9 +1,9 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE NoFieldSelectors #-}
 
 -- |
 -- Copyright: (c) 2022-2023 Qianchuan Ye
@@ -25,6 +25,7 @@ module Taype.Syntax
     getDefLoc,
     closeDefs,
     Pat (..),
+    isCtor,
 
     -- * OADT structure
     OADTInst (..),
@@ -65,6 +66,7 @@ import Algebra.Lattice.M2
 import Algebra.PartialOrd
 import Bound
 import Control.Monad
+import Data.Char
 import Data.Functor.Classes
 import Data.Text qualified as T
 import Relude.Extra
@@ -297,6 +299,10 @@ closeDefs = (second (>>>= GV) <$>)
 -- | A rudimentary pattern that only supports pairs
 data Pat a = VarP (BinderM a) | PairP Int (Pat a) (Pat a)
 
+-- | Check if a name is a constructor.
+isCtor :: Text -> Bool
+isCtor x = maybe False (\(c, _) -> isUpper c) $ T.uncons x
+
 ----------------------------------------------------------------
 -- OADT structure
 
@@ -305,6 +311,8 @@ data OADTInst
     SectionInst {oadtName :: Text}
   | -- | Retraction
     RetractionInst {oadtName :: Text}
+  | -- | Constructor
+    CtorInst {oadtName :: Text, ctor :: Text}
   deriving stock (Eq, Show)
 
 data OADTInstAttr
@@ -316,17 +324,17 @@ data OADTInstAttr
 -- | Parse an instance from the given name.
 attrOfName :: Text -> OADTInstAttr
 attrOfName x = case T.splitOn instInfix x of
+  xs | any T.null xs -> UnknownInst
   [_] -> NotAnInst
-  ["", _] -> UnknownInst
-  [oadtName, instName]
-    | instName == sectionInstName ->
-        KnownInst $ SectionInst {..}
-  [oadtName, instName]
-    | instName == retractionInstName ->
-        KnownInst $ RetractionInst {..}
+  [oadtName, instName] ->
+    if
+        | instName == sectionInstName -> KnownInst $ SectionInst {..}
+        | instName == retractionInstName -> KnownInst $ RetractionInst {..}
+        | isCtor instName -> KnownInst $ CtorInst {ctor = instName, ..}
+        | otherwise -> UnknownInst
   _ -> UnknownInst
 
--- | Return a list of instance names given an OADT name.
+-- | Return a list of must-have instance names, given an OADT name.
 instNamesOfOADT :: Text -> [Text]
 instNamesOfOADT x = [sectionName x, retractionName x]
 

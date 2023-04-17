@@ -41,14 +41,19 @@ module Taype.Name
     unbind1With,
     unbind2With,
     unbindManyWith,
+
+    -- * Utilities
+    instantiate0,
   )
 where
 
 import Bound
 import Control.Monad.Except
 import Control.Monad.Writer
+import Data.Foldable
 import Data.List (findIndex)
 import Taype.Prelude
+import Prelude hiding (elem)
 
 -- | Names are integers.
 type Name = Int
@@ -57,7 +62,7 @@ type Name = Int
 -- Fresh name generator
 
 -- | Fresh name class is similar to 'MonadState' class.
-class Monad m => MonadFresh m where
+class (Monad m) => MonadFresh m where
   getFresh :: m Name
   putFresh :: Name -> m ()
 
@@ -79,18 +84,18 @@ newtype FreshT m a = FreshT {unFreshT :: StateT Name m a}
       MonadError e
     )
 
-instance Monad m => MonadFresh (FreshT m) where
+instance (Monad m) => MonadFresh (FreshT m) where
   getFresh = FreshT get
   putFresh n = FreshT $ put n
 
-instance MonadState s m => MonadState s (FreshT m) where
+instance (MonadState s m) => MonadState s (FreshT m) where
   get = lift get
   put = lift . put
 
-runFreshT :: Monad m => FreshT m a -> m a
+runFreshT :: (Monad m) => FreshT m a -> m a
 runFreshT m = contFreshT m 0
 
-contFreshT :: Monad m => FreshT m a -> Int -> m a
+contFreshT :: (Monad m) => FreshT m a -> Int -> m a
 contFreshT (FreshT m) = evalStateT m
 
 -- | Fresh name monad
@@ -103,14 +108,14 @@ contFreshM :: FreshM a -> Int -> a
 contFreshM m = runIdentity . contFreshT m
 
 -- | Generate a fresh name.
-fresh :: MonadFresh m => m Name
+fresh :: (MonadFresh m) => m Name
 fresh = do
   n <- getFresh
   putFresh (n + 1)
   return n
 
 -- | Generate many fresh names.
-freshes :: MonadFresh m => Int -> m [Name]
+freshes :: (MonadFresh m) => Int -> m [Name]
 freshes k = do
   n <- getFresh
   putFresh (n + k)
@@ -124,8 +129,8 @@ badName = -1
 -- Specialized locally nameless abstraction and instantiation
 
 class ScopeOps s b b' | s b -> b' where
-  abstractBy :: Monad f => (a -> b -> Bool) -> b' -> f a -> Scope s f a
-  instantiateBy :: Monad f => (b -> f a) -> b' -> Scope s f a -> f a
+  abstractBy :: (Monad f) => (a -> b -> Bool) -> b' -> f a -> Scope s f a
+  instantiateBy :: (Monad f) => (b -> f a) -> b' -> Scope s f a -> f a
 
 -- | Abstract and instantiate for one bound variable.
 instance ScopeOps () b b where
@@ -216,3 +221,12 @@ unbindManyWith ::
   Scope Int f Name ->
   m ([Name], f Name, f Name)
 unbindManyWith n = unbindWithBy $ unbindMany n
+
+----------------------------------------------------------------
+-- Utilities
+
+-- | Close the scope if the bound variables are not used, or return 'Nothing'.
+instantiate0 :: (Monad f, Foldable f) => Scope b f Name -> Maybe (f Name)
+instantiate0 bnd =
+  let body = instantiate1 (return badName) bnd
+   in if badName `elem` body then Nothing else Just body
