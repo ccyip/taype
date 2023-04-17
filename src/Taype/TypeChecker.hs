@@ -1410,6 +1410,12 @@ depMatchErr t =
       ]
     ]
 
+pubNameOfOblivName :: Text -> TcM Text
+pubNameOfOblivName name =
+  lookupGSig name >>= \case
+    Just OADTDef {pubTy} -> return pubTy
+    _ -> oops "OADT definition is missing"
+
 -- | Compute the given type's canonical public type if it has one.
 --
 -- The given type must be well-kinded.
@@ -1427,10 +1433,9 @@ canonicalPubTy GV {..} = return $ Just GV {..}
 canonicalPubTy TUnit = return $ Just TUnit
 canonicalPubTy TBool {} = return $ Just TBool {olabel = PublicL}
 canonicalPubTy TInt {} = return $ Just TInt {olabel = PublicL}
-canonicalPubTy Psi {..} =
-  lookupGSig oblivTy >>= \case
-    Just OADTDef {pubTy} -> return $ Just GV {ref = pubTy}
-    _ -> oops "No OADT definition available for Psi type"
+canonicalPubTy Psi {..} = do
+  ref <- pubNameOfOblivName oblivTy
+  return $ Just GV {..}
 canonicalPubTy Loc {..} = canonicalPubTy expr
 canonicalPubTy _ = return Nothing
 
@@ -1669,6 +1674,15 @@ preCheckInst loc name inst ty = isOADTDef (oadtName inst) >>= go
           pi' k argTy $
             arrow_ (tapp_ oadtName [V k]) $
               GV pubName
+      JoinInst {} -> do
+        equateSig $ arrows_ [argTy, argTy, argTy]
+      ReshapeInst {..} -> do
+        k <- fresh
+        k' <- fresh
+        equateSig $
+          pi' k argTy $
+            pi' k' argTy $
+              arrow_ (tapp_ oadtName [V k]) (tapp_ oadtName [V k'])
       CtorInst {..} -> do
         argTs <- case isArrow ty of
           Just (argTs, Psi {oblivTy})
@@ -1716,6 +1730,7 @@ preCheckInst loc name inst ty = isOADTDef (oadtName inst) >>= go
                 <+> pretty ctor
                 <+> "is not a constructor of the ADT"
                 <+> pretty pubName
+      MatchInst {} -> err_ loc "Not implemented yet"
 
     -- Check type against OADT instance signature.
     equateSig instTy =

@@ -54,6 +54,7 @@ module Taype.Syntax
     pmatch',
     pi',
     arrow_,
+    arrows_,
 
     -- * Pretty printer
     cuteBinder,
@@ -313,6 +314,12 @@ data OADTInst
     RetractionInst {oadtName :: Text}
   | -- | Constructor
     CtorInst {oadtName :: Text, ctor :: Text}
+  | -- | Join of public views
+    JoinInst {oadtName :: Text}
+  | -- | Convert an OADT with different public views
+    ReshapeInst {oadtName :: Text}
+  | -- | Pattern matching
+    MatchInst {oadtName :: Text}
   deriving stock (Eq, Show)
 
 data OADTInstAttr
@@ -331,6 +338,9 @@ attrOfName x = case T.splitOn instInfix x of
         | instName == sectionInstName -> KnownInst $ SectionInst {..}
         | instName == retractionInstName -> KnownInst $ RetractionInst {..}
         | isCtor instName -> KnownInst $ CtorInst {ctor = instName, ..}
+        | instName == "join" -> KnownInst $ JoinInst {..}
+        | instName == "reshape" -> KnownInst $ ReshapeInst {..}
+        | instName == "match" -> KnownInst $ MatchInst {..}
         | otherwise -> UnknownInst
   _ -> UnknownInst
 
@@ -642,6 +652,11 @@ arrow_ dom cod =
       binder = Just Anon,
       bnd = abstract (const Nothing) cod
     }
+
+arrows_ :: [Ty a] -> Ty a
+arrows_ [] = oops "Arrow without type"
+arrows_ [t] = t
+arrows_ (t : ts) = arrow_ t $ arrows_ ts
 
 app_ :: Expr a -> [Expr a] -> Expr a
 app_ fn args = App {appKind = FunApp, ..}
