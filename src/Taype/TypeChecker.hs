@@ -1675,7 +1675,7 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
             arrow_ (tapp_ oadtName [V k]) $
               GV pubName
       JoinInst {} -> do
-        equateSig $ arrows_ [argTy, argTy, argTy]
+        equateSig $ arrows_ [argTy, argTy] argTy
       ReshapeInst {..} -> do
         k <- fresh
         k' <- fresh
@@ -1692,9 +1692,8 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
               <+> "coerces between incompatible types"
         equateSig $
           arrows_
-            [ Psi {argTy = Just argTy, oadtName = oadtName},
-              Psi {argTy = Just argTy', oadtName = oadtTo}
-            ]
+            [Psi {argTy = Just argTy, oadtName = oadtName}]
+            Psi {argTy = Just argTy', oadtName = oadtTo}
       CtorInst {..} -> do
         argTs <- case isArrow ty of
           Just (argTs, Psi {oadtName = oadtName'})

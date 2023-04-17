@@ -668,10 +668,8 @@ arrow_ dom cod =
       bnd = abstract (const Nothing) cod
     }
 
-arrows_ :: [Ty a] -> Ty a
-arrows_ [] = oops "Arrow without type"
-arrows_ [t] = t
-arrows_ (t : ts) = arrow_ t $ arrows_ ts
+arrows_ :: [Ty a] -> Ty a -> Ty a
+arrows_ = flip $ foldr arrow_
 
 app_ :: Expr a -> [Expr a] -> Expr a
 app_ fn args = App {appKind = FunApp, ..}

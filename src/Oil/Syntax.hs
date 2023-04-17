@@ -27,7 +27,6 @@ module Oil.Syntax
 
     -- * Smart constructors
     Apply (..),
-    arrows_,
     ite_,
     prod_,
     pair_,
@@ -261,11 +260,6 @@ instance Apply (Expr a) (Expr a) where
 
 instance Apply Ty Text where
   tctor @@ args = TApp {..}
-
-arrows_ :: [Ty] -> Ty
-arrows_ [] = oops "Arrow without type"
-arrows_ [t] = t
-arrows_ (t : ts) = Arrow t $ arrows_ ts
 
 ite_ :: (Eq a) => Expr a -> Expr a -> Expr a -> Expr a
 ite_ cond left right =
