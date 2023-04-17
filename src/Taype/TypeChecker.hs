@@ -305,8 +305,8 @@ typing Ite {..} mt = do
         (V y)
     )
 typing Pair {pairKind = pairKind@PsiP, ..} (Just t) = do
-  (argTy, oblivTy) <- isPsi t
-  let app x = tapp_ oblivTy [V x]
+  (argTy, oadtName) <- isPsi t
+  let app x = tapp_ oadtName [V x]
   left' <- check left argTy
   xl <- fresh
   right' <- check right $ let' xl argTy left' $ app xl
@@ -436,9 +436,9 @@ typing PMatch {pairKind = pairKind@OblivP, ..} mt = do
 -- necessary in the current use of Psi type.
 typing PMatch {pairKind = pairKind@PsiP, ..} mt = do
   (t, cond') <- infer cond
-  (argTy, oblivTy) <- withLoc_ cond $ isPsi t
+  (argTy, oadtName) <- withLoc_ cond $ isPsi t
   ((xl, xr), body) <- unbind2 bnd2
-  let ctx = [(xl, argTy, lBinder), (xr, tapp_ oblivTy [V xl], rBinder)]
+  let ctx = [(xl, argTy, lBinder), (xr, tapp_ oadtName [V xl], rBinder)]
   (bodyTy', body') <- extendCtx ctx $ typing body mt
   notAppearIn bodyTy' ctx
   x <- fresh
@@ -823,11 +823,11 @@ kinding ty@GV {..} Nothing =
       err [[DD "Definition", DQ ref, DD "is not an ADT"]]
     _ ->
       err [[DD "Type", DQ ref, DD "is not in scope"]]
-kinding Psi {oblivTy} Nothing = do
-  lookupGSig oblivTy >>= \case
+kinding Psi {oadtName} Nothing = do
+  lookupGSig oadtName >>= \case
     Just OADTDef {..} -> return (MixedK, Psi {argTy = Just argTy, ..})
-    Just _ -> err [[DD "Definition", DQ oblivTy, DD "is not an OADT"]]
-    _ -> err [[DD "Definition", DQ oblivTy, DD "is not in scope"]]
+    Just _ -> err [[DD "Definition", DQ oadtName, DD "is not an OADT"]]
+    _ -> err [[DD "Definition", DQ oadtName, DD "is not in scope"]]
 kinding Prod {olabel = olabel@PublicL, ..} Nothing = do
   (leftK, left') <- inferKind left
   (rightK, right') <- inferKind right
@@ -1262,7 +1262,7 @@ isOProd_ t = do
 
 -- | Check if a type is a Psi type and return its components.
 isPsi :: Ty Name -> TcM (Ty Name, Text)
-isPsi Psi {..} = return (fromJust argTy, oblivTy)
+isPsi Psi {..} = return (fromJust argTy, oadtName)
 isPsi Loc {..} = isPsi expr
 isPsi t =
   err
@@ -1410,10 +1410,10 @@ depMatchErr t =
       ]
     ]
 
-pubNameOfOblivName :: Text -> TcM Text
-pubNameOfOblivName name =
+pubNameOfOADTName :: Text -> TcM Text
+pubNameOfOADTName name =
   lookupGSig name >>= \case
-    Just OADTDef {pubTy} -> return pubTy
+    Just OADTDef {pubName} -> return pubName
     _ -> oops "OADT definition is missing"
 
 -- | Compute the given type's canonical public type if it has one.
@@ -1434,7 +1434,7 @@ canonicalPubTy TUnit = return $ Just TUnit
 canonicalPubTy TBool {} = return $ Just TBool {olabel = PublicL}
 canonicalPubTy TInt {} = return $ Just TInt {olabel = PublicL}
 canonicalPubTy Psi {..} = do
-  ref <- pubNameOfOblivName oblivTy
+  ref <- pubNameOfOADTName oadtName
   return $ Just GV {..}
 canonicalPubTy Loc {..} = canonicalPubTy expr
 canonicalPubTy _ = return Nothing
@@ -1620,11 +1620,11 @@ preCheckDef defs name def = do
     OADTDef {..} -> do
       argTy' <- checkKind argTy PublicK
       checkAvailInsts loc
-      pubTy' <- inferPubTy
-      return OADTDef {pubTy = pubTy', argTy = argTy', ..}
+      pubName' <- inferPubName
+      return OADTDef {pubName = pubName', argTy = argTy', ..}
     _ -> oops "Pre-checking constructor or builtin definitions"
   where
-    inferPubTy =
+    inferPubName =
       case lookup (sectionName name) defs of
         Just FunDef {..} -> do
           (_, _, bnd) <- isPi ty
@@ -1659,7 +1659,7 @@ preCheckDef defs name def = do
 
 -- | Check the type of the given OADT instance is well-formed.
 preCheckInst :: Int -> Text -> OADTInst -> Ty Name -> TcM ()
-preCheckInst loc name inst ty = isOADTDef (oadtName inst) >>= go
+preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
   where
     go (pubName, argTy) = case inst of
       SectionInst {..} -> do
@@ -1685,8 +1685,8 @@ preCheckInst loc name inst ty = isOADTDef (oadtName inst) >>= go
               arrow_ (tapp_ oadtName [V k]) (tapp_ oadtName [V k'])
       CtorInst {..} -> do
         argTs <- case isArrow ty of
-          Just (argTs, Psi {oblivTy})
-            | oblivTy == oadtName ->
+          Just (argTs, Psi {oadtName = oadtName'})
+            | oadtName' == oadtName ->
                 return argTs
           Just (_, t) ->
             errPlain
@@ -1697,7 +1697,7 @@ preCheckInst loc name inst ty = isOADTDef (oadtName inst) >>= go
                       <+> "has the wrong return type"
                 ],
                 [ DH "Expected",
-                  DC (Psi {oblivTy = oadtName, argTy = Nothing} :: Ty Name)
+                  DC (Psi {argTy = Nothing, ..} :: Ty Name)
                 ],
                 [DH "Got", DC t]
               ]
@@ -1748,7 +1748,7 @@ preCheckInst loc name inst ty = isOADTDef (oadtName inst) >>= go
 
     isOADTDef oadtName =
       lookupGSig oadtName >>= \case
-        Just OADTDef {pubTy, argTy} -> return (pubTy, argTy)
+        Just OADTDef {pubName, argTy} -> return (pubName, argTy)
         _ ->
           err_ loc $
             "Function"

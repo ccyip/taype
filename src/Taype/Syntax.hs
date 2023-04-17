@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
 -- |
 -- Copyright: (c) 2022-2023 Qianchuan Ye
@@ -32,6 +33,7 @@ module Taype.Syntax
     OADTInstAttr (..),
     attrOfName,
     instNamesOfOADT,
+    oadtNameOfInst,
     isSection,
 
     -- * Smart constructors
@@ -155,7 +157,7 @@ data Expr a
     -- This definition includes public product and oblivious product.
     Prod {olabel :: OLabel, left :: Ty a, right :: Ty a}
   | -- | Psi type
-    Psi {argTy :: Maybe (Ty a), oblivTy :: Text}
+    Psi {argTy :: Maybe (Ty a), oadtName :: Text}
   | -- | Public, oblivious, and dependent pairs
     Pair {pairKind :: PairKind, left :: Expr a, right :: Expr a}
   | -- | Product and Psi type pattern matching
@@ -268,7 +270,7 @@ data DefB f a
     -- It takes a single argument for now.
     OADTDef
       { loc :: Int,
-        pubTy :: Text,
+        pubName :: Text,
         argTy :: f a,
         binder :: Maybe Binder,
         bnd :: Scope () f a
@@ -347,6 +349,15 @@ attrOfName x = case T.splitOn instInfix x of
 -- | Return a list of must-have instance names, given an OADT name.
 instNamesOfOADT :: Text -> [Text]
 instNamesOfOADT x = [sectionName x, retractionName x]
+
+oadtNameOfInst :: OADTInst -> Text
+oadtNameOfInst = \case
+  SectionInst {..} -> oadtName
+  RetractionInst {..} -> oadtName
+  CtorInst {..} -> oadtName
+  JoinInst {..} -> oadtName
+  ReshapeInst {..} -> oadtName
+  MatchInst {..} -> oadtName
 
 -- | Check if a definition is a section by OADT attribute.
 isSection :: OADTInstAttr -> Bool
@@ -484,7 +495,7 @@ instance Eq1 Expr where
     Prod {olabel, left, right}
     Prod {olabel = olabel', left = left', right = right'} =
       olabel == olabel' && liftEq eq left left' && liftEq eq right right'
-  liftEq _ Psi {oblivTy} Psi {oblivTy = oblivTy'} = oblivTy == oblivTy'
+  liftEq _ Psi {oadtName} Psi {oadtName = oadtName'} = oadtName == oadtName'
   liftEq eq Pair {left, right} Pair {left = left', right = right'} =
     liftEq eq left left' && liftEq eq right right'
   liftEq
@@ -842,7 +853,7 @@ instance Cute (Expr Text) where
   cute Match {..} = cuteMatch PublicL True cond alts
   cute OIte {..} = cuteIte OblivL cond left right
   cute e@Prod {..} = cuteInfix e (accentOfOLabel olabel <> "*") left right
-  cute Psi {..} = cute $ psiName oblivTy
+  cute Psi {..} = cute $ psiName oadtName
   cute Pair {..} = cutePair pairKind left right
   cute PMatch {..} = cutePMatch pairKind cond lBinder rBinder bnd2
   cute e@OSum {..} = cuteInfix e (oblivName "+") left right

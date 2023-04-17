@@ -228,7 +228,7 @@ grammar = mdo
                 OADTDef
                   { bnd = abstractBinder binder body,
                     binder = Just binder,
-                    pubTy = "",
+                    pubName = "",
                     ..
                   }
               ),
@@ -488,7 +488,7 @@ grammar = mdo
           -- Psi type
           do
             loc <- pLocatedToken L.Psi
-            oblivTy <- pIdent
+            oadtName <- pIdent
             return Loc {expr = Psi {argTy = Nothing, ..}, ..},
           -- Variable
           pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
