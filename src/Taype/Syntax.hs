@@ -206,6 +206,11 @@ data Expr a
     --
     -- This does not appear in the core language
     Loc {loc :: Int, expr :: Expr a}
+  | -- | Type variable
+    --
+    -- We do not support general type polymorphism yet. This (unique) type
+    -- variable is only used for defining OADT match instances.
+    TV
   deriving stock (Functor, Foldable, Traversable)
 
 -- | A type in taype is also an expression.
@@ -444,6 +449,7 @@ instance Monad Expr where
       }
   Asc {..} >>= f = Asc {ty = ty >>= f, expr = expr >>= f, ..}
   Loc {..} >>= f = Loc {expr = expr >>= f, ..}
+  TV >>= _ = TV
 
 instance Bound DefB where
   FunDef {..} >>>= f = FunDef {ty = ty >>= f, expr = expr >>= f, ..}
@@ -527,6 +533,7 @@ instance Eq1 Expr where
   liftEq eq expr' Asc {expr} = liftEq eq expr' expr
   liftEq eq Loc {expr} expr' = liftEq eq expr expr'
   liftEq eq expr' Loc {expr} = liftEq eq expr' expr
+  liftEq _ TV TV = True
   liftEq _ _ _ = False
 
 instance (Eq a) => Eq (Expr a) where (==) = eq1
@@ -893,6 +900,7 @@ instance Cute (Expr Text) where
           align exprDoc
             <> sep1 ((if trustMe then colon <> colon else colon) <+> tyDoc)
   cute Loc {..} = cute expr
+  cute TV = "'a"
 
 -- | Pretty printer for taype definitions
 cuteDefsDoc :: Options -> Defs Text -> Doc

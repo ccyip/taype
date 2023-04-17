@@ -196,6 +196,8 @@ grammar = mdo
         ~(_, name) <- pLocatedInfix ops
         right <- pRight
         return Loc {expr = former name left right, loc = getLoc left, ..}
+      -- Variable
+      pVar = pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..}
 
   -- Global definition
   pDef <-
@@ -381,7 +383,7 @@ grammar = mdo
           -- Integer literal
           pLocatedILit <&> \(loc, iLit) -> Loc {expr = ILit {..}, ..},
           -- Variable
-          pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
+          pVar,
           -- Pair
           pPair (Pair PublicP) L.LParen,
           -- Oblivious pair
@@ -466,7 +468,7 @@ grammar = mdo
   pAppType <-
     rule $
       choice
-        [ pApp app_ pAtomType,
+        [ pApp app_ pVar,
           -- Next precedence
           pAtomType
         ]
@@ -491,7 +493,9 @@ grammar = mdo
             oadtName <- pIdent
             return Loc {expr = Psi {argTy = Nothing, ..}, ..},
           -- Variable
-          pLocatedIdent <&> \(loc, name) -> Loc {expr = V {..}, ..},
+          pVar,
+          -- Type variable
+          pLocatedToken L.TV <&> \loc -> Loc {expr = TV, ..},
           -- Parenthesized type
           pParen pType
         ]
@@ -613,3 +617,4 @@ renderToken = \case
     RightP -> "prr"
   L.Ident ident -> "identifier" <+> dquotes (pretty ident)
   L.Infix ident -> "infix" <+> dquotes (pretty ident)
+  L.TV -> "'a"

@@ -68,6 +68,7 @@ data Token
   | OProj OProjKind
   | Ident Text
   | Infix Text
+  | TV
   deriving stock (Eq, Show)
 
 -- | Token with location information
@@ -140,7 +141,8 @@ pToken =
       LOParen <$ symbol (oblivName "("),
       LPParen <$ symbol (psiName "("),
       RParen <$ symbol ")",
-      Psi <$ symbol psiAccent
+      Psi <$ symbol psiAccent,
+      TV <$ symbol "'a"
     ]
 
 isIdent0 :: Char -> Bool
