@@ -109,6 +109,13 @@ typing e@GV {..} Nothing =
   lookupGSig ref >>= \case
     Just FunDef {..} -> do
       checkLabel label
+      case poly of
+        PolyT _ ->
+          err
+            [ [DD "Type polymorphic functions (OADT match instances)",
+               DD "are not allowed to be called directly (yet)"]
+            ]
+        _ -> pass
       return (ty, e)
     Just CtorDef {..} -> do
       checkArity CtorApp ref [] paraTypes
@@ -549,7 +556,12 @@ typing OIte {..} mt = do
   cond' <- check cond $ TBool OblivL
   (t', left') <- typing left mt
   right' <- check right t'
-  label' <- (checkKind t' OblivK $> SafeL) `catchError` \_ -> return LeakyL
+  label' <- case t' of
+    TV -> do
+      checkPoly
+      put $ PolyT MergeableC
+      return SafeL
+    _ -> (checkKind t' OblivK $> SafeL) `catchError` const (return LeakyL)
   checkLabel label'
   x <- fresh
   return
@@ -594,7 +606,12 @@ typing OMatch {..} mt = do
   rBody' <-
     extendCtx1 xr rightTy' rBinder $
       check rBody t'
-  label' <- (checkKind t' OblivK $> SafeL) `catchError` \_ -> return LeakyL
+  label' <- case t' of
+    TV -> do
+      checkPoly
+      put $ PolyT MergeableC
+      return SafeL
+    _ -> (checkKind t' OblivK $> SafeL) `catchError` const (return LeakyL)
   checkLabel label'
   x <- fresh
   y <- fresh
@@ -926,7 +943,7 @@ kinding Match {..} Nothing = do
       return MatchAlt {bnd = abstract_ xs body', ..}
 kinding Loc {..} mk = withLoc loc $ withCur expr $ kinding expr mk
 kinding TV Nothing = do
-  -- TODO: check capability
+  checkPoly
   return (MixedK, TV)
 -- Check kind.
 kinding t (Just k) = do
@@ -1208,6 +1225,17 @@ checkLabel l' = do
         ]
       ]
 
+checkPoly :: TcM ()
+checkPoly =
+  get >>= \case
+    PolyT _ -> pass
+    MonoT -> do
+      defName <- asks defName
+      err
+        [ [DD $ "Type polymorphism is not allowed in function" <+> pretty defName],
+          [DD "Only OADT match instances can be polymorphic at the moment"]
+        ]
+
 -- | Check if a type is a pi-type and return its components.
 --
 -- Unlike other dependent type theory, we do not perform weak head normalization
@@ -1452,12 +1480,6 @@ compatible t1 t2 = do
     (Just t1', Just t2') -> return $ t1' == t2'
     _ -> return False
 
-compatibleMany :: [Ty Name] -> [Ty Name] -> TcM Bool
-compatibleMany ts1 ts2
-  | length ts1 == length ts2 =
-      and <$> zipWithM compatible ts1 ts2
-compatibleMany _ _ = return False
-
 ----------------------------------------------------------------
 -- Definitions checker
 
@@ -1490,8 +1512,10 @@ checkDef :: Text -> TcM (Def Name)
 checkDef name =
   getGSig name >>= \case
     FunDef {..} -> withLabel label $ do
+      put poly
       expr' <- check expr ty
-      return FunDef {expr = expr', ..}
+      poly' <- get
+      return FunDef {expr = expr', poly = poly', ..}
     OADTDef {..} -> do
       (x, body) <- unbind1 bnd
       body' <- extendCtx1 x argTy binder $ checkKind body OblivK
@@ -1614,6 +1638,9 @@ preCheckDef defs name def = do
   checkAttr attr'
   case def of
     FunDef {..} -> withLabel label $ do
+      case attr' of
+        KnownInst inst -> put $ polyOfInst inst
+        _ -> pass
       ty' <- kinded ty
       case attr' of
         KnownInst inst -> do
@@ -1621,7 +1648,8 @@ preCheckDef defs name def = do
           -- Check label against OADT instance signature.
           checkDefLabel loc name (labelOfInst inst) label
         _ -> pass
-      return FunDef {ty = ty', attr = attr', ..}
+      poly' <- get
+      return FunDef {ty = ty', attr = attr', poly = poly', ..}
     ADTDef {..} -> do
       ctors' <- forM ctors $ secondM $ mapM (`checkKind` PublicK)
       return ADTDef {ctors = ctors', ..}
@@ -1677,35 +1705,37 @@ preCheckDef defs name def = do
 
     labelOfInst RetractionInst {} = LeakyL
     labelOfInst _ = SafeL
+    polyOfInst MatchInst {} = PolyT UnrestrictedC
+    polyOfInst _ = MonoT
 
 -- | Check the type of the given OADT instance is well-formed.
 preCheckInst :: Int -> Text -> OADTInst -> Ty Name -> TcM ()
 preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
   where
-    go (pubName, argTy) = case inst of
+    go (pubName, viewTy) = case inst of
       SectionInst {..} -> do
         k <- fresh
         equateSig $
-          pi' k argTy $
+          pi' k viewTy $
             arrow_ (GV pubName) $
               tapp_ oadtName [V k]
       RetractionInst {..} -> do
         k <- fresh
         equateSig $
-          pi' k argTy $
+          pi' k viewTy $
             arrow_ (tapp_ oadtName [V k]) $
               GV pubName
       JoinInst {} -> do
-        equateSig $ arrows_ [argTy, argTy] argTy
+        equateSig $ arrows_ [viewTy, viewTy] viewTy
       ReshapeInst {..} -> do
         k <- fresh
         k' <- fresh
         equateSig $
-          pi' k argTy $
-            pi' k' argTy $
+          pi' k viewTy $
+            pi' k' viewTy $
               arrow_ (tapp_ oadtName [V k]) (tapp_ oadtName [V k'])
       CoerceInst {..} -> do
-        (pubName', argTy') <- isOADTDef oadtTo
+        (pubName', viewTy') <- isOADTDef oadtTo
         unless (pubName == pubName') $
           err_ loc $
             "Function"
@@ -1713,14 +1743,21 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
               <+> "coerces between incompatible types"
         equateSig $
           arrows_
-            [Psi {argTy = Just argTy, oadtName = oadtName}]
-            Psi {argTy = Just argTy', oadtName = oadtTo}
+            [Psi {argTy = Just viewTy, oadtName = oadtName}]
+            Psi {argTy = Just viewTy', oadtName = oadtTo}
       CtorInst {..} -> do
-        argTs <-
+        argTy <-
           mustBeArrow ty >>= \case
             (argTs, Psi {oadtName = oadtName'})
               | oadtName == oadtName' ->
-                  return argTs
+                  case argTs of
+                    [t] -> return t
+                    _ ->
+                      err_ loc $
+                        "Function"
+                          <+> pretty name
+                          <+> "should have exactly one argument, but got"
+                          <+> pretty (length argTs)
             (_, t) ->
               errReturnType
                 ("Function" <+> pretty name)
@@ -1730,13 +1767,14 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
         lookupGSig ctor >>= \case
           Just (CtorDef {..})
             | dataType == pubName -> do
-                unlessM (compatibleMany paraTypes argTs) $
+                let paraType = prod_ paraTypes
+                unlessM (compatible paraType argTy) $
                   errCompatible
-                    ("The argument types of function" <+> pretty name)
-                    []
+                    ("The argument type of function" <+> pretty name)
                     ctor
-                    paraTypes
-                    argTs
+                    []
+                    paraType
+                    argTy
           _ ->
             err_ loc $
               "Function"
@@ -1788,9 +1826,23 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
           ]
 
     checkAlts pubName altTs = do
-      paraTypes <- forM altTs $ \altTy ->
+      argTs <- forM altTs $ \altTy ->
         mustBeArrow altTy >>= \case
-          (argTs, TV) -> return (altTy, argTs)
+          (argTs, TV) ->
+            case argTs of
+              [t] -> return (altTy, t)
+              _ ->
+                errPlain
+                  loc
+                  [ [ DD $
+                        "All alternatives of function"
+                          <+> pretty name
+                          <+> "should have exactly one argument,"
+                          <+> "but one alternative got"
+                          <+> pretty (length argTs)
+                    ],
+                    [DH "Alternative", DC altTy]
+                  ]
           (_, t) ->
             errReturnType
               ("An alternative of function" <+> pretty name)
@@ -1801,25 +1853,26 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
         lookupGSig pubName >>= \case
           Just ADTDef {ctors} -> return $ toList ctors
           _ -> oops "ADT definition is missing"
-      unless (length paraTypes == length ctors) $
+      unless (length argTs == length ctors) $
         err_ loc $
           "Function"
             <+> pretty name
             <+> "has"
-            <+> pretty (length paraTypes)
+            <+> pretty (length argTs)
             <+> "alternative arguments, but ADT"
             <+> pretty pubName
             <+> "has"
             <+> pretty (length ctors)
             <+> "constructors"
-      flip2 zipWithM_ paraTypes ctors $ \(t, ts) (ctor, ts') -> do
-        unlessM (compatibleMany ts ts') $
+      flip2 zipWithM_ argTs ctors $ \(altTy, argTy) (ctor, paraTypes) -> do
+        let paraType = prod_ paraTypes
+        unlessM (compatible argTy paraType) $
           errCompatible
-            ("The argument types of an alternative of function" <+> pretty name)
-            [[DH "Alternative", DC t]]
+            ("The argument type of an alternative of function" <+> pretty name)
             ctor
-            ts'
-            ts
+            [[DH "Alternative", DC altTy]]
+            paraType
+            argTy
 
     isOADTDef oadtName =
       lookupGSig oadtName >>= \case
@@ -1848,22 +1901,19 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
           <> [ [DH "Expected", DC expected],
                [DH "Got", DC got]
              ]
-    errCompatible :: Doc -> [[D]] -> Text -> [Ty Name] -> [Ty Name] -> TcM a
-    errCompatible what msg ctor expected got =
+    errCompatible what ctor msg expected got =
       errPlain
         loc
         $ [ [ DD what,
               DD $
-                "is not compatible with those of constructor"
+                "is not compatible with the parameters of constructor"
                   <+> pretty ctor
             ]
           ]
           <> msg
-          <> [ DH "Expected types compatible with" : typeList expected,
-               DH "Got" : typeList got
+          <> [ [DH "Expected a type compatible with", DC expected],
+               [DH "Got", DC got]
              ]
-    typeList [] = [DD "<empty>"]
-    typeList ts = DC <$> ts
 
 extendGCtx1 ::
   (MonadError Err m, MonadReader Options m) =>
@@ -2055,16 +2105,17 @@ runDcM :: Options -> DcM a -> ExceptT Err IO a
 runDcM = usingReaderT
 
 -- | The type checking monad
-newtype TcM a = TcM (FreshT (ReaderT Env (ExceptT Err IO)) a)
+newtype TcM a = TcM (FreshT (StateT PolyType (ReaderT Env (ExceptT Err IO))) a)
   deriving newtype
     ( Functor,
       Applicative,
       Monad,
       MonadFresh,
       MonadReader Env,
+      MonadState PolyType,
       MonadError Err,
       MonadIO
     )
 
 runTcM :: Env -> TcM a -> ExceptT Err IO a
-runTcM env (TcM m) = runReaderT (runFreshT m) env
+runTcM env (TcM m) = runReaderT (evalStateT (runFreshT m) MonoT) env

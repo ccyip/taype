@@ -27,6 +27,8 @@ module Taype.Syntax
     closeDefs,
     Pat (..),
     isCtor,
+    PolyConstraint (..),
+    PolyType (..),
 
     -- * OADT structure
     OADTInst (..),
@@ -46,6 +48,7 @@ module Taype.Syntax
     oite_,
     oinj_,
     oproj_,
+    prod_,
     match_,
     omatch_,
     omatchPat_,
@@ -72,7 +75,8 @@ import Control.Monad
 import Data.Char
 import Data.Functor.Classes
 import Data.Text qualified as T
-import Relude.Extra
+import Data.List (foldr1)
+import Relude.Extra (bimapBoth, traverseBoth)
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -262,6 +266,7 @@ data DefB f a
     FunDef
       { loc :: Int,
         attr :: OADTInstAttr,
+        poly :: PolyType,
         ty :: f a,
         expr :: f a,
         label :: LLabel
@@ -310,6 +315,19 @@ data Pat a = VarP (BinderM a) | PairP Int (Pat a) (Pat a)
 -- | Check if a name is a constructor.
 isCtor :: Text -> Bool
 isCtor x = maybe False (\(c, _) -> isUpper c) $ T.uncons x
+
+-- | Constraint on a polymorphic type variable
+data PolyConstraint
+  = -- | No restriction on how a type variable can be instantiated.
+    UnrestrictedC
+  | -- | The type variable needs to be mergeable, i.e. it can be branches of a
+    -- conditional.
+    MergeableC
+  deriving stock (Eq, Show)
+
+-- | Whether a function definition can have type polymorphism
+data PolyType = MonoT | PolyT PolyConstraint
+  deriving stock (Eq, Show)
 
 ----------------------------------------------------------------
 -- OADT structure
@@ -703,6 +721,10 @@ oinj_ tag expr = OInj {injTy = Nothing, ..}
 
 oproj_ :: OProjKind -> Expr a -> Expr a
 oproj_ projKind expr = OProj {projTy = Nothing, ..}
+
+prod_ :: [Ty a] -> Ty a
+prod_ [] = TUnit
+prod_ ts = foldr1 (Prod PublicL) ts
 
 match_ :: (a ~ Text) => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 match_ cond alts = Match {alts = uncurry3 matchAlt_ <$> alts, ..}

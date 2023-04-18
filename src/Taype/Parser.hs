@@ -242,7 +242,7 @@ grammar = mdo
             ty <- pType
             pToken L.Equals
             expr <- pExpr
-            return (name, FunDef {attr = NotAnInst, ..})
+            return (name, FunDef {attr = NotAnInst, poly = MonoT, ..})
         ]
 
   -- Expression
