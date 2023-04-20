@@ -292,17 +292,13 @@ oblivInjDef tag = runFreshM $ do
 toOilProgram :: Options -> T.Defs Name -> IO Program
 toOilProgram options@Options {..} defs = do
   mainDefs' <- optimize options $ go False mainDefs
-  -- Do not optimize code for conceal phase, as primitive sections are effectful
-  -- in conceal phase.
-  let concealDefs' = go False concealDefs
+  concealDefs' <- optimize options $ go False concealDefs
   revealDefs' <- optimize options $ go True revealDefs
   return
     Program
-      { mainDefs = fromClosedDefs $ simp optReadable mainDefs',
-        -- In the conceal phase, we keep the ANF form because the evaluation
-        -- order is crucial.
-        concealDefs = fromClosedDefs $ simp False concealDefs',
-        revealDefs = fromClosedDefs $ simp optReadable revealDefs'
+      { mainDefs = fromClosedDefs $ simp mainDefs',
+        concealDefs = fromClosedDefs $ simp concealDefs',
+        revealDefs = fromClosedDefs $ simp revealDefs'
       }
   where
     go revealing =
@@ -313,8 +309,8 @@ toOilProgram options@Options {..} defs = do
     isSafe T.FunDef {label = LeakyL} = False
     isSafe _ = True
 
-    simp readable =
-      secondF $ (if readable then readableDef else id) . simpDef
+    simp =
+      secondF $ (if optReadable then readableDef else id) . simpDef
 
 -- | Translate a taype definition to the corresponding OIL definition.
 toOilDef :: T.Def Name -> TslM (Def Name)
