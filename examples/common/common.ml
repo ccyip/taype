@@ -48,14 +48,17 @@ module Setup (Driver : S) = struct
 
   let record_stat () = stat := report_stat ()
 
-  let get_private size of_sexp sec =
+  let get_private of_sexp sec sec_for =
     let party, s = scan_line () in
     if !this_party = party || !this_party = PublicP then
       sec (Sexp.of_string_conv_exn s of_sexp)
-    else Conceal.obliv_array_new_for party size
+    else sec_for party
 
-  let get_private_int () = get_private 1 Conv.int_of_sexp Conceal.obliv_int_s
-  let get_private_bool () = get_private 1 Conv.bool_of_sexp Conceal.obliv_bool_s
+  let get_private_int () =
+    get_private Conv.int_of_sexp Conceal.obliv_int_s Conceal.obliv_int_s_for
+
+  let get_private_bool () =
+    get_private Conv.bool_of_sexp Conceal.obliv_bool_s Conceal.obliv_bool_s_for
 end
 
 let print_stat () =

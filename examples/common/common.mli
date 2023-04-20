@@ -29,12 +29,16 @@ module Setup : functor (Driver : S) -> sig
   val record_stat : unit -> unit
   (** A convenient wrapper around [report_stat]. *)
 
-  val get_private : int -> (Sexp.t -> 'a) -> ('a -> obliv_array) -> obliv_array
-  (** [get_private size of_sexp sec] gets a private data from the input. The
+  val get_private :
+    (Sexp.t -> 'a) ->
+    ('a -> 'b) ->
+    (party -> 'b) ->
+    'b
+  (** [get_private of_sexp sec sec_for] gets a private data from the input. The
       party who owns this data converts it from the S-expression format using
       [of_sexp] and "encrypts" it using the section function [sec]. The other
-      parties who has no access to this private data participates in the
-      encryption by creating an oblivious array of size [size]. *)
+      parties who has no access to this private data help the data-owner with
+      the encryption using [sec_for]. *)
 
   val get_private_int : unit -> obliv_array
   val get_private_bool : unit -> obliv_array
