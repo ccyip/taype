@@ -222,7 +222,7 @@ grammar = mdo
                   ty <- pType
                   pToken L.RParen
                   return (binder, ty)
-            ~(binder, argTy) <- pArg
+            ~(binder, viewTy) <- pArg
             pToken L.Equals
             body <- pType
             return
@@ -491,7 +491,7 @@ grammar = mdo
           do
             loc <- pLocatedToken L.Psi
             oadtName <- pIdent
-            return Loc {expr = Psi {argTy = Nothing, ..}, ..},
+            return Loc {expr = Psi {viewTy = Nothing, ..}, ..},
           -- Variable
           pVar,
           -- Type variable

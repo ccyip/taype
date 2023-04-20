@@ -842,7 +842,7 @@ kinding ty@GV {..} Nothing =
       err [[DD "Type", DQ ref, DD "is not in scope"]]
 kinding Psi {oadtName} Nothing = do
   lookupGSig oadtName >>= \case
-    Just OADTDef {..} -> return (MixedK, Psi {argTy = Just argTy, ..})
+    Just OADTDef {..} -> return (MixedK, Psi {viewTy = Just viewTy, ..})
     Just _ -> err [[DD "Definition", DQ oadtName, DD "is not an OADT"]]
     _ -> err [[DD "Definition", DQ oadtName, DD "is not in scope"]]
 kinding Prod {olabel = olabel@PublicL, ..} Nothing = do
@@ -865,7 +865,7 @@ kinding Pi {..} Nothing = do
 kinding App {..} Nothing = do
   (ref, argTy) <-
     maybeGV fn >>= \case
-      Just (ref, OADTDef {..}) -> return (ref, argTy)
+      Just (ref, OADTDef {..}) -> return (ref, viewTy)
       Just (ref, _) ->
         err [[DD "Definition", DQ ref, DD "is not an oblivious ADT"]]
       _ -> err [[DH "Not an oblivious ADT or not in scope", DC fn]]
@@ -1293,7 +1293,7 @@ isOProd_ t = do
 
 -- | Check if a type is a Psi type and return its components.
 isPsi :: Ty Name -> TcM (Ty Name, Text)
-isPsi Psi {..} = return (fromJust argTy, oadtName)
+isPsi Psi {..} = return (fromJust viewTy, oadtName)
 isPsi Loc {..} = isPsi expr
 isPsi t =
   err
@@ -1518,7 +1518,7 @@ checkDef name =
       return FunDef {expr = expr', poly = poly', ..}
     OADTDef {..} -> do
       (x, body) <- unbind1 bnd
-      body' <- extendCtx1 x argTy binder $ checkKind body OblivK
+      body' <- extendCtx1 x viewTy binder $ checkKind body OblivK
       return OADTDef {bnd = abstract_ x body', ..}
     -- 'ADTDef' and 'CtorDef' have been checked in pre-checker, and 'BuiltinDef'
     -- does not need to be checked.
@@ -1654,10 +1654,10 @@ preCheckDef defs name def = do
       ctors' <- forM ctors $ secondM $ mapM (`checkKind` PublicK)
       return ADTDef {ctors = ctors', ..}
     OADTDef {..} -> do
-      argTy' <- checkKind argTy PublicK
+      viewTy' <- checkKind viewTy PublicK
       checkAvailInsts loc
       pubName' <- inferPubName loc
-      return OADTDef {pubName = pubName', argTy = argTy', ..}
+      return OADTDef {pubName = pubName', viewTy = viewTy',..}
     _ -> oops "Pre-checking constructor or builtin definitions"
   where
     inferPubName loc = do
@@ -1743,8 +1743,8 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
               <+> "coerces between incompatible types"
         equateSig $
           arrows_
-            [Psi {argTy = Just viewTy, oadtName = oadtName}]
-            Psi {argTy = Just viewTy', oadtName = oadtTo}
+            [Psi {viewTy = Just viewTy, oadtName = oadtName}]
+            Psi {viewTy = Just viewTy', oadtName = oadtTo}
       CtorInst {..} -> do
         argTy <-
           mustBeArrow ty >>= \case
@@ -1762,7 +1762,7 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
               errReturnType
                 ("Function" <+> pretty name)
                 []
-                Psi {argTy = Nothing, ..}
+                Psi {viewTy = Nothing, ..}
                 t
         lookupGSig ctor >>= \case
           Just (CtorDef {..})
@@ -1807,7 +1807,7 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
                       <+> pretty name
                       <+> "has the wrong type"
                 ],
-                [DH "Expected", DC (Psi {argTy = Nothing, ..} :: Ty Name)],
+                [DH "Expected", DC (Psi {viewTy = Nothing, ..} :: Ty Name)],
                 [DH "Got", DC t]
               ]
 
@@ -1876,7 +1876,7 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
 
     isOADTDef oadtName =
       lookupGSig oadtName >>= \case
-        Just OADTDef {pubName, argTy} -> return (pubName, argTy)
+        Just OADTDef {pubName, viewTy} -> return (pubName, viewTy)
         _ ->
           err_ loc $
             "Function"

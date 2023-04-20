@@ -221,7 +221,7 @@ toOilTy T.GV {..} = tGV ref
 toOilTy T.Prod {..} = prod_ (toOilTy left) (toOilTy right)
 -- NOTE: Psi type is translated to a pair for now. This may change in the
 -- future.
-toOilTy T.Psi {..} = prod_ (toOilTy (fromJust argTy)) OArray
+toOilTy T.Psi {..} = prod_ (toOilTy (fromJust viewTy)) OArray
 toOilTy T.Pi {..} =
   let dom = toOilTy ty
       -- We instantiate the pi type argument with some arbitrary term, as the
@@ -323,12 +323,12 @@ toOilDef T.FunDef {..} = do
   expr' <- toOilExpr expr
   return FunDef {ty = ty', expr = expr'}
 toOilDef T.OADTDef {..} = do
-  let argTy' = toOilTy argTy
+  let viewTy' = toOilTy viewTy
   (x, body) <- unbind1 bnd
   body' <- toOilSize body
   return
     FunDef
-      { ty = Arrow argTy' sizeTy,
+      { ty = Arrow viewTy' sizeTy,
         expr = lamB x binder body'
       }
 toOilDef T.ADTDef {..} = do

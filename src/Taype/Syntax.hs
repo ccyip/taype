@@ -161,7 +161,7 @@ data Expr a
     -- This definition includes public product and oblivious product.
     Prod {olabel :: OLabel, left :: Ty a, right :: Ty a}
   | -- | Psi type
-    Psi {argTy :: Maybe (Ty a), oadtName :: Text}
+    Psi {viewTy :: Maybe (Ty a), oadtName :: Text}
   | -- | Public, oblivious, and dependent pairs
     Pair {pairKind :: PairKind, left :: Expr a, right :: Expr a}
   | -- | Product and Psi type pattern matching
@@ -281,7 +281,7 @@ data DefB f a
     OADTDef
       { loc :: Int,
         pubName :: Text,
-        argTy :: f a,
+        viewTy :: f a,
         binder :: Maybe Binder,
         bnd :: Scope () f a
       }
@@ -436,7 +436,7 @@ instance Monad Expr where
         ..
       }
   Prod {..} >>= f = Prod {left = left >>= f, right = right >>= f, ..}
-  Psi {..} >>= f = Psi {argTy = argTy <&> (>>= f), ..}
+  Psi {..} >>= f = Psi {viewTy = viewTy <&> (>>= f), ..}
   Pair {..} >>= f = Pair {left = left >>= f, right = right >>= f, ..}
   PMatch {..} >>= f =
     PMatch
@@ -472,7 +472,7 @@ instance Monad Expr where
 instance Bound DefB where
   FunDef {..} >>>= f = FunDef {ty = ty >>= f, expr = expr >>= f, ..}
   ADTDef {..} >>>= f = ADTDef {ctors = ctors <&> second ((>>= f) <$>), ..}
-  OADTDef {..} >>>= f = OADTDef {argTy = argTy >>= f, bnd = bnd >>>= f, ..}
+  OADTDef {..} >>>= f = OADTDef {viewTy = viewTy >>= f, bnd = bnd >>>= f, ..}
   CtorDef {..} >>>= f = CtorDef {paraTypes = paraTypes <&> (>>= f), ..}
   BuiltinDef {..} >>>= f =
     BuiltinDef
@@ -596,8 +596,8 @@ instance PlateM (Expr Name) where
     right' <- f right
     return Prod {left = left', right = right', ..}
   plateM f Psi {..} = do
-    argTy' <- mapM f argTy
-    return Psi {argTy = argTy', ..}
+    viewTy' <- mapM f viewTy
+    return Psi {viewTy = viewTy', ..}
   plateM f Pair {..} = do
     left' <- f left
     right' <- f right
@@ -657,10 +657,10 @@ instance BiplateM (Def Name) (Expr Name) where
     ctors' <- forM ctors $ secondM (mapM f)
     return ADTDef {ctors = ctors', ..}
   biplateM f OADTDef {..} = do
-    argTy' <- f argTy
+    viewTy' <- f viewTy
     (x, body) <- unbind1 bnd
     body' <- f body
-    return OADTDef {argTy = argTy', bnd = abstract_ x body', ..}
+    return OADTDef {viewTy = viewTy', bnd = abstract_ x body', ..}
   -- Skip handling constructor definitions, as they should be in sync with the ADT
   -- definitions. The caller is responsible for resyncing these two definitions.
   -- Builtin definitions are not handled either.
@@ -955,7 +955,7 @@ cuteDefDoc options name = \case
     where
       rest = go $ do
         (x, body) <- unbind1NameOrBinder binder bnd
-        binderDoc <- cuteBinder x (Just argTy)
+        binderDoc <- cuteBinder x (Just viewTy)
         bodyDoc <- cute body
         return $ parens binderDoc <+> equals <> hardline <> bodyDoc
   _ -> oops "Builtin functions or constructors in the definitions"
