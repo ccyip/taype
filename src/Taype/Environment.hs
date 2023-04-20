@@ -150,25 +150,25 @@ insertGCtx :: Text -> Def a -> GCtx a -> GCtx a
 insertGCtx x def (GCtx gctx) = GCtx $ M.insert x def gctx
 
 -- | Look up a definition in the global typing context.
-lookupGSig :: MonadReader Env m => Text -> m (Maybe (Def Name))
+lookupGSig :: (MonadReader Env m) => Text -> m (Maybe (Def Name))
 lookupGSig x = do
   gctx <- asks gsctx
   return $ lookupGCtx x gctx
 
 -- | Look up a definition in the global definition context.
-lookupGDef :: MonadReader Env m => Text -> m (Maybe (Def Name))
+lookupGDef :: (MonadReader Env m) => Text -> m (Maybe (Def Name))
 lookupGDef x = do
   gctx <- asks gdctx
   return $ lookupGCtx x gctx
 
 -- | Look up a type and its label in the typing context.
-lookupTy :: MonadReader Env m => Name -> m (Maybe (Ty Name))
+lookupTy :: (MonadReader Env m) => Name -> m (Maybe (Ty Name))
 lookupTy x = do
   TCtx tctx <- asks tctx
   return $ lookup x tctx
 
 -- | Look up the binder of a name.
-lookupBinder :: MonadReader Env m => Name -> m (Maybe Binder)
+lookupBinder :: (MonadReader Env m) => Name -> m (Maybe Binder)
 lookupBinder x = do
   BCtx bctx <- asks bctx
   return $ lookup x bctx
@@ -178,7 +178,7 @@ lookupBinder x = do
 -- To maintain the invariant, the given types have to be well-kinded and in core
 -- taype ANF.
 extendCtx ::
-  MonadReader Env m => [(Name, Ty Name, Maybe Binder)] -> m a -> m a
+  (MonadReader Env m) => [(Name, Ty Name, Maybe Binder)] -> m a -> m a
 extendCtx xs = local go
   where
     go Env {tctx = TCtx tctx, bctx = BCtx bctx, ..} =
@@ -192,23 +192,23 @@ extendCtx xs = local go
 
 -- | Extend the typing context with one entry.
 extendCtx1 ::
-  MonadReader Env m => Name -> Ty Name -> Maybe Binder -> m a -> m a
+  (MonadReader Env m) => Name -> Ty Name -> Maybe Binder -> m a -> m a
 extendCtx1 x t mb = extendCtx [(x, t, mb)]
 
-withLoc :: MonadReader Env m => Int -> m a -> m a
+withLoc :: (MonadReader Env m) => Int -> m a -> m a
 withLoc l = local $ \Env {..} -> Env {loc = l, ..}
 
-mayWithLoc :: MonadReader Env m => Maybe Int -> m a -> m a
+mayWithLoc :: (MonadReader Env m) => Maybe Int -> m a -> m a
 mayWithLoc (Just l) = withLoc l
 mayWithLoc _ = id
 
-withCur :: MonadReader Env m => Expr Name -> m a -> m a
+withCur :: (MonadReader Env m) => Expr Name -> m a -> m a
 withCur e = local $ \Env {..} -> Env {cur = e, ..}
 
-withOption :: MonadReader Env m => (Options -> Options) -> m a -> m a
+withOption :: (MonadReader Env m) => (Options -> Options) -> m a -> m a
 withOption f = local $ \Env {..} -> Env {options = f options, ..}
 
-withLabel :: MonadReader Env m => LLabel -> m a -> m a
+withLabel :: (MonadReader Env m) => LLabel -> m a -> m a
 withLabel l = local $ \Env {..} -> Env {label = l, ..}
 
 ----------------------------------------------------------------
@@ -345,7 +345,6 @@ instance Cute (TCtx Text) where
       hang $
         "Typing context"
           <> colon
-          <> hardline
-          <> if null tctx then "<empty>" else sepWith hardline docs
+          </> if null tctx then "<empty>" else sepWith hardline docs
     where
       go (x, t) = cuteBinder x (Just t)

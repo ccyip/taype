@@ -108,11 +108,8 @@ instance Cute Err where
         "!!!! "
           <> pretty errCategory
           <> " !!!!"
-          <> hardline
-          <> pretty (renderFancyLocation file code errLoc)
-          <> hardline2
-          <> errMsg
-          <> hardline2
+          </> pretty (renderFancyLocation file code errLoc)
+          <//> errMsg <> hardline2
     where
       clr = case errClass of
         WarningC -> PP.Yellow

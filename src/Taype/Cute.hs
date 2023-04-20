@@ -20,6 +20,8 @@ module Taype.Cute
     hang,
     indent,
     hardline2,
+    (</>),
+    (<//>),
     sep1,
     sep1_,
     sepWith,
@@ -101,6 +103,16 @@ indent = PP.indent indentLevel
 
 hardline2 :: Doc
 hardline2 = hardline <> hardline
+
+(</>) :: Doc -> Doc -> Doc
+x </> y = x <> hardline <> y
+
+infixr 6 </>
+
+(<//>) :: Doc -> Doc -> Doc
+x <//> y = x <> hardline2 <> y
+
+infixr 6 <//>
 
 sepWith :: (Foldable t) => Doc -> t Doc -> Doc
 sepWith s = concatWith (\x y -> x <> s <> y)
@@ -212,7 +224,7 @@ instance (Monad m) => MonadCute m [[Disp m]] where
 debugDoc :: (Monad m) => [[Disp m]] -> m Doc
 debugDoc dss = do
   doc <- cutie dss
-  return $ "Debug" <> colon <> hardline <> doc <> hardline <> hardline
+  return $ "Debug" <> colon </> doc <> hardline2
 
 debug :: (MonadIO m, MonadReader r m, HasOptions r) => [[Disp m]] -> m ()
 debug dss = do
@@ -356,8 +368,7 @@ cuteMatchDoc l usePipe condDoc altDocs =
                then foldMap (\altDoc -> hardline <> pipe <+> altDoc) altDocs
                else foldMap (hardline <>) altDocs
            )
-        <> hardline
-        <> "end"
+      </> "end"
 
 cuteMatch ::
   (Traversable t, Monad f, Cute (f Text)) =>

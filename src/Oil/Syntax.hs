@@ -416,7 +416,7 @@ cuteProgramDoc options Program {..} =
     <> go "Reveal phase" revealDefs
   where
     go comment defs =
-      pretty commentDelim <+> comment <> hardline2 <> cuteDefsDoc options defs
+      pretty commentDelim <+> comment <//> cuteDefsDoc options defs
 
 cuteLam :: Bool -> Expr Text -> CuteM Doc
 cuteLam isRoot e = do

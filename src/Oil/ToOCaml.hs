@@ -134,8 +134,7 @@ toOCamlExpr Match {..} = do
         <+> condDoc
         <+> "with"
           <> foldMap (\altDoc -> hardline <> pipe <+> altDoc) altDocs
-          <> hardline
-          <> "end"
+        </> "end"
   where
     goAltDoc MatchAlt {..} = do
       xs <- toValidName <<$>> mapM freshNameOrBinder binders
@@ -217,42 +216,30 @@ toOCaml options Program {..} =
     mainDoc =
       modDoc "M (Driver : Taype_driver.S)" $
         "open Driver"
-          <> hardline2
-          <> go mainDefs
-          <> hardline2
-          <> concealDoc
-          <> hardline2
-          <> revealDoc
+          <//> go mainDefs
+          <//> concealDoc
+          <//> revealDoc
     -- Reexport functions in the Conceal and Reveal module.
     concealDoc =
       modDoc "Conceal" $
         "open Plaintext"
-          <> hardline2
-          <> go concealDefs
-          <> hardline2
-          <> "include Driver.Conceal"
-          <> hardline2
-          <> sepWith hardline2 (sectionDoc <$> oadts)
+          <//> go concealDefs
+          <//> "include Driver.Conceal"
+          <//> sepWith hardline2 (sectionDoc <$> oadts)
     revealDoc =
       modDoc "Reveal" $
         "open Plaintext"
-          <> hardline
-          <> "open Plaintext.Reveal"
-          <> hardline2
-          <> go revealDefs
-          <> hardline2
-          <> "include Driver.Reveal"
-          <> hardline2
-          <> sepWith hardline2 (retractionDoc <$> oadts)
+          </> "open Plaintext.Reveal"
+          <//> go revealDefs
+          <//> "include Driver.Reveal"
+          <//> sepWith hardline2 (retractionDoc <$> oadts)
     modDoc name body =
       align $
         "module"
           <+> name
           <+> "= struct"
-            <> hardline
-            <> indent body
-            <> hardline
-            <> "end"
+          </> indent body
+          </> "end"
     go :: (forall a. Defs a) -> Doc
     go defs = runCuteM options $ withExprNamePrefix $ toOCamlDefs defs
 
@@ -263,8 +250,7 @@ toOCaml options Program {..} =
             <+> s <> "_"
             <+> "="
             <+> s
-              <> hardline
-              <> "let"
+            </> "let"
             <+> s
             <+> "k x ="
             <+> parens
@@ -272,8 +258,7 @@ toOCaml options Program {..} =
                   <+> parens (s <> "_" <+> "k")
                   <+> "x"
               )
-              <> hardline
-              <> "let"
+            </> "let"
             <+> s <> "_for"
             <+> "k party ="
             <+> parens
@@ -287,8 +272,7 @@ toOCaml options Program {..} =
             <+> r <> "_"
             <+> "="
             <+> r
-              <> hardline
-              <> "let"
+            </> "let"
             <+> r
             <+> parens "k, a"
             <+> "= obliv_array_reveal_with"
@@ -461,8 +445,7 @@ toOCamlLet binderDoc rhsDoc bodyDoc =
           <> line
           <> "in"
       )
-      <> hardline
-      <> bodyDoc
+      </> bodyDoc
 
 toOCamlTuple :: [Doc] -> Doc
 toOCamlTuple = parens . align . sepWith (comma <> line)

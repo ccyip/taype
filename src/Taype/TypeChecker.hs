@@ -112,8 +112,9 @@ typing e@GV {..} Nothing =
       case poly of
         PolyT _ ->
           err
-            [ [DD "Type polymorphic functions (OADT match instances)",
-               DD "are not allowed to be called directly (yet)"]
+            [ [ DD "Type polymorphic functions (OADT match instances)",
+                DD "are not allowed to be called directly (yet)"
+              ]
             ]
         _ -> pass
       return (ty, e)
@@ -1657,7 +1658,7 @@ preCheckDef defs name def = do
       viewTy' <- checkKind viewTy PublicK
       checkAvailInsts loc
       pubName' <- inferPubName loc
-      return OADTDef {pubName = pubName', viewTy = viewTy',..}
+      return OADTDef {pubName = pubName', viewTy = viewTy', ..}
     _ -> oops "Pre-checking constructor or builtin definitions"
   where
     inferPubName loc = do
@@ -1929,8 +1930,7 @@ extendGCtx1 gctx name def =
         "Definition"
           <+> dquotes (pretty name)
           <+> "has already been defined at"
-            <> hardline
-            <> pretty (renderFancyLocation file code (getDefLoc def'))
+          </> pretty (renderFancyLocation file code (getDefLoc def'))
     _ -> return $ insertGCtx name def gctx
 
 extendGCtx ::
@@ -2040,12 +2040,8 @@ reportDoc dss = do
   tctxDoc <- cutie tctx
   return $
     doc
-      <> hardline
-      <> hardline
-      <> hang ("When checking expression" <> colon <> sep1 curDoc)
-      <> hardline
-      <> hardline
-      <> tctxDoc
+      <//> hang ("When checking expression" <> colon <> sep1 curDoc)
+      <//> tctxDoc
 
 renderName :: Name -> TcM Text
 renderName x = do

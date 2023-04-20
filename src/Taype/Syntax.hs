@@ -951,7 +951,7 @@ cuteDefDoc options name = \case
         (x, body) <- unbind1NameOrBinder binder bnd
         binderDoc <- cuteBinder x (Just viewTy)
         bodyDoc <- cute body
-        return $ parens binderDoc <+> equals <> hardline <> bodyDoc
+        return $ parens binderDoc <+> equals </> bodyDoc
   _ -> oops "Builtin functions or constructors in the definitions"
   where
     go = runCuteM options
