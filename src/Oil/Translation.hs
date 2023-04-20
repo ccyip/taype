@@ -137,11 +137,9 @@ toOilExpr T.OProj {..} = do
   lSize <- toOilSize leftTy
   rSize <- toOilSize rightTy
   return $ case projKind of
-    TagP ->
-      -- The tag is at the end of the payload.
-      GV aSlice @@ [e, GV (internalName "max") @@ [lSize, rSize], tSize]
-    LeftP -> GV aSlice @@ [e, ILit 0, lSize]
-    RightP -> GV aSlice @@ [e, ILit 0, rSize]
+    TagP -> GV aSlice @@ [e, ILit 0, tSize]
+    LeftP -> GV aSlice @@ [e, tSize, lSize]
+    RightP -> GV aSlice @@ [e, tSize, rSize]
 toOilExpr _ = oops "Not a term in core taype ANF"
 
 -- | Translate a taype oblivious type to the OIL expression representing its
@@ -291,7 +289,7 @@ oblivInjDef tag = runFreshM $ do
           GV (sectionName (oblivName "int")) @@ [if tag then ILit 1 else ILit 0]
         )
       ]
-    $ GV aConcat @@ [V d, V t]
+    $ GV aConcat @@ [V t, V d]
 
 ----------------------------------------------------------------
 -- Translating definitions
