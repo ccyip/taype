@@ -1,13 +1,13 @@
 open Sexplib
 open Taype_driver
 
-let this_party : party ref = ref PublicP
+let this_party : party ref = ref Party.Public
 let stat : int ref = ref (-1)
 
 let party_of_string = function
-  | "public" -> PublicP
-  | "alice" -> PrivateP 1
-  | "bob" -> PrivateP 2
+  | "public" -> Party.Public
+  | "alice" -> Party.Private 1
+  | "bob" -> Party.Private 2
   | _ -> failwith "Unknown party: only supports public, alice, and bob"
 
 let driver_of_string = function
@@ -26,8 +26,8 @@ let parse_options () =
 let get_public of_sexp =
   let party, s = scan_line () in
   match party with
-  | PublicP -> Sexp.of_string_conv_exn s of_sexp
-  | PrivateP _ -> failwith "Input party is not public"
+  | Party.Public -> Sexp.of_string_conv_exn s of_sexp
+  | Party.Private _ -> failwith "Input party is not public"
 
 let get_public_int () = get_public Conv.int_of_sexp
 let get_public_bool () = get_public Conv.bool_of_sexp
@@ -50,7 +50,7 @@ module Setup (Driver : S) = struct
 
   let get_private of_sexp sec sec_for =
     let party, s = scan_line () in
-    if !this_party = party || !this_party = PublicP then
+    if !this_party = party || !this_party = Party.Public then
       sec (Sexp.of_string_conv_exn s of_sexp)
     else sec_for party
 
