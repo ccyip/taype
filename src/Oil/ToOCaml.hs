@@ -262,8 +262,9 @@ toOCaml options Program {..} =
             <+> s <> "_for"
             <+> "k party ="
             <+> parens
-              ( "k, obliv_array_new_for party"
+              ( "k, obliv_array_new_for"
                   <+> parens (oadt <+> "k")
+                  <+> "party"
               )
 
     retractionDoc OADTInfo {..} =
