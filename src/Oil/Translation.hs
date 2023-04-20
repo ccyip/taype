@@ -311,13 +311,23 @@ toOilProgram options@Options {..} defs = do
     Program
       { mainDefs = fromClosedDefs $ simp mainDefs',
         concealDefs = fromClosedDefs $ simp concealDefs',
-        revealDefs = fromClosedDefs $ simp revealDefs'
+        revealDefs = fromClosedDefs $ simp revealDefs',
+        ..
       }
   where
     go revealing =
       secondF $ unfoldBuiltin . runTslM Env {..} . toOilDef
     (mainDefs, revealDefs) = partition (isSafe . snd) defs
-    concealDefs = filterConceal defs
+    concealDefs = filterConceal defs oadts
+
+    oadts =
+      [ OADTInfo
+          { section = sectionName oadtName,
+            retraction = retractionName oadtName,
+            ..
+          }
+        | (oadtName, T.OADTDef {}) <- defs
+      ]
 
     isSafe T.FunDef {label = LeakyL} = False
     isSafe _ = True
@@ -345,13 +355,12 @@ toOilDef T.ADTDef {..} = do
   return ADTDef {ctors = ctors'}
 toOilDef _ = oops "Translating constructor or builtin definitions"
 
-filterConceal :: T.Defs Name -> T.Defs Name
-filterConceal allDefs = [def | def@(name, _) <- defs, name `member` concealSet]
+filterConceal :: T.Defs Name -> [OADTInfo] -> T.Defs Name
+filterConceal allDefs oadts = [def | def@(name, _) <- defs, name `member` concealSet]
   where
     defs = [def | def@(_, T.FunDef {}) <- allDefs]
     (graph, fromVertex, toVertex) = graphFromEdges $ mkDepGraph defs
-    sectionDefs =
-      [name | (name, T.FunDef {..}) <- defs, T.isSection attr]
+    sectionDefs = [section | OADTInfo {..} <- oadts]
     reachableSet name =
       fromList $ maybe [] (toNames . reachable graph) $ toVertex name
     toNames vs = [name | (_, name, _) <- fromVertex <$> vs]

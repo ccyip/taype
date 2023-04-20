@@ -36,7 +36,6 @@ module Taype.Syntax
     attrOfName,
     instNamesOfOADT,
     oadtNameOfInst,
-    isSection,
 
     -- * Smart constructors
     lam_,
@@ -385,11 +384,6 @@ oadtNameOfInst = \case
   ReshapeInst {..} -> oadtName
   MatchInst {..} -> oadtName
   CoerceInst {..} -> oadtName
-
--- | Check if a definition is a section by OADT attribute.
-isSection :: OADTInstAttr -> Bool
-isSection (KnownInst (SectionInst _)) = True
-isSection _ = False
 
 ----------------------------------------------------------------
 -- Instances of expressions and definitions

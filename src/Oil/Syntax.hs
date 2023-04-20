@@ -24,6 +24,7 @@ module Oil.Syntax
     NamedDef,
     Defs,
     Program (..),
+    OADTInfo (..),
 
     -- * Smart constructors
     Apply (..),
@@ -144,7 +145,14 @@ type Defs a = [NamedDef a]
 data Program = Program
   { mainDefs :: forall a. Defs a,
     concealDefs :: forall a. Defs a,
-    revealDefs :: forall a. Defs a
+    revealDefs :: forall a. Defs a,
+    oadts :: [OADTInfo]
+  }
+
+data OADTInfo = OADTInfo
+  { oadtName :: Text,
+    section :: Text,
+    retraction :: Text
   }
 
 ----------------------------------------------------------------
