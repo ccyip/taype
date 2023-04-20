@@ -241,6 +241,19 @@ boolSection = runFreshM $ do
     lamB b (Just "b") $
       GV (sectionName (oblivName "int")) @@ [ite_ (V b) (ILit 1) (ILit 0)]
 
+-- | Build a boolean retraction function.
+boolRetraction :: Expr Name
+boolRetraction = runFreshM $ do
+  a <- fresh
+  return $
+    lamB a (Just "a") $
+      GV "not"
+        @@ [ GV "=="
+               @@ [ GV (retractionName (oblivName "int")) @@ [V a],
+                    ILit 0
+                  ]
+           ]
+
 -- | Build an oblivious injection.
 --
 -- The argument indicates whether it is left or right injection.
@@ -361,6 +374,7 @@ unfoldBuiltin = runFreshM . transformBiM go
     go e@App {fn = GV {..}, ..} =
       if
           | ref == sectionName (oblivName "bool") -> unfoldWith boolSection
+          | ref == retractionName (oblivName "bool") -> unfoldWith boolRetraction
           | ref == oblivName "inl" -> unfoldWith $ oblivInjDef True
           | ref == oblivName "inr" -> unfoldWith $ oblivInjDef False
           | otherwise -> return e
