@@ -2019,18 +2019,18 @@ err dss = do
   err_ loc doc
 
 warn :: [[D]] -> TcM ()
-warn dss = do
-  Env {..} <- ask
-  doc <- reportDoc dss
-  printDoc options $
-    runCuteM options $
-      cute $
-        Err
-          { errCategory = "Warning",
-            errClass = WarningC,
-            errLoc = loc,
-            errMsg = doc
-          }
+warn dss =
+  ask >>= \Env {..} -> unless (optQuiet options) $ do
+    doc <- reportDoc dss
+    printDoc options $
+      runCuteM options $
+        cute $
+          Err
+            { errCategory = "Warning",
+              errClass = WarningC,
+              errLoc = loc,
+              errMsg = doc
+            }
 
 reportDoc :: [[D]] -> TcM Doc
 reportDoc dss = do

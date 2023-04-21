@@ -29,6 +29,8 @@ module Taype.Common
     commentDelim,
     oblivAccent,
     oblivName,
+    ppxAccent,
+    ppxName,
     psiAccent,
     psiName,
     instInfix,
@@ -66,6 +68,7 @@ data Options = Options
     optNoFlattenLets :: Bool,
     optNamePrefix :: Text,
     optNoFiles :: Bool,
+    optQuiet :: Bool,
     optFlagNoOptimization :: Bool,
     optFlagNoSimplify :: Bool,
     optFlagNoTupling :: Bool,
@@ -182,6 +185,13 @@ oblivAccent = "~"
 
 oblivName :: Text -> Text
 oblivName = (oblivAccent <>)
+
+-- | Ppx accent
+ppxAccent :: Text
+ppxAccent = "%"
+
+ppxName :: Text -> Text
+ppxName = (ppxAccent <>)
 
 -- | Psi type accent
 psiAccent :: Text
