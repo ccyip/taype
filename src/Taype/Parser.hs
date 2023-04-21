@@ -357,16 +357,6 @@ grammar = mdo
       choice
         [ -- Application
           pApp app_ pAtomExpr,
-          -- Oblivious injection
-          do
-            ~(loc, tag) <- pLocatedOInj
-            expr <- pAtomExpr
-            return Loc {expr = oinj_ tag expr,..},
-          -- Oblivious projection
-          do
-            ~(loc, tag) <- pLocatedOProj
-            expr <- pAtomExpr
-            return Loc {expr = oproj_ tag expr, ..},
           -- Next precedence
           pAtomExpr
         ]
@@ -390,6 +380,16 @@ grammar = mdo
           pPair (Pair OblivP) L.LOParen,
           -- Dependent pair (Psi type)
           pPair (Pair PsiP) L.LPParen,
+          -- Oblivious injection
+          do
+            ~(loc, tag) <- pLocatedOInj
+            expr <- pAtomExpr
+            return Loc {expr = oinj_ tag expr,..},
+          -- Oblivious projection
+          do
+            ~(loc, tag) <- pLocatedOProj
+            expr <- pAtomExpr
+            return Loc {expr = oproj_ tag expr, ..},
           -- Ascription
           pParen $ do
             expr <- pExpr
