@@ -332,8 +332,8 @@ typing Pair {pairKind, ..} mt | pairKind == OblivP || pairKind == PublicP = do
   (leftTy', left') <- typing left mLeftTy
   (rightTy', right') <- typing right mRightTy
   when (pairKind == OblivP && isNothing mt) $ do
-    void $ checkKind leftTy' OblivK
-    void $ checkKind rightTy' OblivK
+    oblivKinded leftTy'
+    oblivKinded rightTy'
   xl <- fresh
   xr <- fresh
   return
@@ -562,7 +562,7 @@ typing OIte {..} mt = do
       checkPoly
       put $ PolyT MergeableC
       return SafeL
-    _ -> (checkKind t' OblivK $> SafeL) `catchError` const (return LeakyL)
+    _ -> return $ if isOblivKinded t' then SafeL else LeakyL
   checkLabel label'
   x <- fresh
   return
@@ -612,7 +612,7 @@ typing OMatch {..} mt = do
       checkPoly
       put $ PolyT MergeableC
       return SafeL
-    _ -> (checkKind t' OblivK $> SafeL) `catchError` const (return LeakyL)
+    _ -> return $ if isOblivKinded t' then SafeL else LeakyL
   checkLabel label'
   x <- fresh
   y <- fresh
@@ -635,8 +635,12 @@ typing OMatch {..} mt = do
           }
     )
 typing Arb {oblivTy = Nothing} (Just t) = do
-  t' <- checkKind t OblivK
-  return (t', Arb {oblivTy = Just t'})
+  oblivKinded t
+  return (t, Arb {oblivTy = Just t})
+typing Ppx {..} Nothing = do
+  ppx' <- biplateM kinded ppx
+  (t', _) <- typingPpx ppx'
+  return (t', Ppx {ppx = ppx'})
 typing Loc {..} mt = withLoc loc $ withCur expr $ typing expr mt
 typing Asc {..} Nothing = do
   ty' <- kinded ty
@@ -968,7 +972,7 @@ kinding t (Just k) = do
   (k', t') <- inferKind t
   unless (k' `leq` k) $
     err
-      [ [DD "Could not match kind"],
+      [ [DH "Could not match kind", DC t],
         [DH "Expected", DC k'],
         [DH "Got", DC k]
       ]
@@ -992,6 +996,19 @@ checkKind t k = kinding t (Just k) <&> snd
 -- | Make sure a type is kinded, but do not care what the kind is.
 kinded :: Ty Name -> TcM (Ty Name)
 kinded t = inferKind t <&> snd
+
+-- | Type check and elaborate a preprocessor.
+--
+-- The type parameters of the preprocessors must be well-kinded and in core
+-- Taype ANF.
+--
+-- The returned type and elaborated expressions are well-kinded / well-typed and
+-- in core Taype ANF.
+typingPpx :: Ppx Name -> TcM (Ty Name, Expr Name)
+typingPpx _ = err [[DD "Not implemented yet"]]
+
+elabPpx :: Ppx Name -> TcM (Expr Name)
+elabPpx ppx = snd <$> typingPpx ppx
 
 ----------------------------------------------------------------
 -- Equality check
@@ -1362,6 +1379,25 @@ isArrow Pi {..} = do
   return (ty : argTs, t)
 isArrow Loc {..} = isArrow expr
 isArrow t = Just ([], t)
+
+-- | Check if a well-kinded type in core Taype ANF is oblivious.
+isOblivKinded :: Ty Name -> Bool
+isOblivKinded = \case
+  TUnit -> True
+  TBool {olabel = OblivL} -> True
+  TInt {olabel = OblivL} -> True
+  Pair {pairKind = OblivP} -> True
+  OSum {} -> True
+  Let {} -> True
+  Ite {} -> True
+  Match {} -> True
+  PMatch {} -> True
+  _ -> False
+
+oblivKinded :: Ty Name -> TcM ()
+oblivKinded t =
+  unless (isOblivKinded t) $
+    err [[DH "Expected an oblivious type", DC t]]
 
 -- | Join the pattern matching alternatives and the corresponding ADT's
 -- constructors list.
