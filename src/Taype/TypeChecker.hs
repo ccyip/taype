@@ -823,6 +823,20 @@ depType typeNoDep inferDep checkDep mt proj =
             `catchError` \_ -> throwError checkErr
       _ -> inferDep `catchError` \_ -> throwError noDepErr
 
+-- | Infer the type of an expression.
+infer :: Expr Name -> TcM (Ty Name, Expr Name)
+infer e = typing e Nothing
+
+-- | Check the type of an expression.
+check :: Expr Name -> Ty Name -> TcM (Expr Name)
+check e t = typing e (Just t) <&> snd
+
+checkArity :: AppKind -> Text -> [b] -> [c] -> TcM ()
+checkArity appKind ref args paraTypes =
+  let m = length args
+      n = length paraTypes
+   in unless (m == n) $ errArity appKind ref m n
+
 -- | Kind check a type bidirectionally.
 --
 -- It is in inference mode if the second argument is 'Nothing', otherwise in
@@ -967,14 +981,6 @@ kinding _ Nothing =
       [DD "Are you sure this is a type?"]
     ]
 
--- | Infer the type of an expression.
-infer :: Expr Name -> TcM (Ty Name, Expr Name)
-infer e = typing e Nothing
-
--- | Check the type of an expression.
-check :: Expr Name -> Ty Name -> TcM (Expr Name)
-check e t = typing e (Just t) <&> snd
-
 -- | Infer the kind of a type.
 inferKind :: Ty Name -> TcM (Kind, Ty Name)
 inferKind t = kinding t Nothing
@@ -986,12 +992,6 @@ checkKind t k = kinding t (Just k) <&> snd
 -- | Make sure a type is kinded, but do not care what the kind is.
 kinded :: Ty Name -> TcM (Ty Name)
 kinded t = inferKind t <&> snd
-
-checkArity :: AppKind -> Text -> [b] -> [c] -> TcM ()
-checkArity appKind ref args paraTypes =
-  let m = length args
-      n = length paraTypes
-   in unless (m == n) $ errArity appKind ref m n
 
 ----------------------------------------------------------------
 -- Equality check
