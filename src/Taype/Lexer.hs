@@ -69,6 +69,7 @@ data Token
   | Ident Text
   | Infix Text
   | TV
+  | Arb
   | ItePpx
   | CtorPpx Text
   | MatchPpx
@@ -148,6 +149,7 @@ pToken =
       RParen <$ symbol ")",
       Psi <$ symbol psiAccent,
       TV <$ symbol "'a",
+      Arb <$ symbol (oblivAccent <> oblivAccent),
       pPpx <?> "preprocessor"
     ]
 

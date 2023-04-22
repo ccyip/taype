@@ -140,6 +140,10 @@ toOilExpr T.OProj {..} = do
     TagP -> GV aSlice @@ [e, ILit 0, tSize]
     LeftP -> GV aSlice @@ [e, tSize, lSize]
     RightP -> GV aSlice @@ [e, tSize, rSize]
+toOilExpr T.Arb {..} = do
+  let ty = fromJust oblivTy
+  size <- toOilSize ty
+  return $ GV aNew @@ [size]
 toOilExpr _ = oops "Not a term in core taype ANF"
 
 -- | Translate a taype oblivious type to the OIL expression representing its

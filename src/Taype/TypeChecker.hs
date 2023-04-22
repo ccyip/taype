@@ -634,6 +634,9 @@ typing OMatch {..} mt = do
             right = rBody'
           }
     )
+typing Arb {oblivTy = Nothing} (Just t) = do
+  t' <- checkKind t OblivK
+  return (t', Arb {oblivTy = Just t'})
 typing Loc {..} mt = withLoc loc $ withCur expr $ typing expr mt
 typing Asc {..} Nothing = do
   ty' <- kinded ty

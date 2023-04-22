@@ -216,6 +216,8 @@ data Expr a
     -- We do not support general type polymorphism yet. This (unique) type
     -- variable is only used for defining OADT match instances.
     TV
+  | -- | Arbitrary oblivious value
+    Arb {oblivTy :: Maybe (Ty a)}
   | -- | Preprocessor
     Ppx {ppx :: Ppx a}
   deriving stock (Functor, Foldable, Traversable)
@@ -482,6 +484,7 @@ instance Monad Expr where
   Asc {..} >>= f = Asc {ty = ty >>= f, expr = expr >>= f, ..}
   Loc {..} >>= f = Loc {expr = expr >>= f, ..}
   TV >>= _ = TV
+  Arb {..} >>= f = Arb {oblivTy = oblivTy <&> (>>= f)}
   Ppx {..} >>= f = Ppx {ppx = ppx >>>= f}
 
 instance Bound PpxB where
@@ -690,6 +693,9 @@ instance PlateM (Expr Name) where
   plateM f Loc {..} = do
     expr' <- f expr
     return Loc {expr = expr', ..}
+  plateM f Arb {..} = do
+    oblivTy' <- mapM f oblivTy
+    return Arb {oblivTy = oblivTy'}
   plateM f Ppx {..} = do
     ppx' <- biplateM f ppx
     return Ppx {ppx = ppx'}
@@ -990,6 +996,13 @@ instance Cute (Expr Text) where
             <> sep1 ((if trustMe then colon <> colon else colon) <+> tyDoc)
   cute Loc {..} = cute expr
   cute TV = "'a"
+  cute Arb {..} = case oblivTy of
+    Just ty -> do
+      tyDoc <- cute ty
+      return $ parens $ arbDoc <> tyDoc
+    _ -> return arbDoc
+    where
+      arbDoc = pretty (oblivAccent <> oblivAccent)
   cute Ppx {..} = cute ppx
 
 -- | Pretty printer for preprocessors
@@ -1099,5 +1112,6 @@ instance HasPLevel (Expr a) where
     OInj {} -> 10
     Asc {} -> 0
     Loc {..} -> plevel expr
+    Arb {} -> 0
     Ppx {} -> 0
     _ -> 90

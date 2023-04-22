@@ -390,6 +390,10 @@ grammar = mdo
             ~(loc, tag) <- pLocatedOProj
             expr <- pAtomExpr
             return Loc {expr = oproj_ tag expr, ..},
+          -- Arbitrary oblivious value
+          do
+            loc <- pLocatedToken L.Arb
+            return Loc {expr = Arb Nothing, ..},
           -- Preprocessor
           do
             ~(loc, ppx) <- pLocatedPpx
@@ -661,6 +665,7 @@ renderToken = \case
   L.Ident ident -> "identifier" <+> dquotes (pretty ident)
   L.Infix ident -> "infix" <+> dquotes (pretty ident)
   L.TV -> "'a"
+  L.Arb -> pretty $ oblivAccent <> oblivAccent
   L.ItePpx -> pretty $ ppxName "if"
   L.MatchPpx -> pretty $ ppxName "match"
   L.CoercePpx -> pretty $ ppxName "coerce"
