@@ -18,6 +18,8 @@ module Taype.Syntax
   ( -- * Syntax
     Expr (..),
     Ty,
+    Ppx,
+    PpxB (..),
     Kind (..),
     Def,
     DefB (..),
@@ -73,8 +75,8 @@ import Bound
 import Control.Monad
 import Data.Char
 import Data.Functor.Classes
-import Data.Text qualified as T
 import Data.List (foldr1)
+import Data.Text qualified as T
 import Relude.Extra (bimapBoth, traverseBoth)
 import Taype.Binder
 import Taype.Common
@@ -214,10 +216,28 @@ data Expr a
     -- We do not support general type polymorphism yet. This (unique) type
     -- variable is only used for defining OADT match instances.
     TV
+  | -- | Preprocessor
+    Ppx {ppx :: Ppx a}
   deriving stock (Functor, Foldable, Traversable)
 
 -- | A type in taype is also an expression.
 type Ty = Expr
+
+-- | Preprocessors
+type Ppx = PpxB Ty
+
+data PpxB f a
+  = -- | Conditional
+    ItePpx {condTy :: f a, retTy :: f a}
+  | -- | Constructor
+    CtorPpx {ctor :: Text, retTy :: f a}
+  | -- | Pattern matching
+    MatchPpx {condTy :: f a, retTy :: f a}
+  | -- | Builtin operations
+    BuiltinPpx {fn :: Text, retTy :: f a}
+  | -- | Coercion
+    CoercePpx {fromTy :: f a, toTy :: f a}
+  deriving stock (Functor, Foldable, Traversable)
 
 -- | Kinds
 data Kind = AnyK | PublicK | OblivK | MixedK
@@ -462,6 +482,14 @@ instance Monad Expr where
   Asc {..} >>= f = Asc {ty = ty >>= f, expr = expr >>= f, ..}
   Loc {..} >>= f = Loc {expr = expr >>= f, ..}
   TV >>= _ = TV
+  Ppx {..} >>= f = Ppx {ppx = ppx >>>= f}
+
+instance Bound PpxB where
+  ItePpx {..} >>>= f = ItePpx {condTy = condTy >>= f, retTy = retTy >>= f}
+  CtorPpx {..} >>>= f = CtorPpx {retTy = retTy >>= f, ..}
+  MatchPpx {..} >>>= f = MatchPpx {condTy = condTy >>= f, retTy = retTy >>= f}
+  BuiltinPpx {..} >>>= f = BuiltinPpx {retTy = retTy >>= f, ..}
+  CoercePpx {..} >>>= f = CoercePpx {fromTy = fromTy >>= f, toTy = toTy >>= f}
 
 instance Bound DefB where
   FunDef {..} >>>= f = FunDef {ty = ty >>= f, expr = expr >>= f, ..}
@@ -546,9 +574,31 @@ instance Eq1 Expr where
   liftEq eq Loc {expr} expr' = liftEq eq expr expr'
   liftEq eq expr' Loc {expr} = liftEq eq expr' expr
   liftEq _ TV TV = True
+  liftEq eq Ppx {ppx} Ppx {ppx = ppx'} = liftEq eq ppx ppx'
+  liftEq _ _ _ = False
+
+instance Eq1 Ppx where
+  liftEq eq ItePpx {condTy, retTy} ItePpx {condTy = condTy', retTy = retTy'} =
+    liftEq eq condTy condTy' && liftEq eq retTy retTy'
+  liftEq eq CtorPpx {ctor, retTy} CtorPpx {ctor = ctor', retTy = retTy'} =
+    ctor == ctor' && liftEq eq retTy retTy'
+  liftEq
+    eq
+    MatchPpx {condTy, retTy}
+    MatchPpx {condTy = condTy', retTy = retTy'} =
+      liftEq eq condTy condTy' && liftEq eq retTy retTy'
+  liftEq eq BuiltinPpx {fn, retTy} BuiltinPpx {fn = fn', retTy = retTy'} =
+    fn == fn' && liftEq eq retTy retTy'
+  liftEq
+    eq
+    CoercePpx {fromTy, toTy}
+    CoercePpx {fromTy = fromTy', toTy = toTy'} =
+      liftEq eq fromTy fromTy' && liftEq eq toTy toTy'
   liftEq _ _ _ = False
 
 instance (Eq a) => Eq (Expr a) where (==) = eq1
+
+instance (Eq a) => Eq (Ppx a) where (==) = eq1
 
 instance PlateM (Expr Name) where
   plateM f Let {..} = do
@@ -640,7 +690,30 @@ instance PlateM (Expr Name) where
   plateM f Loc {..} = do
     expr' <- f expr
     return Loc {expr = expr', ..}
+  plateM f Ppx {..} = do
+    ppx' <- biplateM f ppx
+    return Ppx {ppx = ppx'}
   plateM _ e = return e
+
+instance BiplateM (Ppx Name) (Ty Name) where
+  biplateM f ItePpx {..} = do
+    condTy' <- f condTy
+    retTy' <- f retTy
+    return ItePpx {condTy = condTy', retTy = retTy'}
+  biplateM f CtorPpx {..} = do
+    retTy' <- f retTy
+    return CtorPpx {retTy = retTy', ..}
+  biplateM f MatchPpx {..} = do
+    condTy' <- f condTy
+    retTy' <- f retTy
+    return MatchPpx {condTy = condTy', retTy = retTy'}
+  biplateM f BuiltinPpx {..} = do
+    retTy' <- f retTy
+    return BuiltinPpx {retTy = retTy', ..}
+  biplateM f CoercePpx {..} = do
+    fromTy' <- f fromTy
+    toTy' <- f toTy
+    return CoercePpx {fromTy = fromTy', toTy = toTy'}
 
 instance BiplateM (Def Name) (Expr Name) where
   biplateM f FunDef {..} = do
@@ -917,6 +990,18 @@ instance Cute (Expr Text) where
             <> sep1 ((if trustMe then colon <> colon else colon) <+> tyDoc)
   cute Loc {..} = cute expr
   cute TV = "'a"
+  cute Ppx {..} = cute ppx
+
+-- | Pretty printer for preprocessors
+instance Cute (Ppx Text) where
+  cute = \case
+    ItePpx {..} -> go "if" [condTy, retTy]
+    CtorPpx {..} -> go ctor [retTy]
+    MatchPpx {..} -> go "match" [condTy, retTy]
+    BuiltinPpx {..} -> go fn [retTy]
+    CoercePpx {..} -> go "coerce" [fromTy, toTy]
+    where
+      go name = cuteApp_ (pretty (ppxName name))
 
 -- | Pretty printer for taype definitions
 cuteDefsDoc :: Options -> Defs Text -> Doc
@@ -1014,4 +1099,5 @@ instance HasPLevel (Expr a) where
     OInj {} -> 10
     Asc {} -> 0
     Loc {..} -> plevel expr
+    Ppx {} -> 0
     _ -> 90

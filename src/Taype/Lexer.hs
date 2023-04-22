@@ -20,13 +20,13 @@ where
 
 import Control.Monad.Error.Class
 import Data.Char
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Taype.Common
 import Taype.Cute hiding (space)
 import Taype.Error
 import Text.Megaparsec hiding (Token, token, tokens)
-import qualified Text.Megaparsec.Char as C
-import qualified Text.Megaparsec.Char.Lexer as L
+import Text.Megaparsec.Char qualified as C
+import Text.Megaparsec.Char.Lexer qualified as L
 
 -- | Taype tokens
 data Token
@@ -69,6 +69,11 @@ data Token
   | Ident Text
   | Infix Text
   | TV
+  | ItePpx
+  | CtorPpx Text
+  | MatchPpx
+  | BuiltinPpx Text
+  | CoercePpx
   deriving stock (Eq, Show)
 
 -- | Token with location information
@@ -93,7 +98,7 @@ pToken =
     [ pIdent <?> "identifier",
       Arrow <$ symbol "->",
       DArrow <$ symbol "=>",
-      choice ((Infix <$>) . symbol <$> infixes <> oblivInfixes) <?> "infix",
+      choice ((Infix <$>) . symbol <$> allInfixes) <?> "infix",
       choice
         [ TUnit <$ symbol "unit",
           TBool <$ symbol "bool",
@@ -142,7 +147,8 @@ pToken =
       LPParen <$ symbol (psiName "("),
       RParen <$ symbol ")",
       Psi <$ symbol psiAccent,
-      TV <$ symbol "'a"
+      TV <$ symbol "'a",
+      pPpx <?> "preprocessor"
     ]
 
 isIdent0 :: Char -> Bool
@@ -160,8 +166,8 @@ pIdentComp = do
 
 pIdent :: Parser Token
 pIdent = lexeme . try $ do
-  comps <- sepBy1 pIdentComp $ single '#'
-  let ident = T.intercalate "#" comps
+  comps <- sepBy1 pIdentComp $ chunk instInfix
+  let ident = T.intercalate instInfix comps
   guard (ident `notElem` reserved)
   return $ Ident ident
 
@@ -170,9 +176,29 @@ pILit =
   lexeme $
     choice
       [ L.decimal,
-        try $ between (symbol "(") (symbol ")") $
-          L.signed mempty L.decimal
+        try $
+          between (symbol "(") (symbol ")") $
+            L.signed mempty L.decimal
       ]
+
+pPpx :: Parser Token
+pPpx =
+  choice
+    [ ItePpx <$ symbol (ppxName "if"),
+      MatchPpx <$ symbol (ppxName "match"),
+      CoercePpx <$ symbol (ppxName "coerce"),
+      CtorPpx <$> lexeme (try pCtorPpx),
+      BuiltinPpx <$> lexeme (try pBuiltinPpx)
+    ]
+    where
+      pCtorPpx = do
+        void $ chunk ppxAccent
+        x <- C.upperChar
+        xs <- takeWhileP Nothing isIdent
+        return $ T.cons x xs
+      pBuiltinPpx = do
+        void $ chunk ppxAccent
+        takeWhile1P Nothing (not . isSpace)
 
 -- | Reserved tokens that cannot be used for identifier
 reserved :: [Text]
@@ -218,7 +244,7 @@ pTokens :: Parser [LocatedToken]
 pTokens = space *> manyTill pLocatedToken eof
 
 -- | Taype lexer
-lex :: MonadError Err m => FilePath -> Text -> m [LocatedToken]
+lex :: (MonadError Err m) => FilePath -> Text -> m [LocatedToken]
 lex file code = liftEither $ first renderLexerError (parse pTokens file code)
 
 renderLexerError :: ParseErrorBundle Text Void -> Err
@@ -238,7 +264,7 @@ renderLexerError ParseErrorBundle {bundleErrors = err :| _} =
     showErrorItem EndOfInput = "end of input"
     proxy = Proxy :: Proxy Text
 
-printTokens :: MonadIO m => FilePath -> Text -> [LocatedToken] -> m ()
+printTokens :: (MonadIO m) => FilePath -> Text -> [LocatedToken] -> m ()
 printTokens file code tokens = mapM_ go positions
   where
     go (LocatedToken {..}, SourcePos {..}) =

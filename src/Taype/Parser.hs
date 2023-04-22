@@ -384,12 +384,16 @@ grammar = mdo
           do
             ~(loc, tag) <- pLocatedOInj
             expr <- pAtomExpr
-            return Loc {expr = oinj_ tag expr,..},
+            return Loc {expr = oinj_ tag expr, ..},
           -- Oblivious projection
           do
             ~(loc, tag) <- pLocatedOProj
             expr <- pAtomExpr
             return Loc {expr = oproj_ tag expr, ..},
+          -- Preprocessor
+          do
+            ~(loc, ppx) <- pLocatedPpx
+            return Loc {expr = Ppx {..}, ..},
           -- Ascription
           pParen $ do
             expr <- pExpr
@@ -402,6 +406,45 @@ grammar = mdo
             return Loc {expr = Asc {..}, ..},
           -- Parenthesized expression
           pParen pExpr
+        ]
+
+  -- Preprocessor
+  pLocatedPpx <-
+    rule $
+      choice
+        [ do
+            loc <- pLocatedToken L.ItePpx
+            condTy <- pType
+            retTy <- pType
+            return (loc, ItePpx {..}),
+          do
+            ~(loc, ctor) <-
+              pLocatedTerminal
+                ( \case
+                    L.CtorPpx ctor -> Just ctor
+                    _ -> Nothing
+                )
+            retTy <- pType
+            return (loc, CtorPpx {..}),
+          do
+            loc <- pLocatedToken L.MatchPpx
+            condTy <- pType
+            retTy <- pType
+            return (loc, MatchPpx {..}),
+          do
+            ~(loc, fn) <-
+              pLocatedTerminal
+                ( \case
+                    L.BuiltinPpx fn -> Just fn
+                    _ -> Nothing
+                )
+            retTy <- pType
+            return (loc, BuiltinPpx {..}),
+          do
+            loc <- pLocatedToken L.CoercePpx
+            fromTy <- pType
+            toTy <- pType
+            return (loc, CoercePpx {..})
         ]
 
   -- Type
@@ -618,3 +661,8 @@ renderToken = \case
   L.Ident ident -> "identifier" <+> dquotes (pretty ident)
   L.Infix ident -> "infix" <+> dquotes (pretty ident)
   L.TV -> "'a"
+  L.ItePpx -> pretty $ ppxName "if"
+  L.MatchPpx -> pretty $ ppxName "match"
+  L.CoercePpx -> pretty $ ppxName "coerce"
+  L.CtorPpx x -> pretty $ ppxName x
+  L.BuiltinPpx x -> pretty $ ppxName x

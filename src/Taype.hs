@@ -95,6 +95,11 @@ opts = do
       long "no-files"
         <> short 'n'
         <> help "Do not generate files"
+  optQuiet <-
+    switch $
+      long "quiet"
+        <> short 'q'
+        <> help "No warnings"
   optFlagNoOptimization <-
     switch $
       long "fno-opt"
