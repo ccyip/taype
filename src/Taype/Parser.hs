@@ -300,7 +300,7 @@ grammar = mdo
           pOrExpr
         ]
 
-  let pInfixExpr = pInfix $ \ref left right -> app_ (GV {..}) [left, right]
+  let pInfixExpr = pInfix $ \ref left right -> GV {..} @@ [left, right]
 
   -- Left-associative Boolean or
   pOrExpr <-
@@ -356,7 +356,7 @@ grammar = mdo
     rule $
       choice
         [ -- Application
-          pApp app_ pAtomExpr,
+          pApp (@@) pAtomExpr,
           -- Next precedence
           pAtomExpr
         ]
@@ -515,7 +515,7 @@ grammar = mdo
   pAppType <-
     rule $
       choice
-        [ pApp app_ pVar,
+        [ pApp (@@) pVar,
           -- Next precedence
           pAtomType
         ]

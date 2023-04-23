@@ -34,6 +34,8 @@ module Taype.Common
     psiAccent,
     psiName,
     instInfix,
+    instName1,
+    instName2,
     sectionInstName,
     sectionName,
     retractionInstName,
@@ -204,19 +206,27 @@ psiName = (psiAccent <>)
 instInfix :: Text
 instInfix = "#"
 
+-- | Make an OADT instance name
+instName1 :: Text -> Text -> Text
+instName1 x inst = x <> instInfix <> inst
+
+-- | Make a binary OADT instance name
+instName2 :: Text -> Text -> Text -> Text
+instName2 x1 x2 inst = x1 <> instInfix <> x2 <> instInfix <> inst
+
 -- | Section name
 sectionInstName :: Text
 sectionInstName = "s"
 
 sectionName :: Text -> Text
-sectionName x = x <> instInfix <> sectionInstName
+sectionName x = instName1 x sectionInstName
 
 -- | Retraction name
 retractionInstName :: Text
 retractionInstName = "r"
 
 retractionName :: Text -> Text
-retractionName x = x <> instInfix <> retractionInstName
+retractionName x = instName1 x retractionInstName
 
 -- | Internal name
 internalPrefix :: Text

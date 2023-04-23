@@ -42,11 +42,12 @@ module Taype.Syntax
     -- * Smart constructors
     lam_,
     pi_,
-    app_,
-    tapp_,
+    (@@),
+    (@@@),
     let_,
     ite_,
     oite_,
+    mux_,
     oinj_,
     oproj_,
     prod_,
@@ -55,6 +56,8 @@ module Taype.Syntax
     omatchPat_,
     pmatch_,
     pmatchPat_,
+    lam',
+    lams',
     let',
     lets',
     pmatch',
@@ -769,11 +772,13 @@ arrow_ dom cod =
 arrows_ :: [Ty a] -> Ty a -> Ty a
 arrows_ = flip $ foldr arrow_
 
-app_ :: Expr a -> [Expr a] -> Expr a
-app_ fn args = App {appKind = FunApp, ..}
+(@@) :: Expr a -> [Expr a] -> Expr a
+fn @@ args = App {appKind = FunApp, ..}
+infixl 2 @@
 
-tapp_ :: Text -> [Expr a] -> Expr a
-tapp_ fn args = App {appKind = TypeApp, fn = GV fn, ..}
+(@@@) :: Text -> [Expr a] -> Expr a
+fn @@@ args = App {appKind = TypeApp, fn = GV fn, ..}
+infixl 2 @@@
 
 let_ :: (a ~ Text) => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a -> Expr a
 let_ binder rhsTy rhs body =
@@ -788,6 +793,9 @@ ite_ cond left right = Ite {..}
 
 oite_ :: Expr a -> Expr a -> Expr a -> Expr a
 oite_ cond left right = OIte {label = LeakyL, ..}
+
+mux_ :: Expr a -> Expr a -> Expr a -> Expr a
+mux_ cond left right = OIte {label = SafeL, ..}
 
 oinj_ :: Bool -> Expr a -> Expr a
 oinj_ tag expr = OInj {injTy = Nothing, ..}
@@ -891,6 +899,17 @@ freshPatBinder (PairP loc _ _) = do
 
 ----------------------------------------------------------------
 -- Smart constructors that work with 'Name's
+
+lam' :: Name -> Ty Name -> Expr Name -> Expr Name
+lam' x t body =
+  Lam
+    { argTy = Just t,
+      binder = Nothing,
+      bnd = abstract_ x body
+    }
+
+lams' :: [(Name, Ty Name)] -> Expr Name -> Expr Name
+lams' = flip $ foldr $ uncurry lam'
 
 let' :: Name -> Ty Name -> Expr Name -> Expr Name -> Expr Name
 let' x t rhs body =

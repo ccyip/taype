@@ -314,7 +314,7 @@ typing Ite {..} mt = do
     )
 typing Pair {pairKind = pairKind@PsiP, ..} (Just t) = do
   (argTy, oadtName) <- isPsi t
-  let app x = tapp_ oadtName [V x]
+  let app x = oadtName @@@ [V x]
   left' <- check left argTy
   xl <- fresh
   right' <- check right $ let' xl argTy left' $ app xl
@@ -446,7 +446,7 @@ typing PMatch {pairKind = pairKind@PsiP, ..} mt = do
   (t, cond') <- infer cond
   (argTy, oadtName) <- withLoc_ cond $ isPsi t
   ((xl, xr), body) <- unbind2 bnd2
-  let ctx = [(xl, argTy, lBinder), (xr, tapp_ oadtName [V xl], rBinder)]
+  let ctx = [(xl, argTy, lBinder), (xr, oadtName @@@ [V xl], rBinder)]
   (bodyTy', body') <- extendCtx ctx $ typing body mt
   notAppearIn bodyTy' ctx
   x <- fresh
@@ -1003,12 +1003,157 @@ kinded t = inferKind t <&> snd
 -- Taype ANF.
 --
 -- The returned type and elaborated expressions are well-kinded / well-typed and
--- in core Taype ANF.
+-- in core Taype. However, they are not in ANF.
 typingPpx :: Ppx Name -> TcM (Ty Name, Expr Name)
-typingPpx _ = err [[DD "Not implemented yet"]]
+typingPpx = go
+  where
+    go ItePpx {..} = do
+      let t' = arrows_ [condTy, arrow_ TUnit retTy, arrow_ TUnit retTy] retTy
+      case condTy of
+        TBool {olabel = PublicL} -> do
+          b <- fresh
+          f1 <- fresh
+          f2 <- fresh
+          let e' =
+                mkLam b f1 f2 condTy retTy $
+                  ite_ (V b) (V f1 @@ [VUnit]) (V f2 @@ [VUnit])
+          return (t', e')
+        TBool {olabel = OblivL} -> do
+          e' <- goOIte retTy
+          return (t', e')
+        _ -> errFst "condition" (TBool PublicL) condTy
+    go _ = err [[DD "Not implemented yet"]]
 
-elabPpx :: Ppx Name -> TcM (Expr Name)
-elabPpx ppx = snd <$> typingPpx ppx
+    mkLam b f1 f2 condTy retTy =
+      lams'
+        [ (b, condTy),
+          (f1, arrow_ TUnit retTy),
+          (f2, arrow_ TUnit retTy)
+        ]
+    goOIte ty = do
+      b <- fresh
+      f1 <- fresh
+      f2 <- fresh
+      body <- goOIte_ b f1 f2 ty
+      return $ mkLam b f1 f2 (TBool OblivL) ty body
+    goOIte_ b f1 f2 = \case
+      Psi {..} -> do
+        (joinName, reshapeName) <-
+          resolveJoin oadtName >>= \case
+            Just p -> return p
+            _ ->
+              err
+                [ [ DD $
+                      pretty oadtName
+                        <+> "does not have join and reshape instances"
+                  ]
+                ]
+        k1 <- fresh
+        k2 <- fresh
+        k <- fresh
+        x1 <- fresh
+        x2 <- fresh
+        return $
+          pmatch' PsiP (V f1 @@ [VUnit]) k1 x1 $
+            pmatch' PsiP (V f2 @@ [VUnit]) k2 x2 $
+              let' k (fromJust viewTy) (GV joinName @@ [V k1, V k2]) $
+                Pair
+                  { pairKind = PsiP,
+                    left = V k,
+                    right =
+                      mux_
+                        (V b)
+                        (GV reshapeName @@ [V k1, V k, V x1])
+                        (GV reshapeName @@ [V k1, V k, V x2])
+                  }
+      Prod {olabel = PublicL, ..} -> do
+        lIte <- goOIte left
+        rIte <- goOIte right
+        xl1 <- fresh
+        xl2 <- fresh
+        xr1 <- fresh
+        xr2 <- fresh
+        u <- fresh
+        return $
+          pmatch' PublicP (V f1 @@ [VUnit]) xl1 xr1 $
+            pmatch' PublicP (V f2 @@ [VUnit]) xl2 xr2 $
+              Pair
+                { pairKind = PublicP,
+                  left =
+                    lIte
+                      @@ [ V b,
+                           lam' u TUnit (V xl1),
+                           lam' u TUnit (V xl2)
+                         ],
+                  right =
+                    rIte
+                      @@ [ V b,
+                           lam' u TUnit (V xr1),
+                           lam' u TUnit (V xr2)
+                         ]
+                }
+      ty@Pi {} -> case isArrow ty of
+        Just (argTs, retTy) -> do
+          rIte <- goOIte retTy
+          xs <- freshes $ length argTs
+          u <- fresh
+          return $
+            lams' (zip xs argTs) $
+              rIte
+                @@ [ V b,
+                     lam' u TUnit $ V f1 @@ (VUnit : (V <$> xs)),
+                     lam' u TUnit $ V f2 @@ (VUnit : (V <$> xs))
+                   ]
+        _ -> errSnd "cannot be a dependent type" ty
+      ty | isOblivKinded ty -> do
+        u <- fresh
+        return $
+          lets'
+            [(u, TUnit, VUnit)]
+            OIte
+              { label = SafeL,
+                cond = V b,
+                left = V f1 @@ [V u],
+                right = V f2 @@ [V u]
+              }
+      ty -> errSnd "is not mergeable" ty
+
+    errFst :: Doc -> Ty Name -> Ty Name -> TcM a
+    errFst what ty ty' =
+      err
+        [ [ DH $
+              "The first type argument"
+                <+> parens what
+                <+> "is not compatible with",
+            DC ty
+          ],
+          [DH "Got", DC ty']
+        ]
+    errSnd :: Doc -> Ty Name -> TcM a
+    errSnd wrong ty' =
+      err
+        [ [ DD $
+              "The second type argument (return type)" <+> wrong
+          ],
+          [DH "Got", DC ty']
+        ]
+
+-- elabPpx :: Ppx Name -> TcM (Expr Name)
+-- elabPpx ppx = snd <$> typingPpx ppx
+
+----------------------------------------------------------------
+-- OADT instance resolution
+
+resolveJoin :: (MonadReader Env m) => Text -> m (Maybe (Text, Text))
+resolveJoin oadtName =
+  let joinName = instName1 oadtName "join"
+      reshapeName = instName1 oadtName "reshape"
+   in lookupGSig joinName >>= \case
+        Just _ ->
+          lookupGSig reshapeName >>= \case
+            Just _ -> return $ Just (joinName, reshapeName)
+            _ -> return Nothing
+        _ -> return Nothing
 
 ----------------------------------------------------------------
 -- Equality check
@@ -1758,12 +1903,12 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
         equateSig $
           pi' k viewTy $
             arrow_ (GV pubName) $
-              tapp_ oadtName [V k]
+              oadtName @@@ [V k]
       RetractionInst {..} -> do
         k <- fresh
         equateSig $
           pi' k viewTy $
-            arrow_ (tapp_ oadtName [V k]) $
+            arrow_ (oadtName @@@ [V k]) $
               GV pubName
       JoinInst {} -> do
         equateSig $ arrows_ [viewTy, viewTy] viewTy
@@ -1773,7 +1918,7 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
         equateSig $
           pi' k viewTy $
             pi' k' viewTy $
-              arrow_ (tapp_ oadtName [V k]) (tapp_ oadtName [V k'])
+              arrow_ (oadtName @@@ [V k]) (oadtName @@@ [V k'])
       CoerceInst {..} -> do
         (pubName', viewTy') <- isOADTDef oadtTo
         unless (pubName == pubName') $
