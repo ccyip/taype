@@ -50,13 +50,15 @@ process options@Options {optFile = file, optCode = code, ..} = do
       srcDoc = cuteDefsDoc options srcDefs
   when optPrintSource $ printDoc options srcDoc
   gctx <- checkDefs options srcDefs
-  let coreDefs = defsFromGCtx gctx names
-      coreDefs' = if optReadable then readableDefs coreDefs else coreDefs
-      coreDoc =
-        cuteDefsDoc options (fromClosedDefs coreDefs')
-  when optPrintCore $ printDoc options coreDoc
-  printToFile "tpc" coreDoc
-  prog <- lift $ toOilProgram options coreDefs
+  let coreDefs0 = defsFromGCtx gctx names
+  processCore 0 coreDefs0
+  -- Stage 1 derives lift proprocessor, which is a placeholder for now.
+  let coreDefs1 = coreDefs0
+  processCore 1 coreDefs1
+  -- Stage 2 elaborates remaining proprocessors.
+  coreDefs2 <- elabPpxDefs options gctx coreDefs1
+  processCore 2 coreDefs2
+  prog <- lift $ toOilProgram options coreDefs2
   let oilDoc = Oil.cuteProgramDoc options prog
   when optPrintOil $ printDoc options oilDoc
   printToFile "oil" oilDoc
@@ -66,6 +68,11 @@ process options@Options {optFile = file, optCode = code, ..} = do
   where
     printToFile ext doc =
       unless optNoFiles $ printDocToFile (file -<.> ext) doc
+    processCore stage coreDefs = do
+      let coreDefs' = if optReadable then readableDefs coreDefs else coreDefs
+          coreDoc = cuteDefsDoc options (fromClosedDefs coreDefs')
+      when (optPrintCore && optStage == stage) $ printDoc options coreDoc
+      printToFile ("stage" <> show stage <> ".tpc") coreDoc
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)
@@ -116,6 +123,11 @@ opts = do
     switch $
       long "print-core"
         <> help "Whether to print the generated core taype programs"
+  optStage <-
+    option auto $
+      long "stage"
+        <> value 0
+        <> help "Which stage of core taype programs to print"
   optPrintOil <-
     switch $
       long "print-oil"

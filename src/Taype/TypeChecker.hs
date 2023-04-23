@@ -54,7 +54,7 @@
 --     ANF.
 --
 -- Other invariants for each procedure are documented in that procedure.
-module Taype.TypeChecker (checkDefs, readableDefs) where
+module Taype.TypeChecker (checkDefs, elabPpxDefs, readableDefs) where
 
 import Algebra.Lattice
 import Algebra.PartialOrd
@@ -638,6 +638,15 @@ typing Arb {oblivTy = Nothing} (Just t) = do
   oblivKinded t
   return (t, Arb {oblivTy = Just t})
 typing Ppx {..} Nothing = do
+  get >>= \case
+    PolyT _ ->
+      err
+        [ [ DD $
+              "Preprocessors are not allowed"
+                <+> "in polymorphic functions (OADT match instances) yet"
+          ]
+        ]
+    MonoT -> pass
   ppx' <- biplateM kinded ppx
   (t', _) <- typingPpx ppx'
   return (t', Ppx {ppx = ppx'})
@@ -1004,6 +1013,9 @@ kinded t = inferKind t <&> snd
 --
 -- The returned type and elaborated expressions are well-kinded / well-typed and
 -- in core Taype. However, they are not in ANF.
+--
+-- In addition, the elaborated expressions must no longer contain any
+-- preprocessors.
 typingPpx :: Ppx Name -> TcM (Ty Name, Expr Name)
 typingPpx = go
   where
@@ -1106,16 +1118,7 @@ typingPpx = go
                    ]
         _ -> errSnd "cannot be a dependent type" ty
       ty | isOblivKinded ty -> do
-        u <- fresh
-        return $
-          lets'
-            [(u, TUnit, VUnit)]
-            OIte
-              { label = SafeL,
-                cond = V b,
-                left = V f1 @@ [V u],
-                right = V f2 @@ [V u]
-              }
+        return $ mux_ (V b) (V f1 @@ [VUnit]) (V f2 @@ [VUnit])
       ty -> errSnd "is not mergeable" ty
 
     errFst :: Doc -> Ty Name -> Ty Name -> TcM a
@@ -1138,8 +1141,20 @@ typingPpx = go
           [DH "Got", DC ty']
         ]
 
--- elabPpx :: Ppx Name -> TcM (Expr Name)
--- elabPpx ppx = snd <$> typingPpx ppx
+elabPpx :: Ppx Name -> TcM (Expr Name)
+elabPpx ppx = snd <$> typingPpx ppx
+
+-- | Elaborate all preprocessors in the definitions.
+--
+-- Although this function returns an exception monad, it should not fail if the
+-- definitions are well-typed.
+elabPpxDefs :: Options -> GCtx Name -> Defs Name -> ExceptT Err IO (Defs Name)
+elabPpxDefs options gctx defs =
+  forM defs $ \(name, def) ->
+    (name,) <$> runTcM (initEnv options name gctx gctx) (transformBiM go def)
+  where
+    go Ppx {..} = elabPpx ppx
+    go e = return e
 
 ----------------------------------------------------------------
 -- OADT instance resolution
