@@ -1034,6 +1034,35 @@ typingPpx = go
           e' <- goOIte retTy
           return (t', e')
         _ -> errFst "condition" (TBool PublicL) condTy
+    go CtorPpx {..} =
+      lookupGSig ctor >>= \case
+        Just CtorDef {..} -> case retTy of
+          GV {..} -> do
+            unless (ref == dataType) $
+              err
+                [ [ DC ctor,
+                    DD "is not a constructor of",
+                    DC ref
+                  ]
+                ]
+            let argTy = prod_ paraTypes
+                t' = arrow_ argTy retTy
+            e' <- goCtor ctor argTy (length paraTypes)
+            return (t', e')
+          Psi {..} ->
+            resolveCtor ctor oadtName >>= \case
+              Just (x, ty) -> return (ty, GV x)
+              _ ->
+                err
+                  [ [ DD "Constructor instance",
+                      DC ctor,
+                      DD "of OADT",
+                      DC oadtName,
+                      DD "is missing"
+                    ]
+                  ]
+          _ -> err [[DD "The type argument is not an ADT or Psi type"]]
+        _ -> err [[DC ctor, DD "is not a constructor"]]
     go CoercePpx {..} = do
       let t' = arrow_ fromTy toTy
       e' <- goCoerce fromTy toTy
@@ -1124,6 +1153,18 @@ typingPpx = go
       ty | isOblivKinded ty -> do
         return $ mux_ (V b) (V f1 @@ [VUnit]) (V f2 @@ [VUnit])
       ty -> errSnd "is not mergeable" ty
+
+    goCtor ctor argTy len = do
+      x <- fresh
+      lam' x argTy <$> body [] (V x) len
+      where
+        body xs _ 0 = return $ GV ctor @@ reverse xs
+        body xs p 1 = return $ GV ctor @@ reverse (p : xs)
+        body xs p n = do
+          x <- fresh
+          p' <- fresh
+          pmatch' PublicP p x p'
+            <$> body (V x : xs) (V p') (n-1)
 
     goCoerce t t' | t == t' = do
       x <- fresh
@@ -1249,16 +1290,24 @@ elabPpxDefs options gctx defs =
 ----------------------------------------------------------------
 -- OADT instance resolution
 
+resolve1 :: (MonadReader Env m) => Text -> Text -> m (Maybe (Text, Ty Name))
+resolve1 inst oadtName =
+  let name = instName1 oadtName inst
+   in lookupGSig name >>= \case
+    Just FunDef {..} -> return $ Just (name, ty)
+    _ -> return Nothing
+
+resolve1' :: (MonadReader Env m) => Text -> Text -> m (Maybe Text)
+resolve1' inst oadtName = fst <<$>> resolve1 inst oadtName
+
+resolveCtor :: (MonadReader Env m) => Text -> Text -> m (Maybe (Text, Ty Name))
+resolveCtor = resolve1
+
 resolveJoin :: (MonadReader Env m) => Text -> m (Maybe (Text, Text))
-resolveJoin oadtName =
-  let joinName = instName1 oadtName "join"
-      reshapeName = instName1 oadtName "reshape"
-   in lookupGSig joinName >>= \case
-        Just _ ->
-          lookupGSig reshapeName >>= \case
-            Just _ -> return $ Just (joinName, reshapeName)
-            _ -> return Nothing
-        _ -> return Nothing
+resolveJoin oadtName = do
+  joinName <- resolve1' "join" oadtName
+  reshapeName <- resolve1' "reshape" oadtName
+  return $ (,) <$> joinName <*> reshapeName
 
 resolveCoerce :: (MonadReader Env m) => Text -> Text -> m (Maybe Text)
 resolveCoerce from to =
@@ -1266,9 +1315,7 @@ resolveCoerce from to =
    in (name <$) <$> lookupGSig name
 
 resolveView :: (MonadReader Env m) => Text -> m (Maybe Text)
-resolveView oadtName =
-  let name = instName1 oadtName "view"
-   in (name <$) <$> lookupGSig name
+resolveView = resolve1' "view"
 
 ----------------------------------------------------------------
 -- Equality check
@@ -1788,7 +1835,7 @@ checkDefs :: Options -> Defs Name -> ExceptT Err IO (GCtx Name)
 checkDefs options@Options {..} defs = runDcM options $ do
   gsctx <- preCheckDefs defs
   gctx <- go gsctx mempty defs
-  return $ mapGCtxDef simp gctx
+  return $ mapGCtxDef simp gctx <> gsctx
   where
     -- Type checking definitions are done in the order of the given definitions.
     -- They can freely refer to the signatures of all definitions, allowing for
