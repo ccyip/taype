@@ -45,7 +45,8 @@ runTslM env m = runReader (runFreshT m) env
 
 -- | Translate a taype expression to the corresponding OIL expression.
 --
--- The taype expression is well-typed and in core taype ANF.
+-- The taype expression is well-typed and in core taype, but not necessarily in
+-- ANF.
 --
 -- The resulting OIL expression should be typed by the corresponding translated
 -- OIL type, under the (implicit) translated typing context. The types and
@@ -64,26 +65,31 @@ toOilExpr T.Lam {..} = do
   (x, body) <- unbind1 bnd
   body' <- toOilExpr body
   return $ lamB x binder body'
-toOilExpr T.App {..} =
-  return $ toOilVar fn @@ toOilVar <$> args
+toOilExpr T.App {..} = do
+  fn' <- toOilExpr fn
+  args' <- mapM toOilExpr args
+  return $ fn' @@ args'
 toOilExpr T.Let {..} = do
   rhs' <- toOilExpr rhs
   (x, body) <- unbind1 bnd
   body' <- toOilExpr body
   return $ letB x binder rhs' body'
 toOilExpr T.Ite {..} = do
+  cond' <- toOilExpr cond
   left' <- toOilExpr left
   right' <- toOilExpr right
-  return $ ite_ (toOilVar cond) left' right'
+  return $ ite_ cond' left' right'
 toOilExpr T.Match {..} = do
+  cond' <- toOilExpr cond
   alts' <- mapM go (toList alts)
-  return $ matchB (toOilVar cond) alts'
+  return $ matchB cond' alts'
   where
     go MatchAlt {..} = do
       (xs, body) <- unbindMany (length binders) bnd
       body' <- toOilExpr body
       return (ctor, zip xs binders, body')
 toOilExpr T.OIte {..} = do
+  cond' <- toOilExpr cond
   left' <- toOilExpr left
   right' <- toOilExpr right
   revealing <- asks revealing
@@ -92,20 +98,21 @@ toOilExpr T.OIte {..} = do
       then
         ite_
           ( GV (retractionName (oblivName "bool"))
-              @@ [toOilVar cond]
+              @@ [cond']
           )
           left'
           right'
-      else GV aMux @@ [toOilVar cond, left', right']
+      else GV aMux @@ [cond', left', right']
 toOilExpr T.Pair {..} = do
   let fn = case pairKind of
         OblivP -> GV aConcat
         _ -> GV "(,)"
-  return $ fn @@ (toOilVar <$> [left, right])
+  args <- mapM toOilExpr [left, right]
+  return $ fn @@ args
 toOilExpr T.PMatch {..} = do
+  cond' <- toOilExpr cond
   ((xl, xr), body) <- unbind2 bnd2
   body' <- toOilExpr body
-  let cond' = toOilVar cond
   case pairKind of
     OblivP -> do
       let (leftTy, rightTy) = fromJust condTy
@@ -123,23 +130,23 @@ toOilExpr T.PMatch {..} = do
           cond'
           [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
 toOilExpr T.OInj {..} = do
+  expr' <- toOilExpr expr
   let (leftTy, rightTy) = fromJust injTy
   lSize <- toOilSize leftTy
   rSize <- toOilSize rightTy
-  let expr' = toOilVar expr
   return $
     GV (oblivName $ if tag then "inl" else "inr")
       @@ [lSize, rSize, expr']
 toOilExpr T.OProj {..} = do
+  expr' <- toOilExpr expr
   let (leftTy, rightTy) = fromJust projTy
-      e = toOilVar expr
   tSize <- toOilSize $ T.TBool OblivL
   lSize <- toOilSize leftTy
   rSize <- toOilSize rightTy
   return $ case projKind of
-    TagP -> GV aSlice @@ [e, ILit 0, tSize]
-    LeftP -> GV aSlice @@ [e, tSize, lSize]
-    RightP -> GV aSlice @@ [e, tSize, rSize]
+    TagP -> GV aSlice @@ [expr', ILit 0, tSize]
+    LeftP -> GV aSlice @@ [expr', tSize, lSize]
+    RightP -> GV aSlice @@ [expr', tSize, rSize]
 toOilExpr T.Arb {..} = do
   let ty = fromJust oblivTy
   size <- toOilSize ty
@@ -172,43 +179,37 @@ toOilSize T.OSum {..} = do
   lSize <- toOilSize left
   rSize <- toOilSize right
   return $ GV "+" @@ [ILit 1, GV (internalName "max") @@ [lSize, rSize]]
-toOilSize T.App {appKind = TypeApp, fn = T.GV {..}, ..} =
-  return $ GV ref @@ toOilVar <$> args
+toOilSize T.App {appKind = TypeApp, fn = T.GV {..}, ..} = do
+  args' <- mapM toOilExpr args
+  return $ GV ref @@ args'
 toOilSize T.Let {..} = do
   rhs' <- toOilExpr rhs
   (x, body) <- unbind1 bnd
   body' <- toOilSize body
   return $ letB x binder rhs' body'
 toOilSize T.Ite {..} = do
+  cond' <- toOilExpr cond
   left' <- toOilSize left
   right' <- toOilSize right
-  return $ ite_ (toOilVar cond) left' right'
+  return $ ite_ cond' left' right'
 toOilSize T.PMatch {..} = do
+  cond' <- toOilExpr cond
   ((xl, xr), body) <- unbind2 bnd2
   body' <- toOilSize body
-  let cond' = toOilVar cond
   return $
     matchB
       cond'
       [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
 toOilSize T.Match {..} = do
+  cond' <- toOilExpr cond
   alts' <- mapM go (toList alts)
-  return $ matchB (toOilVar cond) alts'
+  return $ matchB cond' alts'
   where
     go MatchAlt {..} = do
       (xs, body) <- unbindMany (length binders) bnd
       body' <- toOilSize body
       return (ctor, zip xs binders, body')
 toOilSize _ = oops "Not an oblivious type"
-
--- | Translate a taype variable, either local or global, to the corresponding
--- OIL variable.
---
--- The given taype expression has to be a local or global variable.
-toOilVar :: T.Expr Name -> Expr Name
-toOilVar T.V {..} = V {..}
-toOilVar T.GV {..} = GV {..}
-toOilVar _ = oops "Not a variable"
 
 -- | Translate a taype type to the corresponding OIL type.
 --
