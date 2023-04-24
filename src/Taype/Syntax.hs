@@ -949,6 +949,7 @@ instance Cute Kind
 -- | Pretty printer for a taype expression
 instance Cute (Expr Text) where
   cute V {..} = cute name
+  cute GV {..} | isInfix ref = return $ parens $ pretty ref
   cute GV {..} = cute ref
   cute e@Pi {..} = do
     (x, body) <- unbind1NameOrBinder binder bnd

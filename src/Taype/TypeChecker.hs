@@ -1049,6 +1049,18 @@ typingPpx = go
                   ]
           _ -> err [[DD "The type argument is not an ADT or Psi type"]]
         _ -> err [[DC ctor, DD "is not a constructor"]]
+    go BuiltinPpx {..} =
+      lookupGSig fn >>= \case
+        Just BuiltinDef {..}
+          | resType == retTy ->
+              return (arrows_ paraTypes retTy, GV fn)
+        Just BuiltinDef {} ->
+          lookupGSig (oblivName fn) >>= \case
+            Just BuiltinDef {..}
+              | resType == retTy ->
+                  return (arrows_ paraTypes retTy, GV (oblivName fn))
+            _ -> err [[DD "Cannot resolve builtin operation"]]
+        _ -> err [[DC fn, DD "is not a builtin operation"]]
     go CoercePpx {..} = do
       let t' = arrow_ fromTy toTy
       e' <- goCoerce fromTy toTy
