@@ -363,6 +363,8 @@ data OADTInst
     RetractionInst {oadtName :: Text}
   | -- | Constructor
     CtorInst {oadtName :: Text, ctor :: Text}
+  | -- | View of an ADT
+    ViewInst {oadtName :: Text}
   | -- | Join of public views
     JoinInst {oadtName :: Text}
   | -- | Convert an OADT with different public views
@@ -389,6 +391,7 @@ attrOfName x = case T.splitOn instInfix x of
         | instName == sectionInstName -> KnownInst $ SectionInst {..}
         | instName == retractionInstName -> KnownInst $ RetractionInst {..}
         | isCtor instName -> KnownInst $ CtorInst {ctor = instName, ..}
+        | instName == "view" -> KnownInst $ ViewInst {..}
         | instName == "join" -> KnownInst $ JoinInst {..}
         | instName == "reshape" -> KnownInst $ ReshapeInst {..}
         | instName == "match" -> KnownInst $ MatchInst {..}
@@ -405,6 +408,7 @@ oadtNameOfInst = \case
   SectionInst {..} -> oadtName
   RetractionInst {..} -> oadtName
   CtorInst {..} -> oadtName
+  ViewInst {..} -> oadtName
   JoinInst {..} -> oadtName
   ReshapeInst {..} -> oadtName
   MatchInst {..} -> oadtName

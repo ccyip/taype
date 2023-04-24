@@ -1996,8 +1996,8 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
           pi' k viewTy $
             arrow_ (oadtName @@@ [V k]) $
               GV pubName
-      JoinInst {} -> do
-        equateSig $ arrows_ [viewTy, viewTy] viewTy
+      ViewInst {} -> equateSig $ arrow_ (GV pubName) viewTy
+      JoinInst {} -> equateSig $ arrows_ [viewTy, viewTy] viewTy
       ReshapeInst {..} -> do
         k <- fresh
         k' <- fresh
