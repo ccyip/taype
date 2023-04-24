@@ -26,8 +26,8 @@
 --     While possible, it is mostly unnecessary in practice.
 --
 --   - ANF: administrative normal form. In addition to the standard ANF, we also
---     require the constructors and builtin functions are always in application
---     form, even if they have no argument.
+--     require the constructors are always in application form, even if they
+--     have no argument.
 --
 --   - Core taype: an expression is in core taype, if
 --
@@ -127,13 +127,10 @@ typing e@GV {..} Nothing =
           e @@ []
         )
     Just BuiltinDef {..} -> do
-      checkArity BuiltinApp ref [] paraTypes
       checkLabel label
       return
-        ( resType,
-          -- All builtin functions are in application form even if they have
-          -- zero argument.
-          e @@ []
+        ( arrows_ paraTypes resType,
+          e
         )
     Just _ ->
       err [[DD "Definition", DQ ref, DD "is not a term"]]
@@ -179,17 +176,14 @@ typing Lam {..} (Just t) = do
     )
 typing App {..} Nothing =
   maybeGV fn >>= \case
-    -- Constructors and builtin functions have to be fully applied.
+    -- Constructors have to be fully applied.
     Just (ctor, CtorDef {..}) ->
-      typeFullApp ctor paraTypes (GV dataType) CtorApp SafeL
-    Just (f, BuiltinDef {..}) ->
-      typeFullApp f paraTypes resType BuiltinApp label
+      typeCtorApp ctor paraTypes (GV dataType)
     _ -> typeFnApp
   where
-    -- Application for constructors and builtin functions
-    typeFullApp f paraTypes resType appKind label = do
-      checkLabel label
-      checkArity appKind f args paraTypes
+    -- Application for constructors
+    typeCtorApp f paraTypes resType = do
+      checkArity CtorApp f args paraTypes
       args' <- zipWithM check args paraTypes
       xs <- freshes $ length args'
       let bindings = zip3 xs paraTypes args'
