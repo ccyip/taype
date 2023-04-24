@@ -124,7 +124,7 @@ typing e@GV {..} Nothing =
         ( GV dataType,
           -- All constructors are in application form even if they have zero
           -- argument.
-          App {fn = e, args = [], appKind = CtorApp}
+          e @@ []
         )
     Just BuiltinDef {..} -> do
       checkArity BuiltinApp ref [] paraTypes
@@ -133,7 +133,7 @@ typing e@GV {..} Nothing =
         ( resType,
           -- All builtin functions are in application form even if they have
           -- zero argument.
-          App {fn = e, args = [], appKind = BuiltinApp}
+          e @@ []
         )
     Just _ ->
       err [[DD "Definition", DQ ref, DD "is not a term"]]
@@ -187,9 +187,9 @@ typing App {..} Nothing =
     _ -> typeFnApp
   where
     -- Application for constructors and builtin functions
-    typeFullApp f paraTypes resType appKind' label = do
+    typeFullApp f paraTypes resType appKind label = do
       checkLabel label
-      checkArity appKind' f args paraTypes
+      checkArity appKind f args paraTypes
       args' <- zipWithM check args paraTypes
       xs <- freshes $ length args'
       let bindings = zip3 xs paraTypes args'
@@ -197,11 +197,7 @@ typing App {..} Nothing =
         ( resType,
           lets'
             bindings
-            App
-              { fn = GV f,
-                args = V <$> xs,
-                appKind = appKind'
-              }
+            (f @@@ V <$> xs)
         )
     -- Application for functions
     typeFnApp = do
@@ -212,11 +208,7 @@ typing App {..} Nothing =
         ( t',
           lets'
             ((x, fnTy', fn') : bindings)
-            App
-              { fn = V x,
-                args = [V a | (a, _, _) <- bindings],
-                appKind = FunApp
-              }
+            (V x @@ [V a | (a, _, _) <- bindings])
         )
     -- @t@ must be well-kinded and in core taype ANF.
     go [] t = return ([], t)
@@ -910,7 +902,7 @@ kinding App {..} Nothing = do
     ( OblivK,
       lets'
         [(x, argTy, arg')]
-        App {fn = GV ref, args = [V x], appKind = TypeApp}
+        (ref @@@ [V x])
     )
 kinding Let {..} Nothing = do
   mt <- mapM kinded rhsTy
@@ -1164,7 +1156,7 @@ typingPpx = go
           x <- fresh
           p' <- fresh
           pmatch' PublicP p x p'
-            <$> body (V x : xs) (V p') (n-1)
+            <$> body (V x : xs) (V p') (n - 1)
 
     goCoerce t t' | t == t' = do
       x <- fresh
@@ -1294,8 +1286,8 @@ resolve1 :: (MonadReader Env m) => Text -> Text -> m (Maybe (Text, Ty Name))
 resolve1 inst oadtName =
   let name = instName1 oadtName inst
    in lookupGSig name >>= \case
-    Just FunDef {..} -> return $ Just (name, ty)
-    _ -> return Nothing
+        Just FunDef {..} -> return $ Just (name, ty)
+        _ -> return Nothing
 
 resolve1' :: (MonadReader Env m) => Text -> Text -> m (Maybe Text)
 resolve1' inst oadtName = fst <<$>> resolve1 inst oadtName

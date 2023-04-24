@@ -115,8 +115,7 @@ data Expr a
       }
   | -- | Application, including function application, type application, etc
     App
-      { appKind :: AppKind,
-        fn :: Expr a,
+      { fn :: Expr a,
         args :: [Expr a]
       }
   | -- | Let binding
@@ -777,11 +776,13 @@ arrows_ :: [Ty a] -> Ty a -> Ty a
 arrows_ = flip $ foldr arrow_
 
 (@@) :: Expr a -> [Expr a] -> Expr a
-fn @@ args = App {appKind = FunApp, ..}
+fn @@ args = App {..}
+
 infixl 2 @@
 
 (@@@) :: Text -> [Expr a] -> Expr a
-fn @@@ args = App {appKind = TypeApp, fn = GV fn, ..}
+fn @@@ args = App {fn = GV fn, ..}
+
 infixl 2 @@@
 
 let_ :: (a ~ Text) => BinderM a -> Maybe (Ty a) -> Expr a -> Expr a -> Expr a

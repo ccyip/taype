@@ -179,7 +179,7 @@ toOilSize T.OSum {..} = do
   lSize <- toOilSize left
   rSize <- toOilSize right
   return $ GV "+" @@ [ILit 1, GV (internalName "max") @@ [lSize, rSize]]
-toOilSize T.App {appKind = TypeApp, fn = T.GV {..}, ..} = do
+toOilSize T.App {fn = T.GV {..}, ..} = do
   args' <- mapM toOilExpr args
   return $ GV ref @@ args'
 toOilSize T.Let {..} = do
