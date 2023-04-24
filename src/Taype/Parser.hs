@@ -418,8 +418,8 @@ grammar = mdo
       choice
         [ do
             loc <- pLocatedToken L.ItePpx
-            condTy <- pType
-            retTy <- pType
+            condTy <- pAtomType
+            retTy <- pAtomType
             return (loc, ItePpx {..}),
           do
             ~(loc, ctor) <-
@@ -428,12 +428,12 @@ grammar = mdo
                     L.CtorPpx ctor -> Just ctor
                     _ -> Nothing
                 )
-            retTy <- pType
+            retTy <- pAtomType
             return (loc, CtorPpx {..}),
           do
             loc <- pLocatedToken L.MatchPpx
-            condTy <- pType
-            retTy <- pType
+            condTy <- pAtomType
+            retTy <- pAtomType
             return (loc, MatchPpx {..}),
           do
             ~(loc, fn) <-
@@ -442,12 +442,12 @@ grammar = mdo
                     L.BuiltinPpx fn -> Just fn
                     _ -> Nothing
                 )
-            retTy <- pType
+            retTy <- pAtomType
             return (loc, BuiltinPpx {..}),
           do
             loc <- pLocatedToken L.CoercePpx
-            fromTy <- pType
-            toTy <- pType
+            fromTy <- pAtomType
+            toTy <- pAtomType
             return (loc, CoercePpx {..})
         ]
 
