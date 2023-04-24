@@ -1133,12 +1133,36 @@ typingPpx = go
         Just name -> return $ GV name
         _ ->
           err
-            [ [ DD "Cannot find a coerce instance from",
+            [ [ DD "Coerce instance from",
                 DC oadtName,
                 DD "to",
-                DC oadtName'
+                DC oadtName',
+                DD "is missing"
               ]
             ]
+    goCoerce from@GV {..} Psi {..} = do
+      pubName <- pubNameOfOADTName oadtName
+      unless (pubName == ref) $
+        err
+          [ [ DC pubName,
+              DD "is not the public ADT of OADT",
+              DC oadtName
+            ]
+          ]
+      view <-
+        resolveView oadtName >>= \case
+          Just name -> return $ GV name
+          _ -> err [[DD "View instance of", DC oadtName, DD "is missing"]]
+      x <- fresh
+      k <- fresh
+      return $
+        lam' x from $
+          let' k (fromJust viewTy) (view @@ [V x]) $
+            Pair
+              { pairKind = PsiP,
+                left = V k,
+                right = GV (sectionName oadtName) @@ [V k, V x]
+              }
     goCoerce (TBool PublicL) (TBool OblivL) = do
       x <- fresh
       return $
@@ -1239,6 +1263,11 @@ resolveJoin oadtName =
 resolveCoerce :: (MonadReader Env m) => Text -> Text -> m (Maybe Text)
 resolveCoerce from to =
   let name = instName2 from to "coerce"
+   in (name <$) <$> lookupGSig name
+
+resolveView :: (MonadReader Env m) => Text -> m (Maybe Text)
+resolveView oadtName =
+  let name = instName1 oadtName "view"
    in (name <$) <$> lookupGSig name
 
 ----------------------------------------------------------------
