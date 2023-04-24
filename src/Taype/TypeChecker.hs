@@ -1034,6 +1034,10 @@ typingPpx = go
           e' <- goOIte retTy
           return (t', e')
         _ -> errFst "condition" (TBool PublicL) condTy
+    go CoercePpx {..} = do
+      let t' = arrow_ fromTy toTy
+      e' <- goCoerce fromTy toTy
+      return (t', e')
     go _ = err [[DD "Not implemented yet"]]
 
     mkLam b f1 f2 condTy retTy =
@@ -1121,6 +1125,68 @@ typingPpx = go
         return $ mux_ (V b) (V f1 @@ [VUnit]) (V f2 @@ [VUnit])
       ty -> errSnd "is not mergeable" ty
 
+    goCoerce t t' | t == t' = do
+      x <- fresh
+      return $ lam' x t (V x)
+    goCoerce Psi {oadtName} Psi {oadtName = oadtName'} =
+      resolveCoerce oadtName oadtName' >>= \case
+        Just name -> return $ GV name
+        _ ->
+          err
+            [ [ DD "Cannot find a coerce instance from",
+                DC oadtName,
+                DD "to",
+                DC oadtName'
+              ]
+            ]
+    goCoerce (TBool PublicL) (TBool OblivL) = do
+      x <- fresh
+      return $
+        lam' x (TBool PublicL) $
+          GV (sectionName (oblivName "bool")) @@ [V x]
+    goCoerce (TInt PublicL) (TInt OblivL) = do
+      x <- fresh
+      return $
+        lam' x (TInt PublicL) $
+          GV (sectionName (oblivName "int")) @@ [V x]
+    goCoerce
+      from@Prod {olabel = PublicL, left, right}
+      Prod {olabel = PublicL, left = left', right = right'} = do
+        lCoer <- goCoerce left left'
+        rCoer <- goCoerce right right'
+        p <- fresh
+        xl <- fresh
+        xr <- fresh
+        return $
+          lam' p from $
+            pmatch' PublicP (V p) xl xr $
+              Pair
+                { pairKind = PublicP,
+                  left = lCoer @@ [V xl],
+                  right = rCoer @@ [V xr]
+                }
+    goCoerce from@Pi {} to@Pi {} = case (isArrow from, isArrow to) of
+      (Just (argTs, retTy), Just (argTs', retTy')) ->
+        if length argTs == length argTs'
+          then do
+            rCoer <- goCoerce retTy retTy'
+            -- Contravariant
+            aCoer <- zipWithM goCoerce argTs' argTs
+            f <- fresh
+            xs <- freshes $ length argTs
+            return $
+              lams' ((f, from) : zip xs argTs') $
+                rCoer @@ [V f @@ zipWith (\c x -> c @@ [V x]) aCoer xs]
+          else
+            err
+              [ [ DD
+                    "Coercing between functions with \
+                    \different number of arguments"
+                ]
+              ]
+      _ -> err [[DD "Type arguments to coercion cannot be dependent types"]]
+    goCoerce _ _ = err [[DD "Cannot resolve coercion"]]
+
     errFst :: Doc -> Ty Name -> Ty Name -> TcM a
     errFst what ty ty' =
       err
@@ -1169,6 +1235,11 @@ resolveJoin oadtName =
             Just _ -> return $ Just (joinName, reshapeName)
             _ -> return Nothing
         _ -> return Nothing
+
+resolveCoerce :: (MonadReader Env m) => Text -> Text -> m (Maybe Text)
+resolveCoerce from to =
+  let name = instName2 from to "coerce"
+   in (name <$) <$> lookupGSig name
 
 ----------------------------------------------------------------
 -- Equality check
