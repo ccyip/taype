@@ -1129,7 +1129,7 @@ typingPpx = go
                       mux_
                         (V b)
                         (GV reshapeName @@ [V k1, V k, V x1])
-                        (GV reshapeName @@ [V k1, V k, V x2])
+                        (GV reshapeName @@ [V k2, V k, V x2])
                   }
       Prod {olabel = PublicL, ..} -> do
         lIte <- goOIte left
