@@ -31,9 +31,9 @@ import Text.Earley hiding (Parser, token)
 type Parser r = Prod r Text LocatedToken
 
 pLocatedTerminal :: (Token -> Maybe a) -> Parser r (Int, a)
-pLocatedTerminal match = terminal match'
+pLocatedTerminal match = terminal go
   where
-    match' LocatedToken {..} = (offset,) <$> match token
+    go LocatedToken {..} = (offset,) <$> match token
 
 pLocatedToken :: Token -> Parser r Int
 pLocatedToken expected = terminal match

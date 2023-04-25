@@ -22,6 +22,7 @@ module Taype.Common
     AppKind (..),
     MatchAlt (..),
     matchAlt_,
+    matchAlt',
     fromClosed,
     fromClosedDefs,
 
@@ -167,6 +168,14 @@ matchAlt_ ctor binders body =
   MatchAlt
     { binders = Just <$> binders,
       bnd = abstractBinder binders body,
+      ..
+    }
+
+matchAlt' :: (Monad f, a ~ Name) => Text -> [a] -> f a -> MatchAlt f a
+matchAlt' ctor xs body =
+  MatchAlt
+    { binders = Nothing <$ xs,
+      bnd = abstract_ xs body,
       ..
     }
 

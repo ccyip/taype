@@ -51,6 +51,7 @@ module Taype.Syntax
     oinj_,
     oproj_,
     prod_,
+    tuple_,
     match_,
     omatch_,
     omatchPat_,
@@ -60,6 +61,7 @@ module Taype.Syntax
     lams',
     let',
     lets',
+    match',
     pmatch',
     pi',
     arrow_,
@@ -812,6 +814,10 @@ prod_ :: [Ty a] -> Ty a
 prod_ [] = TUnit
 prod_ ts = foldr1 (Prod PublicL) ts
 
+tuple_ :: [Expr a] -> Expr a
+tuple_ [] = VUnit
+tuple_ es = foldr1 (Pair PublicP) es
+
 match_ :: (a ~ Text) => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 match_ cond alts = Match {alts = uncurry3 matchAlt_ <$> alts, ..}
 
@@ -927,6 +933,9 @@ let' x t rhs body =
 
 lets' :: [(Name, Ty Name, Expr Name)] -> Expr Name -> Expr Name
 lets' = flip $ foldr $ uncurry3 let'
+
+match' :: Expr Name -> NonEmpty (Text, [Name], Expr Name) -> Expr Name
+match' cond alts = Match {alts = uncurry3 matchAlt' <$> alts, ..}
 
 pmatch' :: PairKind -> Expr Name -> Name -> Name -> Expr Name -> Expr Name
 pmatch' pairKind cond xl xr body =
@@ -1121,6 +1130,7 @@ instance HasPLevel (Expr a) where
   plevel = \case
     V {} -> 0
     GV {} -> 0
+    TV -> 0
     -- Do not distinguish infix further.
     App {fn = GV {..}} | isInfix ref -> 20
     App {} -> 10

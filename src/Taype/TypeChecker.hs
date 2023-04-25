@@ -543,20 +543,9 @@ typing OIte {..} mt = do
   cond' <- check cond $ TBool OblivL
   (t', left') <- typing left mt
   right' <- check right t'
-  label' <- case t' of
-    TV -> do
-      checkPoly
-      put $ PolyT MergeableC
-      return SafeL
-    _ -> return $ if isOblivKinded t' then SafeL else LeakyL
-  checkLabel label'
   x <- fresh
-  return
-    ( t',
-      lets'
-        [(x, TBool OblivL, cond')]
-        OIte {label = label', cond = V x, left = left', right = right'}
-    )
+  e' <- mkOIteExpr (V x) left' right' t'
+  return (t', let' x (TBool OblivL) cond' e')
 typing OInj {..} (Just t) = do
   (leftTy', rightTy') <- isOSum t
   let injTy' = if tag then leftTy' else rightTy'
@@ -593,15 +582,9 @@ typing OMatch {..} mt = do
   rBody' <-
     extendCtx1 xr rightTy' rBinder $
       check rBody t'
-  label' <- case t' of
-    TV -> do
-      checkPoly
-      put $ PolyT MergeableC
-      return SafeL
-    _ -> return $ if isOblivKinded t' then SafeL else LeakyL
-  checkLabel label'
   x <- fresh
   y <- fresh
+  e' <- mkOIteExpr (V y) lBody' rBody' t'
   let projTy = Just (leftTy', rightTy')
       condTy' = OSum {left = leftTy', right = rightTy'}
       expr = V x
@@ -613,12 +596,7 @@ typing OMatch {..} mt = do
           (xl, leftTy', OProj {projKind = LeftP, ..}),
           (xr, rightTy', OProj {projKind = RightP, ..})
         ]
-        OIte
-          { label = label',
-            cond = V y,
-            left = lBody',
-            right = rBody'
-          }
+        e'
     )
 typing Arb {oblivTy = Nothing} (Just t) = do
   oblivKinded t
@@ -665,6 +643,30 @@ typing _ Nothing =
     [ [DD "Could not infer the type"],
       [DD "Perhaps you should add some type annotations"]
     ]
+
+mkOIteExpr :: Expr Name -> Expr Name -> Expr Name -> Ty Name -> TcM (Expr Name)
+mkOIteExpr cond left right retTy = case retTy of
+  TV -> do
+    checkPoly
+    put $ PolyT MergeableC
+    f <- fresh
+    u <- fresh
+    xl <- fresh
+    xr <- fresh
+    return
+      $ lets'
+        [ ( f,
+            typeOfItePpx (TBool OblivL) TV,
+            Ppx {ppx = ItePpx {condTy = TBool OblivL, retTy = TV}}
+          ),
+          (xl, arrow_ TUnit TV, lam' u TUnit left),
+          (xr, arrow_ TUnit TV, lam' u TUnit right)
+        ]
+      $ V f @@ [cond, V xl, V xr]
+  _ -> do
+    let label = if isOblivKinded retTy then SafeL else LeakyL
+    checkLabel label
+    return OIte {..}
 
 -- | Assemble the types of all branches in a dependent case-like expression into
 -- a single well-kinded type.
@@ -1006,7 +1008,7 @@ typingPpx :: Ppx Name -> TcM (Ty Name, Expr Name)
 typingPpx = go
   where
     go ItePpx {..} = do
-      let t' = arrows_ [condTy, arrow_ TUnit retTy, arrow_ TUnit retTy] retTy
+      let t' = typeOfItePpx condTy retTy
       case condTy of
         TBool {olabel = PublicL} -> do
           b <- fresh
@@ -1061,11 +1063,31 @@ typingPpx = go
                   return (arrows_ paraTypes retTy, GV (oblivName fn))
             _ -> err [[DD "Cannot resolve builtin operation"]]
         _ -> err [[DC fn, DD "is not a builtin operation"]]
+    go MatchPpx {..} = case condTy of
+      GV {..} ->
+        lookupGSig ref >>= \case
+          Just ADTDef {..} -> goMatch ref (toList ctors) retTy
+          _ -> oops "Not an ADT"
+      Psi {..} -> do
+        resolveMatch oadtName >>= \case
+          Just (t, e, c) -> goMatchPsi t e c retTy
+          _ ->
+            err
+              [ [ DD "Match instance of OADT",
+                  DC oadtName,
+                  DD "is missing"
+                ]
+              ]
+      _ ->
+        err
+          [ [ DD "The first type argument (discriminee)",
+              DD "is not an ADT or Psi type"
+            ]
+          ]
     go CoercePpx {..} = do
       let t' = arrow_ fromTy toTy
       e' <- goCoerce fromTy toTy
       return (t', e')
-    go _ = err [[DD "Not implemented yet"]]
 
     mkLam b f1 f2 condTy retTy =
       lams'
@@ -1163,6 +1185,42 @@ typingPpx = go
           p' <- fresh
           pmatch' PublicP p x p'
             <$> body (V x : xs) (V p') (n - 1)
+
+    goMatch adtName ctors retTy = do
+      let altTs = ctors <&> \(_, ts) -> arrow_ (prod_ ts) retTy
+          t' = arrows_ (GV adtName : altTs) retTy
+      x <- fresh
+      as <- freshes (length ctors)
+      alts <- zipWithM goAlt as ctors
+      let e' =
+            lams' ((x, GV adtName) : zip as altTs) $
+              match' (V x) (fromList alts)
+      return (t', e')
+      where
+        goAlt x (ctor, paraTypes) = do
+          xs <- freshes (length paraTypes)
+          return (ctor, xs, V x @@ [tuple_ (V <$> xs)])
+
+    goMatchPsi matchTy matchE constraint retTy = case constraint of
+      UnrestrictedC -> do
+        t' <- substTV matchTy
+        e' <- substTV matchE
+        return (t', e')
+      MergeableC -> do
+        (iteTy, ite) <- go ItePpx {condTy = TBool OblivL, ..}
+        t' <- substTV matchTy
+        x <- fresh
+        e' <- substMatch (V x) matchE >>= substTV
+        return (t', let' x iteTy ite e')
+      where
+        substTV = transformM $ \case
+          TV -> return retTy
+          e -> return e
+        substMatch ite = transformM $ \case
+          Ppx {ppx = ItePpx {condTy = TBool OblivL, retTy = TV}} ->
+            return ite
+          Ppx {} -> oops "Invalid preprocessor in match instance"
+          e -> return e
 
     goCoerce t t' | t == t' = do
       x <- fresh
@@ -1277,13 +1335,24 @@ elabPpx ppx = snd <$> typingPpx ppx
 --
 -- Although this function returns an exception monad, it should not fail if the
 -- definitions are well-typed.
+--
+-- All polymorphic definitions are removed, as they are inlined and cannot be
+-- handled further.
 elabPpxDefs :: Options -> GCtx Name -> Defs Name -> ExceptT Err IO (Defs Name)
-elabPpxDefs options gctx defs =
-  forM defs $ \(name, def) ->
-    (name,) <$> runTcM (initEnv options name gctx gctx) (transformBiM go def)
+elabPpxDefs options gctx defs = catMaybes <$> mapM go defs
   where
-    go Ppx {..} = elabPpx ppx
-    go e = return e
+    go (_, FunDef {poly = PolyT _}) = return Nothing
+    go (name, def) =
+      Just . (name,)
+        <$> runTcM
+          (initEnv options name gctx gctx)
+          (transformBiM elab def)
+    elab Ppx {..} = elabPpx ppx
+    elab e = return e
+
+typeOfItePpx :: Ty Name -> Ty Name -> Ty Name
+typeOfItePpx condTy retTy =
+  arrows_ [condTy, arrow_ TUnit retTy, arrow_ TUnit retTy] retTy
 
 ----------------------------------------------------------------
 -- OADT instance resolution
@@ -1300,6 +1369,23 @@ resolve1' inst oadtName = fst <<$>> resolve1 inst oadtName
 
 resolveCtor :: (MonadReader Env m) => Text -> Text -> m (Maybe (Text, Ty Name))
 resolveCtor = resolve1
+
+resolveMatch ::
+  (MonadReader Env m) =>
+  Text ->
+  m (Maybe (Ty Name, Expr Name, PolyConstraint))
+resolveMatch oadtName =
+  let name = instName1 oadtName "match"
+   in -- NOTE: we have to look up match instance in the definition context but
+      -- not the signature context, because the correct polymorphism attribute
+      -- is only available in definition context. As a result, match instances
+      -- have to be defined before their uses.
+      lookupGDef name >>= \case
+        Just FunDef {..} ->
+          case poly of
+            PolyT c -> return $ Just (ty, expr, c)
+            MonoT -> oops "Monomorphic match"
+        _ -> return Nothing
 
 resolveJoin :: (MonadReader Env m) => Text -> m (Maybe (Text, Text))
 resolveJoin oadtName = do
