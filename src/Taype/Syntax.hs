@@ -1,7 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NoFieldSelectors #-}
@@ -28,16 +27,8 @@ module Taype.Syntax
     getDefLoc,
     closeDefs,
     Pat (..),
-    isCtor,
     PolyConstraint (..),
     PolyType (..),
-
-    -- * OADT structure
-    OADTInst (..),
-    OADTInstAttr (..),
-    attrOfName,
-    instNamesOfOADT,
-    oadtNameOfInst,
 
     -- * Smart constructors
     lam_,
@@ -78,10 +69,8 @@ import Algebra.Lattice.M2
 import Algebra.PartialOrd
 import Bound
 import Control.Monad
-import Data.Char
 import Data.Functor.Classes
 import Data.List (foldr1)
-import Data.Text qualified as T
 import Relude.Extra (bimapBoth, traverseBoth)
 import Taype.Binder
 import Taype.Common
@@ -337,10 +326,6 @@ closeDefs = (second (>>>= GV) <$>)
 -- | A rudimentary pattern that only supports pairs
 data Pat a = VarP (BinderM a) | PairP Int (Pat a) (Pat a)
 
--- | Check if a name is a constructor.
-isCtor :: Text -> Bool
-isCtor x = maybe False (\(c, _) -> isUpper c) $ T.uncons x
-
 -- | Constraint on a polymorphic type variable
 data PolyConstraint
   = -- | No restriction on how a type variable can be instantiated.
@@ -353,67 +338,6 @@ data PolyConstraint
 -- | Whether a function definition can have type polymorphism
 data PolyType = MonoT | PolyT PolyConstraint
   deriving stock (Eq, Show)
-
-----------------------------------------------------------------
--- OADT structure
-
-data OADTInst
-  = -- | Section
-    SectionInst {oadtName :: Text}
-  | -- | Retraction
-    RetractionInst {oadtName :: Text}
-  | -- | Constructor
-    CtorInst {oadtName :: Text, ctor :: Text}
-  | -- | View of an ADT
-    ViewInst {oadtName :: Text}
-  | -- | Join of public views
-    JoinInst {oadtName :: Text}
-  | -- | Convert an OADT with different public views
-    ReshapeInst {oadtName :: Text}
-  | -- | Pattern matching
-    MatchInst {oadtName :: Text}
-  | -- | Coercion between two OADTs
-    CoerceInst {oadtName :: Text, oadtTo :: Text}
-  deriving stock (Eq, Show)
-
-data OADTInstAttr
-  = KnownInst OADTInst
-  | UnknownInst
-  | NotAnInst
-  deriving stock (Eq, Show)
-
--- | Parse an instance from the given name.
-attrOfName :: Text -> OADTInstAttr
-attrOfName x = case T.splitOn instInfix x of
-  xs | any T.null xs -> UnknownInst
-  [_] -> NotAnInst
-  [oadtName, instName] ->
-    if
-        | instName == sectionInstName -> KnownInst $ SectionInst {..}
-        | instName == retractionInstName -> KnownInst $ RetractionInst {..}
-        | isCtor instName -> KnownInst $ CtorInst {ctor = instName, ..}
-        | instName == "view" -> KnownInst $ ViewInst {..}
-        | instName == "join" -> KnownInst $ JoinInst {..}
-        | instName == "reshape" -> KnownInst $ ReshapeInst {..}
-        | instName == "match" -> KnownInst $ MatchInst {..}
-        | otherwise -> UnknownInst
-  [oadtName, oadtTo, "coerce"] -> KnownInst $ CoerceInst {..}
-  _ -> UnknownInst
-
--- | Return a list of must-have instance names, given an OADT name.
-instNamesOfOADT :: Text -> [Text]
-instNamesOfOADT x = [sectionName x, retractionName x]
-
-oadtNameOfInst :: OADTInst -> Text
-oadtNameOfInst = \case
-  SectionInst {..} -> oadtName
-  RetractionInst {..} -> oadtName
-  CtorInst {..} -> oadtName
-  ViewInst {..} -> oadtName
-  JoinInst {..} -> oadtName
-  ReshapeInst {..} -> oadtName
-  MatchInst {..} -> oadtName
-  CoerceInst {..} -> oadtName
 
 ----------------------------------------------------------------
 -- Instances of expressions and definitions

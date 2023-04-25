@@ -34,7 +34,6 @@
 -- We try to reuse the definitions in OCaml, such as boolean and pair.
 module Oil.ToOCaml (toOCaml) where
 
-import Data.Char
 import Data.Graph (SCC (..), stronglyConnComp)
 import Data.List (lookup)
 import Data.Text qualified as T
@@ -400,10 +399,6 @@ toValidComp = \case
 
 toValidName :: Text -> Text
 toValidName x = T.intercalate "_" $ toValidComp <$> T.splitOn instInfix x
-
-isCtor :: Text -> Bool
-isCtor "(,)" = True
-isCtor x = maybe False (\(c, _) -> isUpper c) $ T.uncons x
 
 ----------------------------------------------------------------
 -- Pretty printer helper functions

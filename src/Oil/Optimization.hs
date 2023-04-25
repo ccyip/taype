@@ -13,6 +13,7 @@
 module Oil.Optimization (optimize) where
 
 import Bound.Scope qualified as B
+import Data.HashMap.Strict ((!?))
 import Data.List (lookup)
 import Oil.Syntax
 import Taype.Common
@@ -24,13 +25,21 @@ import Taype.Prelude
 --
 -- All definitions must be closed.
 optimize ::
-  Options -> Defs Name -> IO (Defs Name)
-optimize options@Options {..} defs =
+  Options -> HashMap Text OADTInst -> Defs Name -> IO (Defs Name)
+optimize options@Options {..} actx defs =
   if optFlagNoSimplify
     then return defs
-    else
-      runOptM Env {dctx = [], deepSimp = True, ..} $
-        biplateM (simplify <=< toANF) defs
+    else do
+      let inlinables = filter (isInlinable actx) defs
+      inlinables' <- runOpt $ biplateM (simplify <=< toANF) inlinables
+      let ictx = fromList $ runFreshM $ biplateM stripBinders inlinables'
+          go opt (name, def) =
+            case lookup name inlinables' of
+              Just def' -> return (name, def')
+              _ -> (name,) <$> opt def
+      runOpt $ mapM (go $ biplateM (simplify <=< inline ictx <=< toANF)) defs
+  where
+    runOpt = runOptM Env {dctx = [], deepSimp = True, ..}
 
 -- | Simplifier
 simplify :: Expr Name -> OptM (Expr Name)
@@ -106,7 +115,7 @@ simplify1 e = return e
 --
 --   - All arguments in an application must be local variables, where in taype
 --     ANF they can be global names.
-toANF :: MonadFresh m => Expr Name -> m (Expr Name)
+toANF :: (MonadFresh m) => Expr Name -> m (Expr Name)
 toANF = \case
   e@V {} -> return e
   e@GV {} -> go e
@@ -144,6 +153,32 @@ toANF = \case
       body' <- toANF body
       return MatchAlt {bnd = abstract_ xs body', ..}
 
+isInlinable :: HashMap Text OADTInst -> NamedDef Name -> Bool
+isInlinable actx (name, _) = case actx !? name of
+  Just inst -> case inst of
+    CtorInst {} -> True
+    MatchInst {} -> True
+    _ -> False
+  _ -> False
+
+stripBinders :: MonadFresh m => Expr Name -> m (Expr Name)
+stripBinders = transformM go
+  where
+    go Lam {..} = return Lam {binder = Nothing, ..}
+    go Let {..} = return Let {binder = Nothing, ..}
+    go Match {..} = return Match {alts = goAlt <$> alts,..}
+    go e = return e
+    goAlt MatchAlt {..} =
+      MatchAlt {binders = Nothing <$ binders, ..}
+
+inline :: MonadFresh m => HashMap Text (Def Name) -> Expr Name -> m (Expr Name)
+inline ctx = transformM go
+  where
+    go e@GV {..} = case ctx !? ref of
+      Just FunDef {..} -> return expr
+      _ -> return e
+    go e = return e
+
 ----------------------------------------------------------------
 -- Optimizer monad
 
@@ -165,20 +200,20 @@ type OptM = FreshT (ReaderT Env IO)
 runOptM :: Env -> OptM a -> IO a
 runOptM env m = runReaderT (runFreshT m) env
 
-lookupDef :: MonadReader Env m => Name -> m (Maybe (Expr Name))
+lookupDef :: (MonadReader Env m) => Name -> m (Maybe (Expr Name))
 lookupDef x = do
   dctx <- asks dctx
   return $ lookup x dctx
 
-matchDef :: MonadReader Env m => Expr Name -> m (Maybe Name)
+matchDef :: (MonadReader Env m) => Expr Name -> m (Maybe Name)
 matchDef e = do
   dctx <- asks dctx
   return $ fst <$> find ((e ==) . snd) dctx
 
-extendCtx :: MonadReader Env m => [(Name, Expr Name)] -> m a -> m a
+extendCtx :: (MonadReader Env m) => [(Name, Expr Name)] -> m a -> m a
 extendCtx bindings = local go
   where
     go Env {..} = Env {dctx = bindings <> dctx, ..}
 
-extendCtx1 :: MonadReader Env m => Name -> Expr Name -> m a -> m a
+extendCtx1 :: (MonadReader Env m) => Name -> Expr Name -> m a -> m a
 extendCtx1 x e = extendCtx [(x, e)]

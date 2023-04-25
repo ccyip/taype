@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -13,6 +14,7 @@
 module Oil.Translation (toOilProgram) where
 
 import Data.Graph (graphFromEdges, reachable)
+import Data.HashMap.Strict qualified as HM
 import Data.HashSet (member)
 import Data.List (partition)
 import Data.Maybe (fromJust)
@@ -21,6 +23,7 @@ import Oil.Syntax
 import Relude.Extra.Bifunctor
 import Taype.Binder
 import Taype.Common
+import Taype.Environment (GCtx (..))
 import Taype.Name
 import Taype.Plate
 import Taype.Prelude
@@ -306,11 +309,11 @@ oblivInjDef tag = runFreshM $ do
 -- oblivious computation phase, the section functions with their dependencies
 -- for the conceal phase, and the leaky functions (e.g., retractions) for the
 -- reveal phase.
-toOilProgram :: Options -> T.Defs Name -> IO Program
-toOilProgram options@Options {..} defs = do
-  mainDefs' <- optimize options $ go False mainDefs
-  concealDefs' <- optimize options $ go False concealDefs
-  revealDefs' <- optimize options $ go True revealDefs
+toOilProgram :: Options -> GCtx Name -> T.Defs Name -> IO Program
+toOilProgram options@Options {..} gctx defs = do
+  mainDefs' <- goOpt $ go False mainDefs
+  concealDefs' <- goOpt $ go False concealDefs
+  revealDefs' <- goOpt $ go True revealDefs
   return
     Program
       { mainDefs = fromClosedDefs $ simp mainDefs',
@@ -323,6 +326,10 @@ toOilProgram options@Options {..} defs = do
       secondF $ unfoldBuiltin . runTslM Env {..} . toOilDef
     (mainDefs, revealDefs) = partition (isSafe . snd) defs
     concealDefs = filterConceal defs oadts
+    goOpt = optimize options actx
+    actx = flip HM.mapMaybe (unGCtx gctx) $ \case
+      T.FunDef {attr = KnownInst inst} -> Just inst
+      _ -> Nothing
 
     oadts =
       [ OADTInfo
