@@ -1,6 +1,5 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -36,13 +35,7 @@
 module Oil.ToOCaml (toOCaml) where
 
 import Data.Char
-import Data.Graph
-  ( SCC (..),
-    flattenSCC,
-    graphFromEdges,
-    reachable,
-    stronglyConnComp,
-  )
+import Data.Graph (SCC (..), stronglyConnComp)
 import Data.List (lookup)
 import Data.Text qualified as T
 import Oil.Syntax
@@ -289,7 +282,7 @@ toOCamlDefs defs = do
       defs' = [def | def <- defs, isNothing $ isBuiltin def]
       edges = mkDepGraph defs'
       sccs = stronglyConnComp edges
-  docs <- foldMapM toOCamlSCCDef $ sortSCCs edges sccs
+  docs <- foldMapM toOCamlSCCDef sccs
   return $ sepWith hardline2 docs
   where
     isBuiltin (name, FunDef {}) = isBuiltinExprName name
@@ -460,39 +453,6 @@ toOCamlTyArgs args = do
 
 ----------------------------------------------------------------
 -- Dependency graph related functions
-
--- | Sort the definition SCCs according to their dependencies and the user-given
--- order in the source code.
---
--- This process is totally unnecessary, as the SCCs are already in topological
--- order. It is also possibly quite inefficient. However, we still want to keep
--- the user-given order as much as possible for readability.
-sortSCCs ::
-  [(NamedDef Text, DefKey, [DefKey])] ->
-  [SCC (NamedDef Text)] ->
-  [SCC (NamedDef Text)]
-sortSCCs edges sccs =
-  sortBy sccCmp $ sortCyclic <$> sccs
-  where
-    (g, _, toVertex) = graphFromEdges edges
-    table = mkTable (0 :: Int) edges
-    mkTable _ [] = []
-    mkTable i ((_, name, _) : edges') =
-      let v = fromMaybe (-1) $ toVertex name
-          r = reachable g v
-       in (name, (i, v, r)) : mkTable (i + 1) edges'
-    sortCyclic (CyclicSCC defs) = CyclicSCC $ sortOn defIndex defs
-    sortCyclic scc = scc
-    defIndex def = maybe (-1) (\(i, _, _) -> i) $ lookup (toDefKey def) table
-    sccCmp scc scc' = cmp (getIdx scc) (getIdx scc')
-    getIdx scc = fromMaybe (-1, -1, []) $ do
-      def <- viaNonEmpty head $ flattenSCC scc
-      lookup (toDefKey def) table
-    cmp (i, v, r) (i', v', r') =
-      if
-          | v `elem` r' -> LT
-          | v' `elem` r -> GT
-          | otherwise -> compare i i'
 
 -- | Make the dependency graph.
 --
