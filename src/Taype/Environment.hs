@@ -45,7 +45,7 @@ module Taype.Environment
 where
 
 import Data.HashMap.Strict ((!?))
-import Data.HashMap.Strict qualified as M
+import Data.HashMap.Strict qualified as HM
 import Data.List (lookup)
 import GHC.Exts qualified as E
 import Relude.Extra.Tuple
@@ -147,7 +147,7 @@ lookupGCtx x (GCtx gctx) = gctx !? x
 -- | Insert a definition into a given global context. If a definition with the
 -- same name already exists in the context, it will be replaced.
 insertGCtx :: Text -> Def a -> GCtx a -> GCtx a
-insertGCtx x def (GCtx gctx) = GCtx $ M.insert x def gctx
+insertGCtx x def (GCtx gctx) = GCtx $ HM.insert x def gctx
 
 -- | Look up a definition in the global typing context.
 lookupGSig :: (MonadReader Env m) => Text -> m (Maybe (Def Name))
