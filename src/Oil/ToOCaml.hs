@@ -167,6 +167,7 @@ toOCamlTy TApp {..} = do
   let tctor' = fromMaybe (toValidName tctor) $ isBuiltinTyName tctor
   argsDoc <- toOCamlTyArgs args
   return $ argsDoc <> pretty tctor'
+toOCamlTy TV = return "'a"
 
 ----------------------------------------------------------------
 -- Translate definitions

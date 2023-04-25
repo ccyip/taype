@@ -112,6 +112,11 @@ data Ty
     --
     -- This includes types with no argument, such as ADTs.
     TApp {tctor :: Text, args :: [Ty]}
+  | -- | Type variable
+    --
+    -- General type polymorphism is not supported. This type variable must be
+    -- unique in a definition.
+    TV
   deriving stock (Eq)
 
 -- | The type of data size
@@ -380,6 +385,7 @@ instance Cute Ty where
   cute t@TApp {args = left : right : _, ..}
     | isInfix tctor = cuteInfix t tctor left right
   cute TApp {..} = cuteApp_ (pretty tctor) args
+  cute TV = "'a"
 
 -- | Pretty printer for a definition
 cuteDefDoc :: Options -> Text -> Def Text -> Doc
@@ -442,6 +448,7 @@ instance HasPLevel Ty where
   plevel = \case
     TInt {} -> 0
     OArray {} -> 0
+    TV -> 0
     TApp {..} | isInfix tctor -> 20
     TApp {args = []} -> 0
     TApp {} -> 10

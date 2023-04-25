@@ -26,6 +26,7 @@ module Taype.Name
     fresh,
     freshes,
     badName,
+    uniqName,
 
     -- * Specialized locally nameless abstraction and instantiation
     ScopeOps (..),
@@ -122,8 +123,16 @@ freshes k = do
   return [n .. n + k - 1]
 
 -- | A name that never gets generated.
+--
+-- This can be used when we are sure it is never referenced.
 badName :: Name
 badName = -1
+
+-- | A unique name that never gets generated.
+--
+-- This can be used as a temporarily "global" name.
+uniqName :: Name
+uniqName = -2
 
 ----------------------------------------------------------------
 -- Specialized locally nameless abstraction and instantiation

@@ -649,20 +649,15 @@ mkOIteExpr cond left right retTy = case retTy of
   TV -> do
     checkPoly
     put $ PolyT MergeableC
-    f <- fresh
     u <- fresh
     xl <- fresh
     xr <- fresh
     return
       $ lets'
-        [ ( f,
-            typeOfItePpx (TBool OblivL) TV,
-            Ppx {ppx = ItePpx {condTy = TBool OblivL, retTy = TV}}
-          ),
-          (xl, arrow_ TUnit TV, lam' u TUnit left),
+        [ (xl, arrow_ TUnit TV, lam' u TUnit left),
           (xr, arrow_ TUnit TV, lam' u TUnit right)
         ]
-      $ V f @@ [cond, V xl, V xr]
+      $ V uniqName @@ [cond, V xl, V xr]
   _ -> do
     let label = if isOblivKinded retTy then SafeL else LeakyL
     checkLabel label
@@ -1070,7 +1065,7 @@ typingPpx = go
           _ -> oops "Not an ADT"
       Psi {..} -> do
         resolveMatch oadtName >>= \case
-          Just (t, e, c) -> goMatchPsi t e c retTy
+          Just (x, t, c) -> goMatchPsi x t c retTy
           _ ->
             err
               [ [ DD "Match instance of OADT",
@@ -1201,25 +1196,18 @@ typingPpx = go
           xs <- freshes (length paraTypes)
           return (ctor, xs, V x @@ [tuple_ (V <$> xs)])
 
-    goMatchPsi matchTy matchE constraint retTy = case constraint of
+    goMatchPsi name ty constraint retTy = case constraint of
       UnrestrictedC -> do
-        t' <- substTV matchTy
-        e' <- substTV matchE
-        return (t', e')
+        t' <- substTV ty
+        return (t', GV name)
       MergeableC -> do
-        (iteTy, ite) <- go ItePpx {condTy = TBool OblivL, ..}
-        t' <- substTV matchTy
-        x <- fresh
-        e' <- substMatch (V x) matchE >>= substTV
-        return (t', let' x iteTy ite e')
+        -- The first argument is an if preprocessor.
+        (_, ite) <- go ItePpx {condTy = TBool OblivL, ..}
+        t' <- substTV $ snd $ fromJust $ isArrow1 ty
+        return (t', GV name @@ [ite])
       where
         substTV = transformM $ \case
           TV -> return retTy
-          e -> return e
-        substMatch ite = transformM $ \case
-          Ppx {ppx = ItePpx {condTy = TBool OblivL, retTy = TV}} ->
-            return ite
-          Ppx {} -> oops "Invalid preprocessor in match instance"
           e -> return e
 
     goCoerce t t' | t == t' = do
@@ -1339,16 +1327,15 @@ elabPpx ppx = snd <$> typingPpx ppx
 -- All polymorphic definitions are removed, as they are inlined and cannot be
 -- handled further.
 elabPpxDefs :: Options -> GCtx Name -> Defs Name -> ExceptT Err IO (Defs Name)
-elabPpxDefs options gctx defs = catMaybes <$> mapM go defs
+elabPpxDefs options gctx defs =
+  forM defs $ \(name, def) ->
+    (name,)
+      <$> runTcM
+        (initEnv options name gctx gctx)
+        (transformBiM go def)
   where
-    go (_, FunDef {poly = PolyT _}) = return Nothing
-    go (name, def) =
-      Just . (name,)
-        <$> runTcM
-          (initEnv options name gctx gctx)
-          (transformBiM elab def)
-    elab Ppx {..} = elabPpx ppx
-    elab e = return e
+    go Ppx {..} = elabPpx ppx
+    go e = return e
 
 typeOfItePpx :: Ty Name -> Ty Name -> Ty Name
 typeOfItePpx condTy retTy =
@@ -1373,7 +1360,7 @@ resolveCtor = resolve1
 resolveMatch ::
   (MonadReader Env m) =>
   Text ->
-  m (Maybe (Ty Name, Expr Name, PolyConstraint))
+  m (Maybe (Text, Ty Name, PolyConstraint))
 resolveMatch oadtName =
   let name = instName1 oadtName "match"
    in -- NOTE: we have to look up match instance in the definition context but
@@ -1383,7 +1370,7 @@ resolveMatch oadtName =
       lookupGDef name >>= \case
         Just FunDef {..} ->
           case poly of
-            PolyT c -> return $ Just (ty, expr, c)
+            PolyT c -> return $ Just (name, ty, c)
             MonoT -> oops "Monomorphic match"
         _ -> return Nothing
 
@@ -1759,10 +1746,20 @@ isMatchCond cond condTy =
             [DH "It has type", DC condTy]
           ]
 
--- | Check if a type is a non-dependent function type, and return the list of
--- argument types and the return type.
+-- | Check if a type is a non-dependent function type.
 --
--- This function does not check if there are nested dependent types.
+-- This function only checks the top-level function type.
+isArrow1 :: Ty Name -> Maybe (Ty Name, Ty Name)
+isArrow1 Pi {..} = do
+  body <- instantiate0 bnd
+  return (ty, body)
+isArrow1 Loc {..} = isArrow1 expr
+isArrow1 _ = Nothing
+
+-- | Check if a type is a non-dependent type, and return the list of argument
+-- types and the return type.
+--
+-- This function checks the function codomain, but not the argument types.
 isArrow :: Ty Name -> Maybe ([Ty Name], Ty Name)
 isArrow Pi {..} = do
   body <- instantiate0 bnd
@@ -1944,9 +1941,19 @@ checkDef name =
   getGSig name >>= \case
     FunDef {..} -> withLabel label $ do
       put poly
-      expr' <- check expr ty
+      expr0 <- check expr ty
       poly' <- get
-      return FunDef {expr = expr', poly = poly', ..}
+      let (ty', expr') = case poly' of
+            PolyT MergeableC ->
+              -- If a polymorphic function has mergeable constraint, it takes an
+              -- extra argument for the if preprocessor which will get resolved
+              -- when the type variable is instantiated.
+              let ppxTy = typeOfItePpx (TBool OblivL) TV
+               in ( arrow_ ppxTy ty,
+                    lam' uniqName ppxTy expr0
+                  )
+            _ -> (ty, expr0)
+      return FunDef {poly = poly', expr = expr', ty = ty', ..}
     OADTDef {..} -> do
       (x, body) <- unbind1 bnd
       body' <- extendCtx1 x viewTy binder $ checkKind body OblivK

@@ -232,6 +232,7 @@ toOilTy T.Pi {..} =
       body = instantiateName badName bnd
       cod = toOilTy body
    in Arrow {..}
+toOilTy T.TV = TV
 -- Oblivious types, including type level computation, are translated into
 -- oblivious array.
 toOilTy _ = OArray
