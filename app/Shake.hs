@@ -186,6 +186,6 @@ rulesForRunner rnd outRoot example = do
   tgt ~> need tgtWithNames
 
 partiesFromDriver :: String -> String
-partiesFromDriver "plaintext" = "public"
+partiesFromDriver "plaintext" = "trusted"
 partiesFromDriver "emp" = "alice,bob"
 partiesFromDriver _ = error "Unknown driver"

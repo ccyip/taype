@@ -6,9 +6,10 @@ let stat : int ref = ref (-1)
 
 let party_of_string = function
   | "public" -> Party.Public
+  | "trusted" -> Party.Trusted
   | "alice" -> Party.Private 1
   | "bob" -> Party.Private 2
-  | _ -> failwith "Unknown party: only supports public, alice, and bob"
+  | _ -> failwith "Unknown party: only supports public, trusted, alice, and bob"
 
 let driver_of_string = function
   | "plaintext" -> (module Taype_driver_plaintext.Driver : S)
@@ -27,7 +28,7 @@ let get_public of_sexp =
   let party, s = scan_line () in
   match party with
   | Party.Public -> Sexp.of_string_conv_exn s of_sexp
-  | Party.Private _ -> failwith "Input party is not public"
+  | _ -> failwith "Input party is not public"
 
 let get_public_int () = get_public Conv.int_of_sexp
 let get_public_bool () = get_public Conv.bool_of_sexp
@@ -50,7 +51,7 @@ module Setup (Driver : S) = struct
 
   let get_private of_sexp sec sec_for =
     let party, s = scan_line () in
-    if !this_party = party || !this_party = Party.Public then
+    if !this_party = party || !this_party = Party.Trusted then
       sec (Sexp.of_string_conv_exn s of_sexp)
     else sec_for party
 

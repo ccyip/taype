@@ -103,7 +103,7 @@ withInput parties owners fields f = go [] parties
       | owner == "public"
           || owner == "expected"
           || owner == party
-          || party == "public" =
+          || party == "trusted" =
           owner <> ":" <> field
     mkInput _ owner _ = owner <> ":"
 
