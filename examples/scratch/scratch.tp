@@ -130,6 +130,35 @@ fn ~insert' : (k : int) -> ~int -> ~list k -> ~list (k+1) = \k y =>
              :: ~list (k+1))
     end
 
+fn ~filter' : (k : int) -> (~int -> ~bool) -> ~list k -> ~list k = \k f =>
+  if k == 0
+  then \_ => ()
+  else \xs =>
+    ~match xs with
+    | ~inl _ => ~inl ()
+    | ~inr ~(x, xs') =>
+      let v = ~filter' (k-1) f xs' in
+      ~if f x
+      then (~inr ~(x, v) : unit ~+ ~int ~* ~list (k-1))
+      else (~list#reshape (k-1) k v :: unit ~+ ~int ~* ~list (k-1))
+    end
+
+fn ~test_filter' : (k : int) -> ~list k -> ~int -> ~list k = \k xs y =>
+  ~filter' k (\x => x ~<= y) xs
+
+fn ~map' : (k : int) -> (~int -> ~int) -> ~list k -> ~list k = \k f =>
+  if k == 0
+  then \_ => ()
+  else \xs =>
+    ~match xs with
+    | ~inl _ => ~inl ()
+    | ~inr ~(x, xs') =>
+      ~inr ~(f x, ~map' (k-1) f xs')
+    end
+
+fn ~test_map' : (k : int) -> ~list k -> ~int -> ~list k = \k xs y =>
+  ~map' k (\x => x ~+ y) xs
+
 // ----------------------------------------------------------------
 // Oblivious functions by preprocessors
 
@@ -157,6 +186,34 @@ fn ~insert : ~int -> #~list -> #~list = \y xs =>
           (\_ => %Cons #~list (x, ~insert y xs'))
       end)
 
+fn ~filter : (~int -> ~bool) -> #~list -> #~list = \f xs =>
+  %match #~list #~list
+    xs
+    (\_ => %Nil #~list ())
+    (\p =>
+      match p with
+      (x, xs') =>
+        let v = ~filter f xs' in
+        %if ~bool #~list (f x)
+          (\_ => %Cons #~list (x, v))
+          (\_ => v)
+      end)
+
+fn ~test_filter : #~list -> ~int -> #~list = \xs y =>
+  ~filter (\x => %<= ~bool x y) xs
+
+fn ~map : (~int -> ~int) -> #~list -> #~list = \f xs =>
+  %match #~list #~list
+    xs
+    (\_ => %Nil #~list ())
+    (\p =>
+      match p with
+      (x, xs') =>
+        %Cons #~list (f x, ~map f xs')
+      end)
+
+fn ~test_map : #~list -> ~int -> #~list = \xs y =>
+  ~map (\x => %+ ~int x y) xs
 
 // obliv ~list_ (k : int) =
 //   if k == 0
