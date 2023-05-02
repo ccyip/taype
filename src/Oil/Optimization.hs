@@ -29,21 +29,23 @@ optimize options@Options {..} defs =
   if optFlagNoOptimization
     then return defs
     else do
+      let defs1 = if optFlagNoMemo then defs else runFreshM $ memo defs
+          defs' = defs1
       (inlinables, ictx) <-
         if optFlagNoInline
           then return (mempty, mempty)
-          else inlineCtx
+          else inlineCtx defs'
       let go opt (name, def) =
             case lookup name inlinables of
               Just def' -> return (name, def')
               _ -> (name,) <$> opt def
-      runOpt $ mapM (go $ biplateM (simplify_ <=< inline_ ictx <=< toANF)) defs
+      runOpt $ mapM (go $ biplateM (simplify_ <=< inline_ ictx <=< toANF)) defs'
   where
     runOpt = runOptM Env {dctx = [], deepSimp = True, ..}
     simplify_ = if optFlagNoSimplify then return else simplify
     inline_ ictx = if optFlagNoInline then return else inline ictx
-    inlineCtx = do
-      let inlinables = [def | def@(_, FunDef {attr = InlineAttr}) <- defs]
+    inlineCtx defs' = do
+      let inlinables = [def | def@(_, FunDef {attr = InlineAttr}) <- defs']
       inlinables' <- runOpt $ biplateM (simplify_ <=< toANF) inlinables
       let ictx = fromList $ runFreshM $ biplateM stripBinders inlinables'
       return (inlinables', ictx)
@@ -177,6 +179,25 @@ inline ctx = transformM go
       Just FunDef {..} -> return expr
       _ -> return e
     go e = return e
+
+-- | Memoize public views.
+--
+-- Only support integer public views at the moment.
+memo :: Defs Name -> FreshM (Defs Name)
+memo = foldMapM go
+  where
+    go (name, FunDef {attr = OADTAttr, ..}) = do
+      x <- fresh
+      y <- fresh
+      let name_ = name <> "_"
+          newExpr =
+            let' y (GV "make_memo" @@ [GV "()"]) $
+              lam' x $
+                GV "memo" @@ [V y, GV name_, V x]
+          newDef =
+            FunDef {attr = OADTAttr, expr = newExpr, ..}
+      return [(name_, FunDef {attr = NoAttr, ..}), (name, newDef)]
+    go namedDef = return [namedDef]
 
 ----------------------------------------------------------------
 -- Optimizer monad

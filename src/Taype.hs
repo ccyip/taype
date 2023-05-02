@@ -123,6 +123,10 @@ opts = do
     switch $
       long "fno-tupling"
         <> help "Disable tupling optimization"
+  optFlagNoMemo <-
+    switch $
+      long "fno-memo"
+        <> help "Disable memoization optimization"
   optPrintCore <-
     switch $
       long "print-core"
@@ -171,5 +175,6 @@ opts = do
         optFlagNoSimplify = optFlagNoSimplify || optFlagNoOptimization,
         optFlagNoInline = optFlagNoInline || optFlagNoOptimization,
         optFlagNoTupling = optFlagNoTupling || optFlagNoOptimization,
+        optFlagNoMemo = optFlagNoMemo || optFlagNoOptimization,
         ..
       }
