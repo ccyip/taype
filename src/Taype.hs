@@ -127,6 +127,10 @@ opts = do
     switch $
       long "fno-memo"
         <> help "Disable memoization optimization"
+  optFlagNoGuardReshape <-
+    switch $
+      long "fno-guard-reshape"
+        <> help "Disable guarding reshape instances"
   optPrintCore <-
     switch $
       long "print-core"
@@ -176,5 +180,6 @@ opts = do
         optFlagNoInline = optFlagNoInline || optFlagNoOptimization,
         optFlagNoTupling = optFlagNoTupling || optFlagNoOptimization,
         optFlagNoMemo = optFlagNoMemo || optFlagNoOptimization,
+        optFlagNoGuardReshape = optFlagNoGuardReshape || optFlagNoOptimization,
         ..
       }

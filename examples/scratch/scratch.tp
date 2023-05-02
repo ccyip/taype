@@ -88,7 +88,6 @@ fn ~list#view : list -> int = \xs =>
 fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
 
 fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
-if k == k' then \xs => (xs :: ~list k') else
   if k' == 0
   then \_ => ()
   else

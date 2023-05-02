@@ -14,6 +14,7 @@ module Oil.Optimization (optimize) where
 
 import Bound.Scope qualified as B
 import Data.HashMap.Strict ((!?))
+import Data.HashSet (member)
 import Data.List (lookup)
 import Oil.Syntax
 import Taype.Common
@@ -29,8 +30,15 @@ optimize options@Options {..} defs =
   if optFlagNoOptimization
     then return defs
     else do
-      let defs1 = if optFlagNoMemo then defs else runFreshM $ memo defs
-          defs' = defs1
+      let defs1 =
+            if optFlagNoMemo
+              then defs
+              else runFreshM $ memo defs
+          defs2 =
+            if optFlagNoGuardReshape
+              then defs1
+              else runFreshM $ guardReshape defs1
+          defs' = defs2
       (inlinables, ictx) <-
         if optFlagNoInline
           then return (mempty, mempty)
@@ -190,14 +198,48 @@ memo = foldMapM go
       x <- fresh
       y <- fresh
       let name_ = name <> "_"
-          newExpr =
+          expr' =
             let' y (GV "make_memo" @@ [GV "()"]) $
               lam' x $
                 GV "memo" @@ [V y, GV name_, V x]
-          newDef =
-            FunDef {attr = OADTAttr, expr = newExpr, ..}
-      return [(name_, FunDef {attr = NoAttr, ..}), (name, newDef)]
+          def' =
+            FunDef {attr = OADTAttr, expr = expr', ..}
+      return [(name_, FunDef {attr = NoAttr, ..}), (name, def')]
     go namedDef = return [namedDef]
+
+-- | Guard reshape instances.
+--
+-- Do nothing if reshaping between the same public views. Unfortunately,
+-- equality checks are not necessarily cheap.
+guardReshape :: Defs Name -> FreshM (Defs Name)
+guardReshape defs = foldMapM go defs
+  where
+    graph = mkDepGraph defs
+    reshapes =
+      [ (name, reachableSet graph name)
+        | (name, FunDef {attr = ReshapeAttr}) <- defs
+      ]
+    go (name, def) = do
+      let reshapeNames = [x | (x, s) <- reshapes, name `member` s]
+      def' <- flip transformBiM def $ \case
+        GV {..} | ref `elem` reshapeNames -> return GV {ref = mkName_ ref}
+        e -> return (e :: Expr Name)
+      case def' of
+        FunDef {attr = ReshapeAttr, ..} -> do
+          k1 <- fresh
+          k2 <- fresh
+          x <- fresh
+          let name_ = mkName_ name
+              expr' =
+                lams' [k1, k2, x] $
+                  ite_
+                    (GV "==" @@ [V k1, V k2])
+                    (V x)
+                    (GV name_ @@ [V k1, V k2, V x])
+              newDef = FunDef {attr = ReshapeAttr, expr = expr', ..}
+          return [(name_, FunDef {attr = NoAttr, ..}), (name, newDef)]
+        _ -> return [(name, def')]
+    mkName_ x = x <> "_"
 
 ----------------------------------------------------------------
 -- Optimizer monad

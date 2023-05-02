@@ -12,7 +12,6 @@
 -- Translate taype to OIL.
 module Oil.Translation (toOilProgram) where
 
-import Data.Graph (graphFromEdges, reachable)
 import Data.HashSet (member)
 import Data.List (partition)
 import Data.Maybe (fromJust)
@@ -375,22 +374,9 @@ filterConceal allDefs =
   ]
   where
     defs = [def | def@(_, FunDef {}) <- allDefs]
-    (graph, fromVertex, toVertex) = graphFromEdges $ mkDepGraph defs
+    graph = mkDepGraph defs
     sectionDefs = [name | (name, FunDef {attr = SectionAttr}) <- defs]
-    reachableSet = fromList . toNames . reachable graph . fromJust . toVertex
-    toNames vs = [name | (_, name, _) <- fromVertex <$> vs]
-    concealSet = foldMap reachableSet sectionDefs
-
-mkDepGraph :: (forall a. Defs a) -> [(NamedDef Name, Text, [Text])]
-mkDepGraph defs =
-  let depss = runFreshM $ mapM (go . snd) defs
-   in zipWith (\def deps -> (def, fst def, deps)) defs depss
-  where
-    go :: Def Name -> FreshM [Text]
-    go FunDef {..} = do
-      deps <- universeM expr
-      return $ hashNub [x | GV x <- deps]
-    go _ = return []
+    concealSet = foldMap (reachableSet graph) sectionDefs
 
 -- | Unfold all builtin definitions that are not primitive.
 unfoldBuiltin :: Def Name -> Def Name

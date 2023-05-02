@@ -52,12 +52,19 @@ module Oil.Syntax
 
     -- * Pretty printer
     cuteProgramDoc,
+
+    -- * Dependency graph
+    DepGraph (..),
+    mkDepGraph,
+    reachableSet,
   )
 where
 
 import Bound
 import Control.Monad (ap)
 import Data.Functor.Classes
+import Data.Graph (Graph, Vertex, graphFromEdges, reachable)
+import Data.Maybe (fromJust)
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -464,3 +471,31 @@ instance HasPLevel Ty where
     TApp {args = []} -> 0
     TApp {} -> 10
     _ -> 90
+
+----------------------------------------------------------------
+-- Dependency graph
+
+data DepGraph = DepGraph
+  { graph :: Graph,
+    fromVertex :: Vertex -> (NamedDef Name, Text, [Text]),
+    toVertex :: Text -> Maybe Vertex
+  }
+
+mkDepGraph :: Defs Name -> DepGraph
+mkDepGraph defs =
+  let depss = runFreshM $ mapM (go . snd) defs
+      edges = zipWith (\def deps -> (def, fst def, deps)) defs depss
+      (graph, fromVertex, toVertex) = graphFromEdges edges
+   in DepGraph {..}
+  where
+    go :: Def Name -> FreshM [Text]
+    go FunDef {..} = do
+      deps <- universeM expr
+      return $ hashNub [x | GV x <- deps]
+    go _ = return []
+
+reachableSet :: DepGraph -> Text -> HashSet Text
+reachableSet DepGraph {..} =
+  fromList . toNames . reachable graph . fromJust . toVertex
+  where
+    toNames vs = [name | (_, name, _) <- fromVertex <$> vs]

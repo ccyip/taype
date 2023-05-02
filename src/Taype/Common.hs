@@ -90,6 +90,7 @@ data Options = Options
     optFlagNoTupling :: Bool,
     optFlagNoInline :: Bool,
     optFlagNoMemo :: Bool,
+    optFlagNoGuardReshape :: Bool,
     optPrintCore :: Bool,
     optStage :: Int,
     optPrintOil :: Bool,

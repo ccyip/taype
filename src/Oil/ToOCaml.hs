@@ -37,7 +37,7 @@ module Oil.ToOCaml (toOCaml) where
 import Data.Graph (SCC (..), stronglyConnComp)
 import Data.List (lookup)
 import Data.Text qualified as T
-import Oil.Syntax
+import Oil.Syntax hiding (mkDepGraph)
 import Taype.Common
 import Taype.Cute
 import Taype.Name
