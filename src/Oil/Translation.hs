@@ -37,6 +37,9 @@ newtype Env = Env
 -- | The translation monad
 type TslM = FreshT (Reader Env)
 
+withRevealing :: (MonadReader Env m) => Bool -> m a -> m a
+withRevealing revealing = local $ const Env {..}
+
 runTslM :: Env -> TslM a -> a
 runTslM env m = runReader (runFreshT m) env
 
@@ -308,23 +311,16 @@ oblivInjDef tag = runFreshM $ do
 -- reveal phase.
 toOilProgram :: Options -> T.Defs Name -> IO Program
 toOilProgram options@Options {..} defs = do
-  mainDefs' <- goOpt $ go False mainDefs
-  concealDefs' <- goOpt $ go False concealDefs
-  revealDefs' <- goOpt $ go True revealDefs
-  return
-    Program
-      { mainDefs = fromClosedDefs $ simp mainDefs',
-        concealDefs = fromClosedDefs $ simp concealDefs',
-        revealDefs = fromClosedDefs $ simp revealDefs',
-        ..
-      }
+  defs' <- simp <$> optimize options (go defs)
+  let allDefs = fromClosedDefs defs'
+      (mainDefs, revealDefs) = partition (isSafe . snd) allDefs
+      concealDefs = filterConceal mainDefs
+  return Program {..}
   where
-    go revealing =
-      secondF $ unfoldBuiltin . runTslM Env {..} . toOilDef
-    (mainDefs, revealDefs) = partition (isSafe . snd) defs
-    concealDefs = filterConceal defs oadts
-    goOpt = optimize options
-
+    go = secondF $ unfoldBuiltin . runTslM Env {revealing = False} . toOilDef
+    simp = secondF $ if optReadable then readableDef . simpDef else simpDef
+    isSafe FunDef {attr = LeakyAttr} = False
+    isSafe _ = True
     oadts =
       [ OADTInfo
           { section = sectionName oadtName,
@@ -334,28 +330,23 @@ toOilProgram options@Options {..} defs = do
         | (oadtName, T.OADTDef {}) <- defs
       ]
 
-    isSafe T.FunDef {label = LeakyL} = False
-    isSafe _ = True
-
-    simp =
-      secondF $ (if optReadable then readableDef else id) . simpDef
-
 -- | Translate a taype definition to the corresponding OIL definition.
 toOilDef :: T.Def Name -> TslM (Def Name)
-toOilDef T.FunDef {..} = do
+toOilDef T.FunDef {..} = withRevealing (label == LeakyL) $ do
   let ty' = toOilTy ty
   expr' <- toOilExpr expr
   return FunDef {ty = ty', expr = expr', attr = attr'}
   where
-    attr' = case attr of
-      KnownInst inst -> case inst of
-        SectionInst {} -> SectionAttr
-        RetractionInst {} -> RetractionAttr
-        ReshapeInst {} -> ReshapeAttr
-        CtorInst {} -> InlineAttr
-        MatchInst {} -> InlineAttr
+    attr' = case label of
+      LeakyL -> LeakyAttr
+      _ -> case attr of
+        KnownInst inst -> case inst of
+          SectionInst {} -> SectionAttr
+          ReshapeInst {} -> ReshapeAttr
+          CtorInst {} -> InlineAttr
+          MatchInst {} -> InlineAttr
+          _ -> NoAttr
         _ -> NoAttr
-      _ -> NoAttr
 toOilDef T.OADTDef {..} = do
   let viewTy' = toOilTy viewTy
   (x, body) <- unbind1 bnd
@@ -371,25 +362,34 @@ toOilDef T.ADTDef {..} = do
   return ADTDef {ctors = ctors'}
 toOilDef _ = oops "Translating constructor or builtin definitions"
 
-filterConceal :: T.Defs Name -> [OADTInfo] -> T.Defs Name
-filterConceal allDefs oadts = [def | def@(name, _) <- defs, name `member` concealSet]
+filterConceal :: (forall a. Defs a) -> (forall a. Defs a)
+filterConceal allDefs =
+  [ def
+    | def@(name, FunDef {..}) <- defs,
+      name `member` concealSet,
+      -- FIXME: this is incorrect although it works in most cases. We should
+      -- filter out functions that do not reach any oblivious operations
+      -- (primitive sections, array operations and oblivious integer
+      -- arithmetics).
+      attr /= OADTAttr
+  ]
   where
-    defs = [def | def@(_, T.FunDef {}) <- allDefs]
+    defs = [def | def@(_, FunDef {}) <- allDefs]
     (graph, fromVertex, toVertex) = graphFromEdges $ mkDepGraph defs
-    sectionDefs = [section | OADTInfo {..} <- oadts]
-    reachableSet name =
-      fromList $ maybe [] (toNames . reachable graph) $ toVertex name
+    sectionDefs = [name | (name, FunDef {attr = SectionAttr}) <- defs]
+    reachableSet = fromList . toNames . reachable graph . fromJust . toVertex
     toNames vs = [name | (_, name, _) <- fromVertex <$> vs]
-    concealSet = fromList sectionDefs <> foldMap reachableSet sectionDefs
+    concealSet = foldMap reachableSet sectionDefs
 
-mkDepGraph :: T.Defs Name -> [(T.NamedDef Name, Text, [Text])]
+mkDepGraph :: (forall a. Defs a) -> [(NamedDef Name, Text, [Text])]
 mkDepGraph defs =
   let depss = runFreshM $ mapM (go . snd) defs
    in zipWith (\def deps -> (def, fst def, deps)) defs depss
   where
-    go T.FunDef {..} = do
+    go :: Def Name -> FreshM [Text]
+    go FunDef {..} = do
       deps <- universeM expr
-      return $ hashNub [x | T.GV x <- deps]
+      return $ hashNub [x | GV x <- deps]
     go _ = return []
 
 -- | Unfold all builtin definitions that are not primitive.

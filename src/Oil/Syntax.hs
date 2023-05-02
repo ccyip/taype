@@ -150,11 +150,12 @@ type Defs a = [NamedDef a]
 
 data Attribute
   = SectionAttr
-  | RetractionAttr
+  | LeakyAttr
   | OADTAttr
   | ReshapeAttr
   | InlineAttr
   | NoAttr
+  deriving stock (Show, Eq)
 
 -- | OIL program
 data Program = Program
