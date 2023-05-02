@@ -23,6 +23,7 @@ module Oil.Syntax
     DefB (..),
     NamedDef,
     Defs,
+    Attribute (..),
     Program (..),
     OADTInfo (..),
 
@@ -133,7 +134,8 @@ type Def = DefB Expr
 data DefB f a
   = -- | Function
     FunDef
-      { ty :: Ty,
+      { attr :: Attribute,
+        ty :: Ty,
         expr :: f a
       }
   | -- | Algebraic data type
@@ -145,6 +147,14 @@ data DefB f a
 type NamedDef a = (Text, Def a)
 
 type Defs a = [NamedDef a]
+
+data Attribute
+  = SectionAttr
+  | RetractionAttr
+  | OADTAttr
+  | ReshapeAttr
+  | InlineAttr
+  | NoAttr
 
 -- | OIL program
 data Program = Program

@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -14,7 +13,6 @@
 module Oil.Translation (toOilProgram) where
 
 import Data.Graph (graphFromEdges, reachable)
-import Data.HashMap.Strict qualified as HM
 import Data.HashSet (member)
 import Data.List (partition)
 import Data.Maybe (fromJust)
@@ -23,7 +21,6 @@ import Oil.Syntax
 import Relude.Extra.Bifunctor
 import Taype.Binder
 import Taype.Common
-import Taype.Environment (GCtx (..))
 import Taype.Name
 import Taype.Plate
 import Taype.Prelude
@@ -309,8 +306,8 @@ oblivInjDef tag = runFreshM $ do
 -- oblivious computation phase, the section functions with their dependencies
 -- for the conceal phase, and the leaky functions (e.g., retractions) for the
 -- reveal phase.
-toOilProgram :: Options -> GCtx Name -> T.Defs Name -> IO Program
-toOilProgram options@Options {..} gctx defs = do
+toOilProgram :: Options -> T.Defs Name -> IO Program
+toOilProgram options@Options {..} defs = do
   mainDefs' <- goOpt $ go False mainDefs
   concealDefs' <- goOpt $ go False concealDefs
   revealDefs' <- goOpt $ go True revealDefs
@@ -326,10 +323,7 @@ toOilProgram options@Options {..} gctx defs = do
       secondF $ unfoldBuiltin . runTslM Env {..} . toOilDef
     (mainDefs, revealDefs) = partition (isSafe . snd) defs
     concealDefs = filterConceal defs oadts
-    goOpt = optimize options actx
-    actx = flip HM.mapMaybe (unGCtx gctx) $ \case
-      T.FunDef {attr = KnownInst inst} -> Just inst
-      _ -> Nothing
+    goOpt = optimize options
 
     oadts =
       [ OADTInfo
@@ -351,7 +345,17 @@ toOilDef :: T.Def Name -> TslM (Def Name)
 toOilDef T.FunDef {..} = do
   let ty' = toOilTy ty
   expr' <- toOilExpr expr
-  return FunDef {ty = ty', expr = expr'}
+  return FunDef {ty = ty', expr = expr', attr = attr'}
+  where
+    attr' = case attr of
+      KnownInst inst -> case inst of
+        SectionInst {} -> SectionAttr
+        RetractionInst {} -> RetractionAttr
+        ReshapeInst {} -> ReshapeAttr
+        CtorInst {} -> InlineAttr
+        MatchInst {} -> InlineAttr
+        _ -> NoAttr
+      _ -> NoAttr
 toOilDef T.OADTDef {..} = do
   let viewTy' = toOilTy viewTy
   (x, body) <- unbind1 bnd
@@ -359,7 +363,8 @@ toOilDef T.OADTDef {..} = do
   return
     FunDef
       { ty = Arrow viewTy' sizeTy,
-        expr = lamB x binder body'
+        expr = lamB x binder body',
+        attr = OADTAttr
       }
 toOilDef T.ADTDef {..} = do
   let ctors' = secondF (toOilTy <$>) $ toList ctors

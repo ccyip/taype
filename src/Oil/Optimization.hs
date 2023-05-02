@@ -24,13 +24,12 @@ import Taype.Prelude
 -- | Optimize OIL programs.
 --
 -- All definitions must be closed.
-optimize ::
-  Options -> HashMap Text OADTInst -> Defs Name -> IO (Defs Name)
-optimize options@Options {..} actx defs =
+optimize :: Options -> Defs Name -> IO (Defs Name)
+optimize options@Options {..} defs =
   if optFlagNoSimplify
     then return defs
     else do
-      let inlinables = filter (isInlinable actx) defs
+      let inlinables = [def | def@(_, FunDef {attr = InlineAttr}) <- defs]
       inlinables' <- runOpt $ biplateM (simplify <=< toANF) inlinables
       let ictx = fromList $ runFreshM $ biplateM stripBinders inlinables'
           go opt (name, def) =
@@ -153,25 +152,17 @@ toANF = \case
       body' <- toANF body
       return MatchAlt {bnd = abstract_ xs body', ..}
 
-isInlinable :: HashMap Text OADTInst -> NamedDef Name -> Bool
-isInlinable actx (name, _) = case actx !? name of
-  Just inst -> case inst of
-    CtorInst {} -> True
-    MatchInst {} -> True
-    _ -> False
-  _ -> False
-
-stripBinders :: MonadFresh m => Expr Name -> m (Expr Name)
+stripBinders :: (MonadFresh m) => Expr Name -> m (Expr Name)
 stripBinders = transformM go
   where
     go Lam {..} = return Lam {binder = Nothing, ..}
     go Let {..} = return Let {binder = Nothing, ..}
-    go Match {..} = return Match {alts = goAlt <$> alts,..}
+    go Match {..} = return Match {alts = goAlt <$> alts, ..}
     go e = return e
     goAlt MatchAlt {..} =
       MatchAlt {binders = Nothing <$ binders, ..}
 
-inline :: MonadFresh m => HashMap Text (Def Name) -> Expr Name -> m (Expr Name)
+inline :: (MonadFresh m) => HashMap Text (Def Name) -> Expr Name -> m (Expr Name)
 inline ctx = transformM go
   where
     go e@GV {..} = case ctx !? ref of

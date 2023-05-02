@@ -58,7 +58,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   -- Stage 2 elaborates remaining proprocessors.
   coreDefs2 <- elabPpxDefs options gctx coreDefs1
   processCore 2 coreDefs2
-  prog <- lift $ toOilProgram options gctx coreDefs2
+  prog <- lift $ toOilProgram options coreDefs2
   let oilDoc = Oil.cuteProgramDoc options prog
   when optPrintOil $ printDoc options oilDoc
   printToFile "oil" oilDoc
