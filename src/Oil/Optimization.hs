@@ -26,19 +26,27 @@ import Taype.Prelude
 -- All definitions must be closed.
 optimize :: Options -> Defs Name -> IO (Defs Name)
 optimize options@Options {..} defs =
-  if optFlagNoSimplify
+  if optFlagNoOptimization
     then return defs
     else do
-      let inlinables = [def | def@(_, FunDef {attr = InlineAttr}) <- defs]
-      inlinables' <- runOpt $ biplateM (simplify <=< toANF) inlinables
-      let ictx = fromList $ runFreshM $ biplateM stripBinders inlinables'
-          go opt (name, def) =
-            case lookup name inlinables' of
+      (inlinables, ictx) <-
+        if optFlagNoInline
+          then return (mempty, mempty)
+          else inlineCtx
+      let go opt (name, def) =
+            case lookup name inlinables of
               Just def' -> return (name, def')
               _ -> (name,) <$> opt def
-      runOpt $ mapM (go $ biplateM (simplify <=< inline ictx <=< toANF)) defs
+      runOpt $ mapM (go $ biplateM (simplify_ <=< inline_ ictx <=< toANF)) defs
   where
     runOpt = runOptM Env {dctx = [], deepSimp = True, ..}
+    simplify_ = if optFlagNoSimplify then return else simplify
+    inline_ ictx = if optFlagNoInline then return else inline ictx
+    inlineCtx = do
+      let inlinables = [def | def@(_, FunDef {attr = InlineAttr}) <- defs]
+      inlinables' <- runOpt $ biplateM (simplify_ <=< toANF) inlinables
+      let ictx = fromList $ runFreshM $ biplateM stripBinders inlinables'
+      return (inlinables', ictx)
 
 -- | Simplifier
 simplify :: Expr Name -> OptM (Expr Name)
