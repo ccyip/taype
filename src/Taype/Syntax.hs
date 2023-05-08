@@ -232,6 +232,8 @@ data PpxB f a
     BuiltinPpx {fn :: Text, ty :: f a}
   | -- | Coercion
     CoercePpx {fromTy :: f a, toTy :: f a}
+  | -- | Lifting public functions
+    LiftPpx {fn :: Text, ty :: f a}
   deriving stock (Functor, Foldable, Traversable)
 
 -- | Kinds
@@ -425,6 +427,7 @@ instance Bound PpxB where
   MatchPpx {..} >>>= f = MatchPpx {condTy = condTy >>= f, retTy = retTy >>= f}
   BuiltinPpx {..} >>>= f = BuiltinPpx {ty = ty >>= f, ..}
   CoercePpx {..} >>>= f = CoercePpx {fromTy = fromTy >>= f, toTy = toTy >>= f}
+  LiftPpx {..} >>>= f = LiftPpx {ty = ty >>= f, ..}
 
 instance Bound DefB where
   FunDef {..} >>>= f = FunDef {ty = ty >>= f, expr = expr >>= f, ..}
@@ -652,6 +655,9 @@ instance BiplateM (Ppx Name) (Ty Name) where
     fromTy' <- f fromTy
     toTy' <- f toTy
     return CoercePpx {fromTy = fromTy', toTy = toTy'}
+  biplateM f LiftPpx {..} = do
+    ty' <- f ty
+    return LiftPpx {ty = ty', ..}
 
 instance BiplateM (Def Name) (Expr Name) where
   biplateM f FunDef {..} = do
@@ -971,6 +977,7 @@ instance Cute (Ppx Text) where
     MatchPpx {..} -> go "match" [condTy, retTy]
     BuiltinPpx {..} -> go fn [ty]
     CoercePpx {..} -> go "coerce" [fromTy, toTy]
+    LiftPpx {..} -> go "lift" [GV fn, ty]
     where
       go name = cuteApp_ (pretty (ppxName name))
 

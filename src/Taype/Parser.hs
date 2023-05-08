@@ -448,7 +448,12 @@ grammar = mdo
             loc <- pLocatedToken L.CoercePpx
             fromTy <- pAtomType
             toTy <- pAtomType
-            return (loc, CoercePpx {..})
+            return (loc, CoercePpx {..}),
+          do
+            loc <- pLocatedToken L.LiftPpx
+            fn <- pIdent
+            ty <- pAtomType
+            return (loc, LiftPpx {..})
         ]
 
   -- Type
@@ -669,5 +674,6 @@ renderToken = \case
   L.ItePpx -> pretty $ ppxName "if"
   L.MatchPpx -> pretty $ ppxName "match"
   L.CoercePpx -> pretty $ ppxName "coerce"
+  L.LiftPpx -> pretty $ ppxName "lift"
   L.CtorPpx x -> pretty $ ppxName x
   L.BuiltinPpx x -> pretty $ ppxName x

@@ -21,6 +21,7 @@ module Taype.Environment
     defsFromGCtx,
     TCtx (..),
     BCtx (..),
+    LCtx,
 
     -- * Manipulating environment
     mapGCtxDef,
@@ -31,6 +32,7 @@ module Taype.Environment
     lookupGDef,
     lookupTy,
     lookupBinder,
+    lookupLCtx,
     extendCtx,
     extendCtx1,
     withLoc,
@@ -131,6 +133,9 @@ instance BiplateM (TCtx Name) (Ty Name) where
 newtype BCtx a = BCtx {unBCtx :: [(a, Binder)]}
   deriving stock (Functor, Foldable, Traversable)
 
+-- | Lifting context
+type LCtx a = [(Text, [(Ty a, Text)])]
+
 ----------------------------------------------------------------
 -- Manipulating environment
 
@@ -172,6 +177,12 @@ lookupBinder :: (MonadReader Env m) => Name -> m (Maybe Binder)
 lookupBinder x = do
   BCtx bctx <- asks bctx
   return $ lookup x bctx
+
+-- | Look up the lifting context.
+lookupLCtx :: (Eq a) => Text -> Ty a -> LCtx a -> Maybe Text
+lookupLCtx fn ty ctx = do
+  m <- lookup fn ctx
+  lookup ty m
 
 -- | Extend the typing context.
 --

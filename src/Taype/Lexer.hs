@@ -75,6 +75,7 @@ data Token
   | MatchPpx
   | BuiltinPpx Text
   | CoercePpx
+  | LiftPpx
   deriving stock (Eq, Show)
 
 -- | Token with location information
@@ -189,6 +190,7 @@ pPpx =
     [ ItePpx <$ symbol (ppxName "if"),
       MatchPpx <$ symbol (ppxName "match"),
       CoercePpx <$ symbol (ppxName "coerce"),
+      LiftPpx <$ symbol (ppxName "lift"),
       CtorPpx <$> lexeme (try pCtorPpx),
       BuiltinPpx <$> lexeme (try pBuiltinPpx)
     ]

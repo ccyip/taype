@@ -74,6 +74,7 @@ import Relude.Extra.Bifunctor
 import Taype.Binder
 import Taype.Name
 import Taype.Plate
+import Taype.Prelude
 import Text.Show qualified
 
 -- | Command line options
@@ -225,6 +226,8 @@ data OADTInst
     MatchInst {oadtName :: Text}
   | -- | Coercion between two OADTs
     CoerceInst {oadtName :: Text, oadtTo :: Text}
+  | -- | Lifted function
+    LiftInst {fn :: Text}
   deriving stock (Eq, Show)
 
 data OADTInstAttr
@@ -248,6 +251,7 @@ attrOfName x = case T.splitOn instInfix x of
         | instName == "reshape" -> KnownInst $ ReshapeInst {..}
         | instName == "match" -> KnownInst $ MatchInst {..}
         | otherwise -> UnknownInst
+  [fn, "lift", _] -> KnownInst $ LiftInst {..}
   [oadtName, oadtTo, "coerce"] -> KnownInst $ CoerceInst {..}
   _ -> UnknownInst
 
@@ -265,6 +269,7 @@ oadtNameOfInst = \case
   ReshapeInst {..} -> oadtName
   MatchInst {..} -> oadtName
   CoerceInst {..} -> oadtName
+  LiftInst {} -> oops "Not an OADT instance"
 
 ----------------------------------------------------------------
 -- Common names

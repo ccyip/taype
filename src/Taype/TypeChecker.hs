@@ -612,7 +612,7 @@ typing Ppx {..} Nothing = do
         ]
     MonoT -> pass
   ppx' <- biplateM kinded ppx
-  (t', _) <- typingPpx ppx'
+  t' <- typingPpx ppx'
   return (t', Ppx {ppx = ppx'})
 typing Loc {..} mt = withLoc loc $ withCur expr $ typing expr mt
 typing Asc {..} Nothing = do
@@ -999,8 +999,8 @@ kinded t = inferKind t <&> snd
 --
 -- In addition, the elaborated expressions must no longer contain any
 -- preprocessors.
-typingPpx :: Ppx Name -> TcM (Ty Name, Expr Name)
-typingPpx = go
+processPpx :: LCtx Name -> Ppx Name -> TcM (Ty Name, Expr Name)
+processPpx ctx = go
   where
     go ItePpx {..} = do
       let t' = typeOfItePpx condTy retTy
@@ -1083,6 +1083,29 @@ typingPpx = go
       let t' = arrow_ fromTy toTy
       e' <- goCoerce fromTy toTy
       return (t', e')
+    go LiftPpx {..} =
+      case lookupLCtx fn ty ctx of
+        Just name -> return (ty, GV name)
+        _ ->
+          lookupGSig fn >>= \case
+            Just FunDef {ty = ty'} -> do
+              unlessM (compatible ty ty') $
+                err
+                  [ [ DD "The lifting type is not compatible with",
+                      DD $ "the type of function" <+> pretty fn
+                    ],
+                    [DH "Expected a type compatible with", DC ty'],
+                    [DH "Got", DC ty]
+                  ]
+              return (ty, oops "Lifting instance not available")
+            _ ->
+              err
+                [ [ DD $
+                      "Definition"
+                        <+> pretty fn
+                        <+> "is not in scope or not a function"
+                  ]
+                ]
 
     mkLam b f1 f2 condTy retTy =
       lams'
@@ -1316,8 +1339,11 @@ typingPpx = go
           [DH "Got", DC ty']
         ]
 
-elabPpx :: Ppx Name -> TcM (Expr Name)
-elabPpx ppx = snd <$> typingPpx ppx
+typingPpx :: Ppx Name -> TcM (Ty Name)
+typingPpx ppx = fst <$> processPpx [] ppx
+
+elabPpx :: LCtx Name -> Ppx Name -> TcM (Expr Name)
+elabPpx ctx ppx = snd <$> processPpx ctx ppx
 
 -- | Elaborate all preprocessors in the definitions.
 --
@@ -1334,8 +1360,20 @@ elabPpxDefs options gctx defs =
         (initEnv options name gctx gctx)
         (transformBiM go def)
   where
-    go Ppx {..} = elabPpx ppx
+    go Ppx {..} = elabPpx ctx ppx
     go e = return e
+    ctx = makeLCtx defs
+
+makeLCtx :: Defs Name -> LCtx Name
+makeLCtx defs =
+  go
+    [ (fn, (ty, name))
+      | (name, FunDef {attr = KnownInst (LiftInst {..}), ..}) <- defs
+    ]
+  where
+    go ctx0 =
+      hashNub [fn | (fn, _) <- ctx0] <&> \fn ->
+        (fn, [entry | (fn', entry) <- ctx0, fn == fn'])
 
 typeOfItePpx :: Ty Name -> Ty Name -> Ty Name
 typeOfItePpx condTy retTy =
@@ -1877,33 +1915,34 @@ pubNameOfOADTName name =
     Just OADTDef {pubName} -> return pubName
     _ -> oops "OADT definition is missing"
 
--- | Compute the given type's canonical public type if it has one.
+-- | Compute the given type's compatible class if it has one.
 --
--- The given type must be well-kinded.
-canonicalPubTy :: Ty Name -> TcM (Maybe (Ty Name))
-canonicalPubTy Prod {olabel = PublicL, ..} = do
-  left' <- canonicalPubTy left
-  right' <- canonicalPubTy right
+-- The given type must be well-kinded. The returned compatible class is the
+-- canonical public type as the representative of this class.
+compatibleClass :: Ty Name -> TcM (Maybe (Ty Name))
+compatibleClass Prod {olabel = PublicL, ..} = do
+  left' <- compatibleClass left
+  right' <- compatibleClass right
   return $ Prod PublicL <$> left' <*> right'
-canonicalPubTy Pi {..} = do
-  ty' <- canonicalPubTy ty
+compatibleClass Pi {..} = do
+  ty' <- compatibleClass ty
   (_, body) <- unbind1 bnd
-  body' <- canonicalPubTy body
+  body' <- compatibleClass body
   return $ arrow_ <$> ty' <*> body'
-canonicalPubTy GV {..} = return $ Just GV {..}
-canonicalPubTy TUnit = return $ Just TUnit
-canonicalPubTy TBool {} = return $ Just TBool {olabel = PublicL}
-canonicalPubTy TInt {} = return $ Just TInt {olabel = PublicL}
-canonicalPubTy Psi {..} = do
+compatibleClass GV {..} = return $ Just GV {..}
+compatibleClass TUnit = return $ Just TUnit
+compatibleClass TBool {} = return $ Just TBool {olabel = PublicL}
+compatibleClass TInt {} = return $ Just TInt {olabel = PublicL}
+compatibleClass Psi {..} = do
   ref <- pubNameOfOADTName oadtName
   return $ Just GV {..}
-canonicalPubTy Loc {..} = canonicalPubTy expr
-canonicalPubTy _ = return Nothing
+compatibleClass Loc {..} = compatibleClass expr
+compatibleClass _ = return Nothing
 
 compatible :: Ty Name -> Ty Name -> TcM Bool
 compatible t1 t2 = do
-  mt1 <- canonicalPubTy t1
-  mt2 <- canonicalPubTy t2
+  mt1 <- compatibleClass t1
+  mt2 <- compatibleClass t2
   case (mt1, mt2) of
     (Just t1', Just t2') -> return $ t1' == t2'
     _ -> return False
@@ -2148,6 +2187,28 @@ preCheckDef defs name def = do
 
 -- | Check the type of the given OADT instance is well-formed.
 preCheckInst :: Int -> Text -> OADTInst -> Ty Name -> TcM ()
+preCheckInst loc name LiftInst {..} ty =
+  lookupGSig fn >>= \case
+    Just FunDef {ty = ty'} -> do
+      unlessM (compatible ty ty') $
+        errPlain
+          loc
+          [ [ DD $
+                "The type of function"
+                  <+> pretty name
+                  <+> "is not compatible with the type of function"
+                  <+> pretty fn
+            ],
+            [DH "Expected a type compatible with", DC ty'],
+            [DH "Got", DC ty]
+          ]
+    _ ->
+      err_ loc $
+        "Function"
+          <+> pretty name
+          <+> "is a lifting of"
+          <+> pretty fn
+          <+> "which is not in scope or not a function"
 preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
   where
     go (pubName, viewTy) = case inst of

@@ -214,6 +214,19 @@ fn ~map : (~int -> ~int) -> #~list -> #~list = \f xs =>
 fn ~test_map : #~list -> ~int -> #~list = \xs y =>
   ~map (\x => %+ (~int -> ~int -> ~int) x y) xs
 
+fn map#lift#~list : (~int -> ~int) -> #~list -> #~list = \f xs =>
+  %match #~list #~list
+    xs
+    (\_ => %Nil #~list ())
+    (\p =>
+      match p with
+      (x, xs') =>
+        %Cons #~list (f x, map#lift#~list f xs')
+      end)
+
+fn ~map2 : (~int -> ~int) -> #~list -> #~list =
+  %lift map ((~int -> ~int) -> #~list -> #~list)
+
 // obliv ~list_ (k : int) =
 //   if k == 0
 //   then unit
