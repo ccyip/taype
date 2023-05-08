@@ -11,7 +11,7 @@ A policy-agnostic language for oblivious computation with algebraic data types.
 To build the `taype` type checker and compiler, we need the Haskell toolchain,
 which can be easily installed with [ghcup](https://www.haskell.org/ghcup/).
 Cabal will take care of the Haskell dependencies for us. We currently only tests
-on Haskell 9.2.5 and Cabal 3.8.1.
+on Haskell 9.4.4 and Cabal 3.10.1.
 
 To build and run the examples, we need the OCaml toolchain which can be
 installed with [opam](https://opam.ocaml.org/), and taype drivers (implementing
