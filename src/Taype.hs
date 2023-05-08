@@ -119,10 +119,6 @@ opts = do
     switch $
       long "fno-inline"
         <> help "Disable inlining any OADT instances"
-  optFlagNoTupling <-
-    switch $
-      long "fno-tupling"
-        <> help "Disable tupling optimization"
   optFlagNoMemo <-
     switch $
       long "fno-memo"
@@ -178,7 +174,6 @@ opts = do
       { optCode = "",
         optFlagNoSimplify = optFlagNoSimplify || optFlagNoOptimization,
         optFlagNoInline = optFlagNoInline || optFlagNoOptimization,
-        optFlagNoTupling = optFlagNoTupling || optFlagNoOptimization,
         optFlagNoMemo = optFlagNoMemo || optFlagNoOptimization,
         optFlagNoGuardReshape = optFlagNoGuardReshape || optFlagNoOptimization,
         ..

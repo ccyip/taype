@@ -87,7 +87,6 @@ data Options = Options
     optQuiet :: Bool,
     optFlagNoOptimization :: Bool,
     optFlagNoSimplify :: Bool,
-    optFlagNoTupling :: Bool,
     optFlagNoInline :: Bool,
     optFlagNoMemo :: Bool,
     optFlagNoGuardReshape :: Bool,
