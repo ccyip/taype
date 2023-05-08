@@ -16,8 +16,7 @@ category:            Language
 build-type:          Simple
 extra-doc-files:     README.md
                      CHANGELOG.md
-tested-with:         GHC == 9.0.2
-                     GHC == 9.2.7
+tested-with:         GHC == 9.2.7
                      GHC == 9.4.4
 
 source-repository head
