@@ -1049,13 +1049,13 @@ typingPpx = go
     go BuiltinPpx {..} =
       lookupGSig fn >>= \case
         Just BuiltinDef {..}
-          | resType == retTy ->
-              return (arrows_ paraTypes retTy, GV fn)
+          | arrows_ paraTypes resType == ty ->
+              return (ty, GV fn)
         Just BuiltinDef {} ->
           lookupGSig (oblivName fn) >>= \case
             Just BuiltinDef {..}
-              | resType == retTy ->
-                  return (arrows_ paraTypes retTy, GV (oblivName fn))
+              | arrows_ paraTypes resType == ty ->
+                  return (ty, GV (oblivName fn))
             _ -> err [[DD "Cannot resolve builtin operation"]]
         _ -> err [[DC fn, DD "is not a builtin operation"]]
     go MatchPpx {..} = case condTy of

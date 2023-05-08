@@ -442,7 +442,7 @@ grammar = mdo
                     L.BuiltinPpx fn -> Just fn
                     _ -> Nothing
                 )
-            retTy <- pAtomType
+            ty <- pAtomType
             return (loc, BuiltinPpx {..}),
           do
             loc <- pLocatedToken L.CoercePpx

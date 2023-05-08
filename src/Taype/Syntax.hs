@@ -229,7 +229,7 @@ data PpxB f a
   | -- | Pattern matching
     MatchPpx {condTy :: f a, retTy :: f a}
   | -- | Builtin operations
-    BuiltinPpx {fn :: Text, retTy :: f a}
+    BuiltinPpx {fn :: Text, ty :: f a}
   | -- | Coercion
     CoercePpx {fromTy :: f a, toTy :: f a}
   deriving stock (Functor, Foldable, Traversable)
@@ -423,7 +423,7 @@ instance Bound PpxB where
   ItePpx {..} >>>= f = ItePpx {condTy = condTy >>= f, retTy = retTy >>= f}
   CtorPpx {..} >>>= f = CtorPpx {retTy = retTy >>= f, ..}
   MatchPpx {..} >>>= f = MatchPpx {condTy = condTy >>= f, retTy = retTy >>= f}
-  BuiltinPpx {..} >>>= f = BuiltinPpx {retTy = retTy >>= f, ..}
+  BuiltinPpx {..} >>>= f = BuiltinPpx {ty = ty >>= f, ..}
   CoercePpx {..} >>>= f = CoercePpx {fromTy = fromTy >>= f, toTy = toTy >>= f}
 
 instance Bound DefB where
@@ -522,8 +522,8 @@ instance Eq1 Ppx where
     MatchPpx {condTy, retTy}
     MatchPpx {condTy = condTy', retTy = retTy'} =
       liftEq eq condTy condTy' && liftEq eq retTy retTy'
-  liftEq eq BuiltinPpx {fn, retTy} BuiltinPpx {fn = fn', retTy = retTy'} =
-    fn == fn' && liftEq eq retTy retTy'
+  liftEq eq BuiltinPpx {fn, ty} BuiltinPpx {fn = fn', ty = ty'} =
+    fn == fn' && liftEq eq ty ty'
   liftEq
     eq
     CoercePpx {fromTy, toTy}
@@ -646,8 +646,8 @@ instance BiplateM (Ppx Name) (Ty Name) where
     retTy' <- f retTy
     return MatchPpx {condTy = condTy', retTy = retTy'}
   biplateM f BuiltinPpx {..} = do
-    retTy' <- f retTy
-    return BuiltinPpx {retTy = retTy', ..}
+    ty' <- f ty
+    return BuiltinPpx {ty = ty', ..}
   biplateM f CoercePpx {..} = do
     fromTy' <- f fromTy
     toTy' <- f toTy
@@ -969,7 +969,7 @@ instance Cute (Ppx Text) where
     ItePpx {..} -> go "if" [condTy, retTy]
     CtorPpx {..} -> go ctor [retTy]
     MatchPpx {..} -> go "match" [condTy, retTy]
-    BuiltinPpx {..} -> go fn [retTy]
+    BuiltinPpx {..} -> go fn [ty]
     CoercePpx {..} -> go "coerce" [fromTy, toTy]
     where
       go name = cuteApp_ (pretty (ppxName name))
