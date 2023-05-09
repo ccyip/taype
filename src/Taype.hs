@@ -55,7 +55,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   -- Stage 1 derives lift proprocessor, which is a placeholder for now.
   let coreDefs1 = coreDefs0
   processCore 1 coreDefs1
-  -- Stage 2 elaborates remaining proprocessors.
+  -- Stage 2 elaborates all proprocessors.
   coreDefs2 <- elabPpxDefs options gctx coreDefs1
   processCore 2 coreDefs2
   prog <- lift $ toOilProgram options coreDefs2
