@@ -27,15 +27,19 @@
 --
 --   - ANF: administrative normal form. In addition to the standard ANF, we also
 --     require the constructors are always in application form, even if they
---     have no argument.
+--     have no argument. Worth noting is that global names (including builtin
+--     ones) should be in standalone let bindings, i.e. applications only
+--     contain local variables, and the last expression of a let binding must be
+--     a variable.
 --
 --   - Core taype: an expression is in core taype, if
 --
 --     * It is fully annotated. This includes type annotations and annotations
---       specific to certain constructs, e.g., application kinds in applications
---       and discriminee types in oblivious sum elimination.
+--       specific to certain constructs, e.g., discriminee types in oblivious
+--       sum elimination.
 --
---     * No ascription, location, or oblivious sum pattern matching.
+--     * No ascription, location, oblivious sum pattern matching or
+--       preprocessors.
 --
 --     * The alternatives in all pattern matchings are in the canonical order,
 --       i.e. the order in the corresponding ADT signature.
@@ -96,9 +100,9 @@ typing ::
   Expr Name ->
   Maybe (Ty Name) ->
   TcM (Ty Name, Expr Name)
-typing e@VUnit Nothing = return (TUnit, e)
-typing e@BLit {} Nothing = return (TBool PublicL, e)
-typing e@ILit {} Nothing = return (TInt PublicL, e)
+typing e@VUnit Nothing = mkLet' TUnit e
+typing e@BLit {} Nothing = mkLet' (TBool PublicL) e
+typing e@ILit {} Nothing = mkLet' (TInt PublicL) e
 typing e@V {..} Nothing =
   lookupTy name >>= \case
     Just t -> return (t, e)
@@ -117,21 +121,15 @@ typing e@GV {..} Nothing =
               ]
             ]
         _ -> pass
-      return (ty, e)
+      mkLet' ty e
     Just CtorDef {..} -> do
       checkArity CtorApp ref [] paraTypes
-      return
-        ( GV dataType,
-          -- All constructors are in application form even if they have zero
-          -- argument.
-          e @@ []
-        )
+      -- All constructors are in application form even if they have zero
+      -- argument.
+      mkLet' (GV dataType) (e @@ [])
     Just BuiltinDef {..} -> do
       checkLabel label
-      return
-        ( arrows_ paraTypes resType,
-          e
-        )
+      mkLet' (arrows_ paraTypes resType) e
     Just _ ->
       err [[DD "Definition", DQ ref, DD "is not a term"]]
     _ ->
@@ -141,18 +139,17 @@ typing Lam {argTy = Just argTy, ..} Nothing = do
   (x, body) <- unbind1 bnd
   (bodyTy', body') <-
     extendCtx1 x argTy' binder $ infer body
-  return
-    ( Pi
-        { ty = argTy',
-          bnd = abstract_ x bodyTy',
-          ..
-        },
-      Lam
-        { argTy = Just argTy',
-          bnd = abstract_ x body',
-          ..
-        }
-    )
+  mkLet'
+    Pi
+      { ty = argTy',
+        bnd = abstract_ x bodyTy',
+        ..
+      }
+    Lam
+      { argTy = Just argTy',
+        bnd = abstract_ x body',
+        ..
+      }
 typing Lam {..} (Just t) = do
   (argTy', _, bndTy') <- isPi t
   whenJust argTy $ \ty -> do
@@ -162,18 +159,17 @@ typing Lam {..} (Just t) = do
     withLoc_ ty $ equate argTy' ty'
   (x, body, bodyTy') <- unbind1With bnd bndTy'
   body' <- extendCtx1 x argTy' binder $ check body bodyTy'
-  return
-    ( Pi
-        { ty = argTy',
-          bnd = abstract_ x bodyTy',
-          ..
-        },
-      Lam
-        { argTy = Just argTy',
-          bnd = abstract_ x body',
-          ..
-        }
-    )
+  mkLet'
+    Pi
+      { ty = argTy',
+        bnd = abstract_ x bodyTy',
+        ..
+      }
+    Lam
+      { argTy = Just argTy',
+        bnd = abstract_ x body',
+        ..
+      }
 typing App {..} Nothing =
   maybeGV fn >>= \case
     -- Constructors have to be fully applied.
@@ -187,23 +183,15 @@ typing App {..} Nothing =
       args' <- zipWithM check args paraTypes
       xs <- freshes $ length args'
       let bindings = zip3 xs paraTypes args'
-      return
-        ( resType,
-          lets'
-            bindings
-            (f @@@ V <$> xs)
-        )
+      secondF (lets' bindings) $ mkLet' resType $ f @@@ V <$> xs
     -- Application for functions
     typeFnApp = do
       (fnTy', fn') <- infer fn
       (bindings, t') <- go args fnTy'
       x <- fresh
-      return
-        ( t',
-          lets'
-            ((x, fnTy', fn') : bindings)
-            (V x @@ [V a | (a, _, _) <- bindings])
-        )
+      secondF (lets' ((x, fnTy', fn') : bindings)) $
+        mkLet' t' $
+          V x @@ [V a | (a, _, _) <- bindings]
     -- @t@ must be well-kinded and in core taype ANF.
     go [] t = return ([], t)
     go (arg : args') t = do
@@ -282,22 +270,14 @@ typing Ite {..} mt = do
   (left', right', t') <-
     depType typeNoDep inferDep checkDep mt $ \(_, _, t) -> t
   x <- fresh
-  y <- fresh
-  return
-    ( t',
-      lets'
-        [ (x, TBool PublicL, cond'),
-          ( y,
-            t',
-            Ite
-              { cond = V x,
-                left = left',
-                right = right'
-              }
-          )
-        ]
-        (V y)
-    )
+  secondF (let' x (TBool PublicL) cond') $
+    mkLet'
+      t'
+      Ite
+        { cond = V x,
+          left = left',
+          right = right'
+        }
 typing Pair {pairKind = pairKind@PsiP, ..} (Just t) = do
   (argTy, oadtName) <- isPsi t
   let app x = oadtName @@@ [V x]
@@ -305,14 +285,8 @@ typing Pair {pairKind = pairKind@PsiP, ..} (Just t) = do
   xl <- fresh
   right' <- check right $ let' xl argTy left' $ app xl
   xr <- fresh
-  return
-    ( t,
-      lets'
-        [ (xl, argTy, left'),
-          (xr, app xl, right')
-        ]
-        Pair {left = V xl, right = V xr, ..}
-    )
+  secondF (lets' [(xl, argTy, left'), (xr, app xl, right')]) $
+    mkLet' t Pair {left = V xl, right = V xr, ..}
 typing Pair {pairKind, ..} mt | pairKind == OblivP || pairKind == PublicP = do
   (mLeftTy, mRightTy) <- NE.unzip <$> mapM (isProdLike pairKind) mt
   (leftTy', left') <- typing left mLeftTy
@@ -322,18 +296,14 @@ typing Pair {pairKind, ..} mt | pairKind == OblivP || pairKind == PublicP = do
     oblivKinded rightTy'
   xl <- fresh
   xr <- fresh
-  return
-    ( Prod
+  secondF (lets' [(xl, leftTy', left'), (xr, rightTy', right')]) $
+    mkLet'
+      Prod
         { olabel = olabelOfPairKind pairKind,
           left = leftTy',
           right = rightTy'
-        },
-      lets'
-        [ (xl, leftTy', left'),
-          (xr, rightTy', right')
-        ]
-        Pair {left = V xl, right = V xr, ..}
-    )
+        }
+      Pair {left = V xl, right = V xr, ..}
 typing PMatch {pairKind = pairKind@PublicP, ..} mt = do
   (condTy', cond') <- infer cond
   (leftTy', rightTy') <- withLoc_ cond $ isProd condTy'
@@ -394,17 +364,16 @@ typing PMatch {pairKind = pairKind@PublicP, ..} mt = do
 
   (body', t') <- depType typeNoDep inferDep checkDep mt snd
   x <- fresh
-  return
-    ( t',
-      lets'
-        [(x, Prod {olabel = PublicL, left = leftTy', right = rightTy'}, cond')]
-        PMatch
-          { condTy = Nothing,
-            cond = V x,
-            bnd2 = abstract_ (xl, xr) body',
-            ..
-          }
-    )
+  secondF
+    (let' x Prod {olabel = PublicL, left = leftTy', right = rightTy'} cond')
+    $ mkLet'
+      t'
+      PMatch
+        { condTy = Nothing,
+          cond = V x,
+          bnd2 = abstract_ (xl, xr) body',
+          ..
+        }
 typing PMatch {pairKind = pairKind@OblivP, ..} mt = do
   (t, cond') <- infer cond
   (leftTy', rightTy') <- withLoc_ cond $ isOProd t
@@ -414,17 +383,15 @@ typing PMatch {pairKind = pairKind@OblivP, ..} mt = do
   notAppearIn bodyTy' ctx
   let condTy' = Prod {olabel = OblivL, left = leftTy', right = rightTy'}
   x <- fresh
-  return
-    ( bodyTy',
-      lets'
-        [(x, condTy', cond')]
-        PMatch
-          { condTy = Just (leftTy', rightTy'),
-            cond = V x,
-            bnd2 = abstract_ (xl, xr) body',
-            ..
-          }
-    )
+  secondF (let' x condTy' cond') $
+    mkLet'
+      bodyTy'
+      PMatch
+        { condTy = Just (leftTy', rightTy'),
+          cond = V x,
+          bnd2 = abstract_ (xl, xr) body',
+          ..
+        }
 -- NOTE: Technically the type of a Psi type elimination can depend on the
 -- discriminee, just like the public product elimination. But it does not seem
 -- necessary in the current use of Psi type.
@@ -436,17 +403,15 @@ typing PMatch {pairKind = pairKind@PsiP, ..} mt = do
   (bodyTy', body') <- extendCtx ctx $ typing body mt
   notAppearIn bodyTy' ctx
   x <- fresh
-  return
-    ( bodyTy',
-      lets'
-        [(x, t, cond')]
-        PMatch
-          { condTy = Nothing,
-            cond = V x,
-            bnd2 = abstract_ (xl, xr) body',
-            ..
-          }
-    )
+  secondF (let' x t cond') $
+    mkLet'
+      bodyTy'
+      PMatch
+        { condTy = Nothing,
+          cond = V x,
+          bnd2 = abstract_ (xl, xr) body',
+          ..
+        }
 typing Match {..} mt = do
   (condTy', cond') <- infer cond
   (ref, ctors) <- isMatchCond cond condTy'
@@ -519,21 +484,7 @@ typing Match {..} mt = do
   (bodies', t') <- depType typeNoDep inferDep checkDep mt snd
   let alts' = NE.zipWith3 mkMatchAlt ctorNames argss bodies'
   x <- fresh
-  y <- fresh
-  return
-    ( t',
-      lets'
-        [ (x, GV ref, cond'),
-          ( y,
-            t',
-            Match
-              { cond = V x,
-                alts = alts'
-              }
-          )
-        ]
-        (V y)
-    )
+  secondF (let' x (GV ref) cond') $ mkLet' t' Match {cond = V x, alts = alts'}
   where
     mkMatchAlt ctor args body =
       let xs = [x | (x, _, _) <- args]
@@ -543,20 +494,14 @@ typing OIte {..} mt = do
   cond' <- check cond $ TBool OblivL
   (t', left') <- typing left mt
   right' <- check right t'
-  x <- fresh
-  e' <- mkOIteExpr (V x) left' right' t'
-  return (t', let' x (TBool OblivL) cond' e')
+  mkOIteExpr cond' left' right' t'
 typing OInj {..} (Just t) = do
   (leftTy', rightTy') <- isOSum t
   let injTy' = if tag then leftTy' else rightTy'
   e' <- check expr injTy'
   x <- fresh
-  return
-    ( t,
-      lets'
-        [(x, injTy', e')]
-        OInj {injTy = Just (leftTy', rightTy'), expr = V x, ..}
-    )
+  secondF (let' x injTy' e') $
+    mkLet' t OInj {injTy = Just (leftTy', rightTy'), expr = V x, ..}
 typing OProj {..} Nothing = do
   (t, e') <- infer expr
   (leftTy', rightTy') <- withLoc_ expr $ isOSum t
@@ -565,12 +510,8 @@ typing OProj {..} Nothing = do
         LeftP -> leftTy'
         RightP -> rightTy'
   x <- fresh
-  return
-    ( t',
-      lets'
-        [(x, t, e')]
-        OProj {projTy = Just (leftTy', rightTy'), expr = V x, ..}
-    )
+  secondF (let' x t e') $
+    mkLet' t' OProj {projTy = Just (leftTy', rightTy'), expr = V x, ..}
 typing OMatch {..} mt = do
   (t, cond') <- infer cond
   (leftTy', rightTy') <- withLoc_ cond $ isOSum t
@@ -583,24 +524,20 @@ typing OMatch {..} mt = do
     extendCtx1 xr rightTy' rBinder $
       check rBody t'
   x <- fresh
-  y <- fresh
-  e' <- mkOIteExpr (V y) lBody' rBody' t'
   let projTy = Just (leftTy', rightTy')
       condTy' = OSum {left = leftTy', right = rightTy'}
       expr = V x
-  return
-    ( t',
-      lets'
+  secondF
+    ( lets'
         [ (x, condTy', cond'),
-          (y, TBool OblivL, OProj {projKind = TagP, ..}),
           (xl, leftTy', OProj {projKind = LeftP, ..}),
           (xr, rightTy', OProj {projKind = RightP, ..})
         ]
-        e'
     )
+    $ mkOIteExpr (OProj {projKind = TagP, ..}) lBody' rBody' t'
 typing Arb {oblivTy = Nothing} (Just t) = do
   oblivKinded t
-  return (t, Arb {oblivTy = Just t})
+  mkLet' t Arb {oblivTy = Just t}
 typing Ppx {..} Nothing = do
   get >>= \case
     PolyT _ ->
@@ -613,7 +550,7 @@ typing Ppx {..} Nothing = do
     MonoT -> pass
   ppx' <- biplateM kinded ppx
   t' <- typingPpx ppx'
-  return (t', Ppx {ppx = ppx'})
+  mkLet' t' Ppx {ppx = ppx'}
 typing Loc {..} mt = withLoc loc $ withCur expr $ typing expr mt
 typing Asc {..} Nothing = do
   ty' <- kinded ty
@@ -644,7 +581,8 @@ typing _ Nothing =
       [DD "Perhaps you should add some type annotations"]
     ]
 
-mkOIteExpr :: Expr Name -> Expr Name -> Expr Name -> Ty Name -> TcM (Expr Name)
+mkOIteExpr ::
+  Expr Name -> Expr Name -> Expr Name -> Ty Name -> TcM (Ty Name, Expr Name)
 mkOIteExpr cond left right retTy = case retTy of
   TV -> do
     checkPoly
@@ -652,16 +590,21 @@ mkOIteExpr cond left right retTy = case retTy of
     u <- fresh
     xl <- fresh
     xr <- fresh
-    return
-      $ lets'
-        [ (xl, arrow_ TUnit TV, lam' u TUnit left),
-          (xr, arrow_ TUnit TV, lam' u TUnit right)
-        ]
-      $ V uniqName @@ [cond, V xl, V xr]
+    x <- fresh
+    secondF
+      ( lets'
+          [ (x, TBool OblivL, cond),
+            (xl, arrow_ TUnit TV, lam' u TUnit left),
+            (xr, arrow_ TUnit TV, lam' u TUnit right)
+          ]
+      )
+      $ mkLet' retTy (V uniqName @@ [V x, V xl, V xr])
   _ -> do
     let label = if isOblivKinded retTy then SafeL else LeakyL
     checkLabel label
-    return OIte {..}
+    x <- fresh
+    secondF (let' x (TBool OblivL) cond) $
+      mkLet' retTy OIte {cond = V x, ..}
 
 -- | Assemble the types of all branches in a dependent case-like expression into
 -- a single well-kinded type.
@@ -1898,6 +1841,14 @@ notAppearIn ty args = do
         [DD "Could not type this expression without dependent types"]
       ]
 
+mkLet :: (MonadFresh m) => Ty Name -> Expr Name -> m (Expr Name)
+mkLet t e = do
+  x <- fresh
+  return $ let' x t e (V x)
+
+mkLet' :: (MonadFresh m) => Ty Name -> Expr Name -> m (Ty Name, Expr Name)
+mkLet' t e = (t,) <$> mkLet t e
+
 depBrOops :: a
 depBrOops = oops "The number of branches do not match"
 
@@ -2452,7 +2403,6 @@ flattenLets = runFreshM . transformBiM go
   where
     go e@Let {..} = case rhs of
       V {..} -> return $ instantiateName name bnd
-      GV {..} -> return $ instantiate_ GV {..} bnd
       Let
         { rhsTy = rhsTyN,
           rhs = rhsN,
