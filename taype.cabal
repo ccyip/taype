@@ -16,8 +16,7 @@ category:            Language
 build-type:          Simple
 extra-doc-files:     README.md
                      CHANGELOG.md
-tested-with:         GHC == 9.2.7
-                     GHC == 9.4.4
+tested-with:         GHC == 9.4.4
 
 source-repository head
   type:                git
@@ -36,9 +35,6 @@ common common-options
                        -Wmissing-deriving-strategies
                        -fwrite-ide-info
                        -hiedir=.hie
-  if impl(ghc < 9.4)
-    default-extensions:
-                       GADTs
 
   default-language:    GHC2021
 
