@@ -18,7 +18,6 @@ import Data.Maybe (fromJust)
 import Oil.Optimization
 import Oil.Syntax
 import Relude.Extra.Bifunctor
-import Taype.Binder
 import Taype.Common
 import Taype.Name
 import Taype.Plate
@@ -382,19 +381,14 @@ filterConceal allDefs =
 unfoldBuiltin :: Def Name -> Def Name
 unfoldBuiltin = runFreshM . transformBiM go
   where
-    go e@App {fn = GV {..}, ..} =
-      if
-          | ref == sectionName (oblivName "bool") -> unfoldWith boolSection
-          | ref == retractionName (oblivName "bool") -> unfoldWith boolRetraction
-          | ref == oblivName "inl" -> unfoldWith $ oblivInjDef True
-          | ref == oblivName "inr" -> unfoldWith $ oblivInjDef False
-          | otherwise -> return e
-      where
-        unfoldWith e' = do
-          x <- fresh
-          return $
-            letB x (Just (toBinder ref)) e' $
-              V x @@ args
+    go e@GV {..} =
+      return
+        if
+            | ref == sectionName (oblivName "bool") -> boolSection
+            | ref == retractionName (oblivName "bool") -> boolRetraction
+            | ref == oblivName "inl" -> oblivInjDef True
+            | ref == oblivName "inr" -> oblivInjDef False
+            | otherwise -> e
     go e = return e
 
 ----------------------------------------------------------------
