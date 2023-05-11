@@ -55,6 +55,7 @@ library
                        Taype.Parser
                        Taype.Environment
                        Taype.TypeChecker
+                       Taype.Lift
                        Oil.Syntax
                        Oil.Translation
                        Oil.Optimization

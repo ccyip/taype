@@ -24,6 +24,7 @@ import Taype.Common
 import Taype.Cute
 import Taype.Error
 import Taype.Lexer
+import Taype.Lift
 import Taype.Parser
 import Taype.Syntax
 import Taype.TypeChecker
@@ -49,8 +50,8 @@ process options@Options {optFile = file, optCode = code, ..} = do
   when optPrintSource $ printDoc options srcDoc
   (gctx, coreDefs0) <- checkDefs options srcDefs
   processCore 0 coreDefs0
-  -- Stage 1 derives lift proprocessor, which is a placeholder for now.
-  let coreDefs1 = coreDefs0
+  -- Stage 1 derives lift proprocessor, and generates additional definitions.
+  coreDefs1 <- liftDefs options gctx coreDefs0
   processCore 1 coreDefs1
   -- Stage 2 elaborates all proprocessors.
   coreDefs2 <- elabPpxDefs options gctx coreDefs1
