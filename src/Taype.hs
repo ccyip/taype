@@ -22,7 +22,6 @@ import Options.Applicative
 import System.FilePath
 import Taype.Common
 import Taype.Cute
-import Taype.Environment
 import Taype.Error
 import Taype.Lexer
 import Taype.Parser
@@ -43,14 +42,12 @@ process :: Options -> ExceptT Err IO ()
 process options@Options {optFile = file, optCode = code, ..} = do
   tokens <- lex file code
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
-  namedDefs <- parse tokens
-  let names = fst <$> namedDefs
-      srcDefs :: Defs a
-      srcDefs = closeDefs namedDefs
+  defs <- parse tokens
+  let srcDefs :: Defs a
+      srcDefs = closeDefs defs
       srcDoc = cuteDefsDoc options srcDefs
   when optPrintSource $ printDoc options srcDoc
-  gctx <- checkDefs options srcDefs
-  let coreDefs0 = defsFromGCtx gctx names
+  (gctx, coreDefs0) <- checkDefs options srcDefs
   processCore 0 coreDefs0
   -- Stage 1 derives lift proprocessor, which is a placeholder for now.
   let coreDefs1 = coreDefs0

@@ -1902,11 +1902,12 @@ compatible t1 t2 = do
 -- Definitions checker
 
 -- | Type check all global definitions.
-checkDefs :: Options -> Defs Name -> ExceptT Err IO (GCtx Name)
+checkDefs :: Options -> Defs Name -> ExceptT Err IO (GCtx Name, Defs Name)
 checkDefs options@Options {..} defs = runDcM options $ do
   gsctx <- preCheckDefs defs
-  gctx <- go gsctx mempty defs
-  return $ mapGCtxDef simp gctx <> gsctx
+  gdctx <- go gsctx mempty defs
+  let gctx = mapGCtxDef simp gdctx <> gsctx
+  return (gctx, defsFromGCtx gctx (fst <$> defs))
   where
     -- Type checking definitions are done in the order of the given definitions.
     -- They can freely refer to the signatures of all definitions, allowing for
