@@ -1031,7 +1031,7 @@ processPpx ctx = go
         Just name -> return (ty, GV name)
         _ ->
           lookupGSig fn >>= \case
-            Just FunDef {ty = ty'} -> do
+            Just FunDef {ty = ty', ..} -> do
               unlessM (compatible ty ty') $
                 err
                   [ [ DD "The lifting type is not compatible with",
@@ -1040,6 +1040,12 @@ processPpx ctx = go
                     [DH "Expected a type compatible with", DC ty'],
                     [DH "Got", DC ty]
                   ]
+              unless (attr == NotAnInst) $
+                err [[DD "Do not support lifting instances"]]
+              unless (poly == MonoT) $
+                err [[DD "Do not support lifting polymorphic functions"]]
+              unless (label == SafeL) $
+                err [[DD "Do not support lifting leaky functions"]]
               return (ty, oops "Lifting instance not available")
             _ ->
               err
