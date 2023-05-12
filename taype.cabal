@@ -72,7 +72,7 @@ library
                      , Earley
                      , parser-combinators
                      , optparse-applicative
-                     , mtl
+                     , mtl >= 2.3
                      , lattices
                      , containers
                      , filepath
