@@ -547,7 +547,7 @@ grammar = mdo
           -- Variable
           pVar,
           -- Type variable
-          pLocatedToken L.TV <&> \loc -> Loc {expr = TV, ..},
+          pLocatedToken L.TV <&> \loc -> Loc {expr = TV 0, ..},
           -- Parenthesized type
           pParen pType
         ]

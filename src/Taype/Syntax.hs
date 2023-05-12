@@ -206,9 +206,10 @@ data Expr a
     Loc {loc :: Int, expr :: Expr a}
   | -- | Type variable
     --
-    -- We do not support general type polymorphism yet. This (unique) type
-    -- variable is only used for defining OADT match instances.
-    TV
+    -- We do not support general type polymorphism yet. The type variables are
+    -- only used for defining OADT match instances (@idx@ must be @0@ in this
+    -- case), and internally for lifting algorithm.
+    TV {idx :: Int}
   | -- | Arbitrary oblivious value
     Arb {oblivTy :: Maybe (Ty a)}
   | -- | Preprocessor
@@ -417,7 +418,7 @@ instance Monad Expr where
       }
   Asc {..} >>= f = Asc {ty = ty >>= f, expr = expr >>= f, ..}
   Loc {..} >>= f = Loc {expr = expr >>= f, ..}
-  TV >>= _ = TV
+  TV {..} >>= _ = TV {..}
   Arb {..} >>= f = Arb {oblivTy = oblivTy <&> (>>= f)}
   Ppx {..} >>= f = Ppx {ppx = ppx >>>= f}
 
@@ -511,7 +512,7 @@ instance Eq1 Expr where
   liftEq eq expr' Asc {expr} = liftEq eq expr' expr
   liftEq eq Loc {expr} expr' = liftEq eq expr expr'
   liftEq eq expr' Loc {expr} = liftEq eq expr' expr
-  liftEq _ TV TV = True
+  liftEq _ TV {idx} TV {idx = idx'} = idx == idx'
   liftEq eq Ppx {ppx} Ppx {ppx = ppx'} = liftEq eq ppx ppx'
   liftEq _ _ _ = False
 
@@ -959,7 +960,7 @@ instance Cute (Expr Text) where
           align exprDoc
             <> sep1 ((if trustMe then colon <> colon else colon) <+> tyDoc)
   cute Loc {..} = cute expr
-  cute TV = "'a"
+  cute TV {..} = return $ "'a" <> (if idx == 0 then "" else pretty idx)
   cute Arb {..} = case oblivTy of
     Just ty -> do
       tyDoc <- cute ty
@@ -1061,7 +1062,7 @@ instance HasPLevel (Expr a) where
   plevel = \case
     V {} -> 0
     GV {} -> 0
-    TV -> 0
+    TV {} -> 0
     -- Do not distinguish infix further.
     App {fn = GV {..}} | isInfix ref -> 20
     App {} -> 10

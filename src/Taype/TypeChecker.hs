@@ -584,7 +584,7 @@ typing _ Nothing =
 mkOIteExpr ::
   Expr Name -> Expr Name -> Expr Name -> Ty Name -> TcM (Ty Name, Expr Name)
 mkOIteExpr cond left right retTy = case retTy of
-  TV -> do
+  TV {..} -> do
     checkPoly
     put $ PolyT MergeableC
     u <- fresh
@@ -594,8 +594,8 @@ mkOIteExpr cond left right retTy = case retTy of
     secondF
       ( lets'
           [ (x, TBool OblivL, cond),
-            (xl, arrow_ TUnit TV, lam' u TUnit left),
-            (xr, arrow_ TUnit TV, lam' u TUnit right)
+            (xl, arrow_ TUnit TV {..}, lam' u TUnit left),
+            (xr, arrow_ TUnit TV {..}, lam' u TUnit right)
           ]
       )
       $ mkLet' retTy (V uniqName @@ [V x, V xl, V xr])
@@ -899,9 +899,9 @@ kinding Match {..} Nothing = do
           checkKind body OblivK
       return MatchAlt {bnd = abstract_ xs body', ..}
 kinding Loc {..} mk = withLoc loc $ withCur expr $ kinding expr mk
-kinding TV Nothing = do
+kinding TV {..} Nothing = do
   checkPoly
-  return (MixedK, TV)
+  return (MixedK, TV {..})
 -- Check kind.
 kinding t (Just k) = do
   (k', t') <- inferKind t
@@ -1173,7 +1173,7 @@ processPpx ctx = go
         return (t', GV name @@ [ite])
       where
         substTV = transformM $ \case
-          TV -> return retTy
+          TV 0 -> return retTy
           e -> return e
 
     goCoerce t t' | t == t' = do
@@ -1939,7 +1939,7 @@ checkDef name =
               -- If a polymorphic function has mergeable constraint, it takes an
               -- extra argument for the if preprocessor which will get resolved
               -- when the type variable is instantiated.
-              let ppxTy = typeOfItePpx (TBool OblivL) TV
+              let ppxTy = typeOfItePpx (TBool OblivL) (TV 0)
                in ( arrow_ ppxTy ty,
                     lam' uniqName ppxTy expr0
                   )
@@ -2238,12 +2238,12 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
       MatchInst {..} -> do
         argTs <-
           mustBeArrow ty >>= \case
-            (argTs, TV) -> return argTs
+            (argTs, TV {}) -> return argTs
             (_, t) ->
               errReturnType
                 ("Function" <+> pretty name)
                 []
-                TV
+                (TV 0)
                 t
         case argTs of
           [] ->
@@ -2279,7 +2279,7 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
     checkAlts pubName altTs = do
       argTs <- forM altTs $ \altTy ->
         mustBeArrow altTy >>= \case
-          (argTs, TV) ->
+          (argTs, TV {}) ->
             case argTs of
               [t] -> return (altTy, t)
               _ ->
@@ -2298,7 +2298,7 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
             errReturnType
               ("An alternative of function" <+> pretty name)
               [[DH "Alternative", DC altTy]]
-              TV
+              (TV 0)
               t
       ctors <-
         lookupGSig pubName >>= \case
