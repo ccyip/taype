@@ -44,8 +44,7 @@ process options@Options {optFile = file, optCode = code, ..} = do
   tokens <- lex file code
   when optPrintTokens $ printTokens file code tokens >> putStr "\n"
   defs <- parse tokens
-  let srcDefs :: Defs a
-      srcDefs = closeDefs defs
+  let srcDefs = closeDefs defs
       srcDoc = cuteDefsDoc options srcDefs
   when optPrintSource $ printDoc options srcDoc
   (gctx, coreDefs0) <- checkDefs options srcDefs

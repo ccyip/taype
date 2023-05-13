@@ -281,8 +281,7 @@ data OCamlDefKind = NonRecDef | RecDef | AndDef
 -- | Translate all given OIL definitions into OCaml.
 toOCamlDefs :: Options -> (forall a. Defs a) -> Doc
 toOCamlDefs options defs =
-  let defs' :: Defs a
-      defs' = [def | def <- defs, isNothing $ isBuiltin def]
+  let defs' = [def | def <- defs, isNothing $ isBuiltin def]
       edges = mkDepGraph defs'
       sccs = stronglyConnComp edges
       docs = foldMap go sccs
