@@ -153,6 +153,14 @@ opts = do
     switch $
       long "print-source"
         <> help "Whether to print the source code (for internal debugging)"
+  optPrintLifted <-
+    switch $
+      long "print-lifted"
+        <> help "Whether to print the lifted (partial) functions"
+  optPrintConstraints <-
+    switch $
+      long "print-constraints"
+        <> help "Whether to print the generated constraints"
   optReadable <-
     switch $
       long "readable"

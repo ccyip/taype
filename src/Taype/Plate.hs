@@ -15,6 +15,7 @@ module Taype.Plate
     transformM,
     transformBiM,
     universeM,
+    universeBiM,
   )
 where
 
@@ -40,6 +41,11 @@ transformBiM ::
 transformBiM f = biplateM (transformM f)
 
 universeM :: (MonadFresh m, PlateM on) => on -> m [on]
-universeM = (snd <$>) . runWriterT . transformM go
+universeM = execWriterT . transformM go
+  where
+    go x = writer (x, [x])
+
+universeBiM :: (MonadFresh m, BiplateM from to) => from -> m [to]
+universeBiM = execWriterT . transformBiM go
   where
     go x = writer (x, [x])
