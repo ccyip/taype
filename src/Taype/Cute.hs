@@ -26,7 +26,8 @@ module Taype.Cute
     sep1_,
     sepWith,
     printDoc,
-    printDocToFile,
+    writeDoc,
+    writeDocOpt,
 
     -- * Pretty printing infrastructure
     Cute (..),
@@ -80,6 +81,7 @@ import Prettyprinter hiding (Doc, hang, indent)
 import Prettyprinter qualified as PP
 import Prettyprinter.Render.Terminal (AnsiStyle, hPutDoc, putDoc)
 import Prettyprinter.Util (putDocW)
+import System.FilePath ((-<.>))
 import Taype.Binder
 import Taype.Common
 import Taype.Name
@@ -126,9 +128,13 @@ sep1_ x = if T.length x <= indentLevel then (space <>) else sep1
 printDoc :: (MonadIO m) => Options -> Doc -> m ()
 printDoc Options {..} = liftIO . maybe putDoc putDocW optWidth
 
-printDocToFile :: (MonadIO m) => FilePath -> Doc -> m ()
-printDocToFile file doc =
+writeDoc :: (MonadIO m) => FilePath -> Doc -> m ()
+writeDoc file doc =
   liftIO $ withFile file WriteMode (`hPutDoc` doc)
+
+writeDocOpt :: (MonadIO m) => Options -> FilePath -> Doc -> m ()
+writeDocOpt Options {..} ext doc =
+  unless optNoFiles $ writeDoc (optFile -<.> ext) doc
 
 ----------------------------------------------------------------
 -- Pretty printing infrastructure

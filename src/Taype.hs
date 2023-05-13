@@ -19,7 +19,6 @@ import Oil.Syntax qualified as Oil (cuteProgramDoc)
 import Oil.ToOCaml qualified as Oil (toOCaml)
 import Oil.Translation (toOilProgram)
 import Options.Applicative
-import System.FilePath
 import Taype.Common
 import Taype.Cute
 import Taype.Error
@@ -58,18 +57,16 @@ process options@Options {optFile = file, optCode = code, ..} = do
   prog <- lift $ toOilProgram options coreDefs2
   let oilDoc = Oil.cuteProgramDoc options prog
   when optPrintOil $ printDoc options oilDoc
-  printToFile "oil" oilDoc
+  writeDocOpt options "oil" oilDoc
   let mlDoc = Oil.toOCaml options prog
   when optPrintOCaml $ printDoc options mlDoc
-  printToFile "ml" mlDoc
+  writeDocOpt options "ml" mlDoc
   where
-    printToFile ext doc =
-      unless optNoFiles $ printDocToFile (file -<.> ext) doc
     processCore stage coreDefs = do
       let coreDefs' = if optReadable then readableDefs coreDefs else coreDefs
           coreDoc = cuteDefsDoc options (fromClosedDefs coreDefs')
       when (optPrintCore && optStage == stage) $ printDoc options coreDoc
-      printToFile ("stage" <> show stage <> ".tpc") coreDoc
+      writeDocOpt options ("stage" <> show stage <> ".tpc") coreDoc
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)
