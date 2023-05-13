@@ -44,6 +44,7 @@ module Taype.Name
     unbindManyWith,
 
     -- * Utilities
+    abstract0,
     instantiate0,
   )
 where
@@ -233,6 +234,10 @@ unbindManyWith n = unbindWithBy $ unbindMany n
 
 ----------------------------------------------------------------
 -- Utilities
+
+-- | Make a scope without bound variables.
+abstract0 :: (Monad f) => f a -> Scope b f a
+abstract0 = abstract (const Nothing)
 
 -- | Close the scope if the bound variables are not used, or return 'Nothing'.
 instantiate0 :: (Monad f, Foldable f) => Scope b f Name -> Maybe (f Name)

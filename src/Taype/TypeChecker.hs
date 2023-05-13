@@ -587,15 +587,14 @@ mkOIteExpr cond left right retTy = case retTy of
   TV {..} -> do
     checkPoly
     put $ PolyT MergeableC
-    u <- fresh
     xl <- fresh
     xr <- fresh
     x <- fresh
     secondF
       ( lets'
           [ (x, TBool OblivL, cond),
-            (xl, arrow_ TUnit TV {..}, lam' u TUnit left),
-            (xr, arrow_ TUnit TV {..}, lam' u TUnit right)
+            (xl, arrow_ TUnit TV {..}, thunk_ left),
+            (xr, arrow_ TUnit TV {..}, thunk_ right)
           ]
       )
       $ mkLet' retTy (V uniqName @@ [V x, V xl, V xr])
@@ -1105,7 +1104,6 @@ processPpx ctx = go
         xl2 <- fresh
         xr1 <- fresh
         xr2 <- fresh
-        u <- fresh
         return $
           pmatch' PublicP (V f1 @@ [VUnit]) xl1 xr1 $
             pmatch' PublicP (V f2 @@ [VUnit]) xl2 xr2 $
@@ -1114,27 +1112,26 @@ processPpx ctx = go
                   left =
                     lIte
                       @@ [ V b,
-                           lam' u TUnit (V xl1),
-                           lam' u TUnit (V xl2)
+                           thunk_ (V xl1),
+                           thunk_ (V xl2)
                          ],
                   right =
                     rIte
                       @@ [ V b,
-                           lam' u TUnit (V xr1),
-                           lam' u TUnit (V xr2)
+                           thunk_ (V xr1),
+                           thunk_ (V xr2)
                          ]
                 }
       ty@Pi {} -> case isArrow ty of
         Just (argTs, retTy) -> do
           rIte <- goOIte retTy
           xs <- freshes $ length argTs
-          u <- fresh
           return $
             lams' (zip xs argTs) $
               rIte
                 @@ [ V b,
-                     lam' u TUnit $ V f1 @@ (VUnit : (V <$> xs)),
-                     lam' u TUnit $ V f2 @@ (VUnit : (V <$> xs))
+                     thunk_ $ V f1 @@ (VUnit : (V <$> xs)),
+                     thunk_ $ V f2 @@ (VUnit : (V <$> xs))
                    ]
         _ -> errSnd "cannot be a dependent type" ty
       ty | isOblivKinded ty -> do

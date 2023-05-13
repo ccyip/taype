@@ -43,6 +43,7 @@ module Taype.Syntax
     oproj_,
     prod_,
     tuple_,
+    thunk_,
     match_,
     omatch_,
     omatchPat_,
@@ -748,6 +749,9 @@ prod_ ts = foldr1 (Prod PublicL) ts
 tuple_ :: [Expr a] -> Expr a
 tuple_ [] = VUnit
 tuple_ es = foldr1 (Pair PublicP) es
+
+thunk_ :: Expr a -> Expr a
+thunk_ e = Lam {argTy = Just TUnit, binder = Nothing, bnd = abstract0 e}
 
 match_ :: (a ~ Text) => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 match_ cond alts = Match {alts = uncurry3 matchAlt_ <$> alts, ..}
