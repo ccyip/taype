@@ -58,7 +58,14 @@
 --     ANF.
 --
 -- Other invariants for each procedure are documented in that procedure.
-module Taype.TypeChecker (checkDefs, elabPpxDefs, readableDefs) where
+module Taype.TypeChecker
+  ( checkDefs,
+    elabPpxDefs,
+    readableDefs,
+    isArrow,
+    isArrow1,
+  )
+where
 
 import Algebra.Lattice
 import Algebra.PartialOrd
@@ -972,7 +979,9 @@ processPpx ctx = go
                 ]
             let argTy = prod_ paraTypes
                 t' = arrow_ argTy retTy
-            e' <- goCtor ctor argTy (length paraTypes)
+            xs <- freshes $ length paraTypes
+            let xts = zipWith (\x t -> (x, Nothing, t)) xs paraTypes
+            e' <- lamP xts $ GV ctor @@ (V <$> xs)
             return (t', e')
           Psi {..} ->
             resolveCtor ctor oadtName >>= \case
@@ -1137,18 +1146,6 @@ processPpx ctx = go
       ty | isOblivKinded ty -> do
         return $ mux_ (V b) (V f1 @@ [VUnit]) (V f2 @@ [VUnit])
       ty -> errSnd "is not mergeable" ty
-
-    goCtor ctor argTy len = do
-      x <- fresh
-      lam' x argTy <$> body [] (V x) len
-      where
-        body xs _ 0 = return $ GV ctor @@ reverse xs
-        body xs p 1 = return $ GV ctor @@ reverse (p : xs)
-        body xs p n = do
-          x <- fresh
-          p' <- fresh
-          pmatch' PublicP p x p'
-            <$> body (V x : xs) (V p') (n - 1)
 
     goMatch adtName ctors retTy = do
       let altTs = ctors <&> \(_, ts) -> arrow_ (prod_ ts) retTy

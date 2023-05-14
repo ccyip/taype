@@ -21,8 +21,11 @@ module Taype.Prelude
     findAndDel,
     snoc,
     flip2,
+    zipWith3M,
   )
 where
+
+import Data.List (zipWith3)
 
 oops :: Text -> a
 oops msg = error $ "Oops! This should not happen:\n" <> msg
@@ -39,10 +42,10 @@ curry4 f x1 x2 x3 x4 = f (x1, x2, x3, x4)
 uncurry4 :: (x1 -> x2 -> x3 -> x4 -> r) -> (x1, x2, x3, x4) -> r
 uncurry4 f ~(x1, x2, x3, x4) = f x1 x2 x3 x4
 
-firstM :: Functor m => (a -> m a') -> (a, b) -> m (a', b)
+firstM :: (Functor m) => (a -> m a') -> (a, b) -> m (a', b)
 firstM f ~(a, b) = (,b) <$> f a
 
-secondM :: Functor m => (b -> m b') -> (a, b) -> m (a, b')
+secondM :: (Functor m) => (b -> m b') -> (a, b) -> m (a, b')
 secondM f ~(a, b) = (a,) <$> f b
 
 findAndDel :: (a -> Bool) -> [a] -> Maybe (a, [a])
@@ -56,3 +59,6 @@ snoc xs x = xs <> [x]
 
 flip2 :: (c -> a -> b -> d) -> a -> b -> c -> d
 flip2 f a b c = f c a b
+
+zipWith3M :: (Applicative m) => (a -> b -> c -> m d) -> [a] -> [b] -> [c] -> m [d]
+zipWith3M f as bs cs = sequenceA $ zipWith3 f as bs cs

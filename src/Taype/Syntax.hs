@@ -56,6 +56,7 @@ module Taype.Syntax
     match',
     pmatch',
     pi',
+    lamP,
     arrow_,
     arrows_,
 
@@ -884,6 +885,44 @@ pmatch' pairKind cond xl xr body =
 
 pi' :: Name -> Ty Name -> Ty Name -> Ty Name
 pi' x ty body = Pi {binder = Nothing, bnd = abstract_ x body, ..}
+
+lamP ::
+  (MonadFresh m) => [(Name, Maybe Binder, Ty Name)] -> Expr Name -> m (Expr Name)
+lamP [] e = return $ thunk_ e
+lamP [(x, binder, t)] e =
+  return
+    Lam
+      { argTy = Just t,
+        bnd = abstract_ x e,
+        ..
+      }
+lamP ctx e = do
+  p <- fresh
+  e' <- go ctx p
+  return $ lam' p (prod_ [t | (_, _, t) <- ctx]) e'
+  where
+    go [(xl, lBinder, _), (xr, rBinder, _)] p =
+      return
+        PMatch
+          { pairKind = PublicP,
+            condTy = Nothing,
+            cond = V p,
+            bnd2 = abstract_ (xl, xr) e,
+            ..
+          }
+    go ((xl, lBinder, _) : ctx'@(_ : _)) p = do
+      xr <- fresh
+      e' <- go ctx' xr
+      return
+        PMatch
+          { pairKind = PublicP,
+            condTy = Nothing,
+            cond = V p,
+            bnd2 = abstract_ (xl, xr) e',
+            rBinder = Nothing,
+            ..
+          }
+    go _ _ = oops "Fewer than 2 entries"
 
 ----------------------------------------------------------------
 -- Pretty printer
