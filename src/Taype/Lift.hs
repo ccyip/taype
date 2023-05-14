@@ -216,7 +216,7 @@ liftExpr _ _ _ =
 -- models returned by the solver.
 liftDefs :: Options -> GCtx Name -> Defs Name -> ExceptT Err IO (Defs Name)
 liftDefs options@Options {..} gctx defs = do
-  lifted <- mapM go $ hashNub $ fst <$> lifts
+  lifted <- lifting [] $ hashNub $ fst <$> goals
   let liftedDefs = secondF fst lifted
       liftedDefs' =
         fromClosedDefs $
@@ -230,7 +230,13 @@ liftDefs options@Options {..} gctx defs = do
   writeDocOpt options "constraints.sexp" constraintsDoc
   oops "Not implemented yet"
   where
-    lifts = collectLifts defs
+    goals = collectLifts $ snd <$> defs
+    lifting done [] = return done
+    lifting done fs = do
+      lifted <- mapM go fs
+      let fs' = hashNub $ fst <$> collectLifts [def | (_, (def, _)) <- lifted]
+          done' = lifted <> done
+      lifting done' [f | f <- fs', isNothing $ lookup f done']
     go name =
       (name,)
         <$> case lookupGCtx name gctx of
@@ -273,8 +279,8 @@ isProd :: Expr a -> (Expr a, Expr a)
 isProd Prod {olabel = PublicL, ..} = (left, right)
 isProd _ = oops "Not a product"
 
-collectLifts :: Defs Name -> [(Text, Ty Name)]
-collectLifts = runFreshM . foldMapM (go . snd)
+collectLifts :: [Def Name] -> [(Text, Ty Name)]
+collectLifts = runFreshM . foldMapM go
   where
     go def = do
       es <- universeBiM def
