@@ -60,6 +60,12 @@ module Taype.Syntax
     arrow_,
     arrows_,
 
+    -- * Utilities
+    isArrow,
+    isArrow1,
+    readableExpr,
+    readableDefs,
+
     -- * Pretty printer
     cuteBinder,
     cuteDefsDoc,
@@ -73,7 +79,7 @@ import Bound
 import Control.Monad
 import Data.Functor.Classes
 import Data.List (foldr1)
-import Relude.Extra (bimapBoth, traverseBoth)
+import Relude.Extra (bimapBoth, secondF, traverseBoth)
 import Taype.Binder
 import Taype.Common
 import Taype.Cute
@@ -923,6 +929,47 @@ lamP ctx e = do
             ..
           }
     go _ _ = oops "Fewer than 2 entries"
+
+----------------------------------------------------------------
+-- Utilities
+
+-- | Check if a type is a non-dependent function type.
+--
+-- This function only checks the top-level function type.
+isArrow1 :: Ty Name -> Maybe (Ty Name, Ty Name)
+isArrow1 Pi {..} = do
+  body <- instantiate0 bnd
+  return (ty, body)
+isArrow1 Loc {..} = isArrow1 expr
+isArrow1 _ = Nothing
+
+-- | Check if a type is a non-dependent type, and return the list of argument
+-- types and the return type.
+--
+-- This function checks the function codomain, but not the argument types.
+isArrow :: Ty Name -> Maybe ([Ty Name], Ty Name)
+isArrow Pi {..} = do
+  body <- instantiate0 bnd
+  (argTs, t) <- isArrow body
+  return (ty : argTs, t)
+isArrow Loc {..} = isArrow expr
+isArrow t = Just ([], t)
+
+-- | Make the taype expressions more readable.
+--
+-- This is only used for error reporting and printing, as the resulting
+-- expression is not in core taype ANF.
+readableExpr :: (MonadFresh m) => Expr Name -> m (Expr Name)
+readableExpr = transformM go
+  where
+    go Let {binder = Nothing, ..} = return $ instantiate_ rhs bnd
+    go e = return e
+
+-- | Make all definitions readable.
+--
+-- The result can only be used for printing, as the definitions are not in ANF.
+readableDefs :: Defs Name -> Defs Name
+readableDefs = secondF (runFreshM . biplateM readableExpr)
 
 ----------------------------------------------------------------
 -- Pretty printer

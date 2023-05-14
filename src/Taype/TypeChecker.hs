@@ -58,14 +58,7 @@
 --     ANF.
 --
 -- Other invariants for each procedure are documented in that procedure.
-module Taype.TypeChecker
-  ( checkDefs,
-    elabPpxDefs,
-    readableDefs,
-    isArrow,
-    isArrow1,
-  )
-where
+module Taype.TypeChecker (checkDefs, elabPpxDefs) where
 
 import Algebra.Lattice
 import Algebra.PartialOrd
@@ -1727,28 +1720,6 @@ isMatchCond cond condTy =
             [DH "It has type", DC condTy]
           ]
 
--- | Check if a type is a non-dependent function type.
---
--- This function only checks the top-level function type.
-isArrow1 :: Ty Name -> Maybe (Ty Name, Ty Name)
-isArrow1 Pi {..} = do
-  body <- instantiate0 bnd
-  return (ty, body)
-isArrow1 Loc {..} = isArrow1 expr
-isArrow1 _ = Nothing
-
--- | Check if a type is a non-dependent type, and return the list of argument
--- types and the return type.
---
--- This function checks the function codomain, but not the argument types.
-isArrow :: Ty Name -> Maybe ([Ty Name], Ty Name)
-isArrow Pi {..} = do
-  body <- instantiate0 bnd
-  (argTs, t) <- isArrow body
-  return (ty : argTs, t)
-isArrow Loc {..} = isArrow expr
-isArrow t = Just ([], t)
-
 -- | Check if a well-kinded type in core Taype ANF is oblivious.
 isOblivKinded :: Ty Name -> Bool
 isOblivKinded = \case
@@ -2520,22 +2491,6 @@ errArity appKind ref actual expected =
               \are required to be fully applied"
           ]
         ]
-
--- | Make the taype expressions more readable.
---
--- This is only used for error reporting and printing, as the resulting
--- expression is not in core taype ANF.
-readableExpr :: (MonadFresh m) => Expr Name -> m (Expr Name)
-readableExpr = transformM go
-  where
-    go Let {binder = Nothing, ..} = return $ instantiate_ rhs bnd
-    go e = return e
-
--- | Make all definitions readable.
---
--- The result can only be used for printing, as the definitions are not in ANF.
-readableDefs :: Defs Name -> Defs Name
-readableDefs = secondF (runFreshM . biplateM readableExpr)
 
 andList :: [Text] -> Doc
 andList [] = "<empty>"
