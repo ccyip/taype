@@ -15,8 +15,9 @@
 module Taype.Lift (liftDefs) where
 
 import Control.Monad.Error.Class
-import Control.Monad.RWS
-import Data.List (lookup)
+import Control.Monad.RWS.CPS
+import Control.Monad.Writer.CPS
+import Data.List (lookup, partition)
 import Data.Maybe (fromJust)
 import Relude.Extra.Bifunctor (secondF)
 import Taype.Common
@@ -33,19 +34,32 @@ import Prelude hiding (Constraint, group)
 ----------------------------------------------------------------
 -- Environment for the lifting algorithm
 
-data STy = SUnit | SConst Text | SV Int | SProd STy STy | SArrow STy STy
+data STy a
+  = SUnit
+  | SConst Text
+  | SV a
+  | SProd (STy a) (STy a)
+  | SArrow (STy a) (STy a)
   deriving stock (Eq, Show)
 
+type STy1 = STy Int
+
+type SName = (Int, Name)
+
+type STy2 = STy SName
+
 data Constraint
-  = EqC {lhs :: Int, rhs :: STy}
-  | CompatibleC {idx :: Int, cls :: STy}
+  = EqC {lhs :: Int, rhs :: STy1}
+  | CompatibleC {idx :: Int, cls :: STy1}
   | IteC {cond :: Int, ret :: Int}
   | CtorC {ctor :: Text, ret :: Int, args :: [Int]}
   | MatchC {cond :: Int, ret :: Int, argss :: [[Int]]}
   | BuiltinC {fn :: Text, ty :: Int}
   | CoerceC {from :: Int, to :: Int}
   | LiftC {fn :: Text, ty :: Int}
+  deriving stock (Show)
 
+-- type Constraints = [Constraint]
 type Constraints = [Constraint]
 
 type CCtx a = [(a, (Ty a, Int))]
@@ -59,6 +73,29 @@ data Env = Env
   }
 
 type LiftM a = FreshT (RWST Env Constraints Int (ExceptT Err IO)) a
+
+data OADTInfo = OADTInfo
+  { oadts :: [Text],
+    coerces :: [[STy2]],
+    joins :: [STy2],
+    ctors :: [(Text, [[STy2]])],
+    matches :: ([[STy2]], [[STy2]])
+  }
+  deriving stock (Show)
+
+type OCtx = [(Text, OADTInfo)]
+
+data SConstraint
+  = SEqC STy2 STy2
+  | SLiftC Text [STy2]
+  | SOrC [[SConstraint]]
+  deriving stock (Show)
+
+type SConstraints = [SConstraint]
+
+type CompatCtx = [(SName, Text)]
+
+type ACtx = [(Int, STy2)]
 
 runLiftM :: Env -> LiftM a -> ExceptT Err IO (a, Constraints)
 runLiftM env m = evalRWST (runFreshT m) env 0
@@ -220,6 +257,9 @@ liftDefs options@Options {..} gctx defs = do
   writeDocOpt options "lifted.tpc" liftedDoc
   when optPrintConstraints $ printDoc options constraintsDoc
   writeDocOpt options "constraints.sexp" constraintsDoc
+  let octx = buildOCtx defs
+      scs = [(name, reduceConstraints gctx octx cs) | (name, cs) <- constraints]
+  print scs
   oops "Not implemented yet"
   where
     goals = collectLifts $ snd <$> defs
@@ -246,6 +286,101 @@ liftDefs options@Options {..} gctx defs = do
                     }
           _ -> oops "Not a function"
 
+reduceConstraints ::
+  GCtx Name -> OCtx -> Constraints -> (ACtx, CompatCtx, SConstraints)
+reduceConstraints gctx octx cs = (actx, cctx, foldMap go cs')
+  where
+    (compatCs, cs') = partition isCompatC cs
+    (actx, cctx) = reduceCompatC [(idx, t) | CompatibleC idx t <- compatCs]
+    lookupACtx idx = fromJust $ lookup idx actx
+    lookupOCtx x = fromJust $ lookup x octx
+    compatCls x = fromJust $ lookup x cctx
+
+    isCompatC (CompatibleC _ _) = True
+    isCompatC _ = False
+
+    subst (SV x) = lookupACtx x
+    subst (SProd l r) = SProd (subst l) (subst r)
+    subst (SArrow d c) = SArrow (subst d) (subst c)
+    subst SUnit = SUnit
+    subst (SConst x) = SConst x
+
+    go CoerceC {..} =
+      let gen t1 t2 =
+            case (t1, t2) of
+              (SProd l1 r1, SProd l2 r2) -> gen l1 l2 <> gen r1 r2
+              (SArrow d1 c1, SArrow d2 c2) -> gen d2 d1 <> gen c1 c2
+              (SV x1, SV x2) ->
+                let OADTInfo {..} = lookupOCtx $ compatCls x1
+                 in [ SOrC $
+                        [SEqC (SV x1) (SV x2)]
+                          : belongto [SV x1, SV x2] coerces
+                    ]
+              _ -> []
+       in gen (lookupACtx from) (lookupACtx to)
+    go IteC {..} =
+      let gen t t' =
+            [ SOrC
+                [ [SEqC t (SConst "bool")],
+                  [SEqC t (SConst $ oblivName "bool")] <> mergeable t'
+                ]
+            ]
+       in gen (lookupACtx cond) (lookupACtx ret)
+    go CtorC {..} =
+      let ret' = lookupACtx ret
+          args' = foldMap (decompose . lookupACtx) args
+          OADTInfo {..} = lookupOCtx $ compatCls $ isSV ret'
+       in [SOrC $ belongto (ret' : args') $ fromJust $ lookup ctor ctors]
+    go MatchC {..} =
+      let ret' = lookupACtx ret
+          cond' = lookupACtx cond
+          args' = foldMap (foldMap $ decompose . lookupACtx) argss
+          OADTInfo {..} = lookupOCtx $ compatCls $ isSV cond'
+       in [ SOrC
+              [ [SOrC $ belongto (cond' : args') $ fst matches],
+                [SOrC $ belongto (cond' : args') $ snd matches]
+                  <> mergeable ret'
+              ]
+          ]
+    go BuiltinC {..} =
+      let tss =
+            [ decompose $ tyToSTy $ arrows_ paraTypes resType
+              | Just (BuiltinDef {..}) <-
+                  flip lookupGCtx gctx <$> [fn, oblivName fn]
+            ]
+       in [SOrC $ belongto (decompose (lookupACtx ty)) tss]
+    go EqC {..} =
+      let lhss = decompose $ lookupACtx lhs
+          rhss = decompose $ subst rhs
+       in zipWith SEqC lhss rhss
+    go LiftC {..} = [SLiftC fn $ decompose $ lookupACtx ty]
+    go CompatibleC {} = oops "Found compatible constraint"
+
+    mergeable (SProd l r) = mergeable l <> mergeable r
+    mergeable (SArrow _ c) = mergeable c
+    mergeable (SV x) =
+      let OADTInfo {..} = lookupOCtx $ compatCls x
+       in [SOrC $ one . SEqC (SV x) <$> joins]
+    mergeable _ = []
+
+reduceCompatC :: [(Int, STy1)] -> (ACtx, CompatCtx)
+reduceCompatC cs = runWriter $ mapM go cs
+  where
+    go (idx, t) =
+      let gen = \case
+            SProd l r -> SProd <$> gen l <*> gen r
+            SArrow dom cod -> SArrow <$> gen dom <*> gen cod
+            SUnit -> return SUnit
+            SConst cls -> do
+              x <- (idx,) <$> fresh
+              tell [(x, cls)]
+              return $ SV x
+            SV _ -> oops "Found a variable"
+       in (idx,) <$> runFreshT (gen t)
+
+belongto :: [STy2] -> [[STy2]] -> [[SConstraint]]
+belongto ts tss = tss <&> zipWith SEqC ts
+
 ----------------------------------------------------------------
 -- Auxiliaries
 
@@ -268,6 +403,10 @@ isGV :: Expr a -> Text
 isGV GV {..} = ref
 isGV _ = oops "Not a global name"
 
+isSV :: STy a -> a
+isSV (SV x) = x
+isSV _ = oops "Not a variable"
+
 isProd :: Expr a -> (Expr a, Expr a)
 isProd Prod {olabel = PublicL, ..} = (left, right)
 isProd _ = oops "Not a product"
@@ -279,30 +418,130 @@ collectLifts = runFreshM . foldMapM go
       es <- universeBiM def
       return $ [(fn, ty) | Ppx {ppx = LiftPpx {..}} <- es]
 
-pubTyToSTy :: Ty Name -> Maybe STy
-pubTyToSTy TUnit = return SUnit
-pubTyToSTy (TBool PublicL) = return $ SConst "bool"
-pubTyToSTy (TInt PublicL) = return $ SConst "int"
-pubTyToSTy GV {..} = return $ SConst ref
-pubTyToSTy Prod {olabel = PublicL, ..} =
-  SProd <$> pubTyToSTy left <*> pubTyToSTy right
-pubTyToSTy t@Pi {} = do
-  (dom, cod) <- isArrow1 t
-  SArrow <$> pubTyToSTy dom <*> pubTyToSTy cod
-pubTyToSTy _ = Nothing
+buildOCtx :: Defs Name -> OCtx
+buildOCtx defs =
+  [("bool", builtinInfo "bool"), ("int", builtinInfo "int")]
+    <> [(name, go name (toList ctors)) | (name, ctors) <- adts]
+  where
+    builtinInfo name =
+      OADTInfo
+        { oadts = [oblivName name],
+          coerces = [[SConst name, SConst $ oblivName name]],
+          joins = [SConst $ oblivName name],
+          ctors = [],
+          matches = ([], [])
+        }
+    adts = [(name, ctors) | (name, ADTDef {..}) <- defs]
+    go adt ctorDefs =
+      let oadts = [name | (name, OADTDef {..}) <- defs, pubName == adt]
+          coerces =
+            [ [SConst adt, SConst oadtName]
+              | (_, FunDef {attr = KnownInst (ViewInst {..})}) <- defs,
+                oadtName `elem` oadts
+            ]
+              <> [ [SConst oadtName, SConst oadtTo]
+                   | (_, FunDef {attr = KnownInst (CoerceInst {..})}) <- defs,
+                     oadtName `elem` oadts
+                 ]
+          reshapes =
+            [ oadtName
+              | (_, FunDef {attr = KnownInst (ReshapeInst {..})}) <- defs,
+                oadtName `elem` oadts
+            ]
+          joins =
+            [ SConst oadtName
+              | (_, FunDef {attr = KnownInst (JoinInst {..})}) <- defs,
+                oadtName `elem` reshapes
+            ]
+          decomposeCtor ty =
+            let (dom, cod) = fromJust (isArrow1 ty)
+             in decompose (tyToSTy cod) <> decompose (tyToSTy dom)
+          ctor1 ctorName ts =
+            (SConst adt : decomposeMany (tyToSTy <$> ts))
+              : [ decomposeCtor ty
+                  | (_, FunDef {attr = KnownInst (CtorInst {..}), ..}) <- defs,
+                    ctor == ctorName
+                ]
+          ctors = [(ctorName, ctor1 ctorName ts) | (ctorName, ts) <- ctorDefs]
+          decomposeMatch ty =
+            let dec psi alts =
+                  decomposeMany $
+                    tyToSTy
+                      <$> (psi : [fst $ fromJust (isArrow1 alt) | alt <- alts])
+             in case fromJust (isArrow ty) of
+                  (psi@Psi {} : alts, _) -> dec psi alts
+                  (_ : psi : alts, _) -> dec psi alts
+                  _ -> oops "Match instance has the wrong type"
+          (matchesMC, matchesUn) =
+            partition
+              ( \case
+                  (PolyT MergeableC, _) -> True
+                  _ -> False
+              )
+              [ (poly, ty)
+                | (_, FunDef {attr = KnownInst (MatchInst {..}), ..}) <- defs,
+                  oadtName `elem` oadts
+              ]
+          matches =
+            ( ( SConst adt
+                  : foldMap (\(_, ts) -> decomposeMany (tyToSTy <$> ts)) ctorDefs
+              )
+                : [decomposeMatch ty | (_, ty) <- matchesUn],
+              [decomposeMatch ty | (_, ty) <- matchesMC]
+            )
+       in OADTInfo {..}
 
-pubTyToSTy' :: Ty Name -> LiftM STy
+tyToSTy_ :: (Ty Name -> Maybe (STy a)) -> Ty Name -> Maybe (STy a)
+tyToSTy_ base = go
+  where
+    go Prod {olabel = PublicL, ..} =
+      SProd <$> go left <*> go right
+    go t@Pi {} = do
+      (dom, cod) <- isArrow1 t
+      SArrow <$> go dom <*> go cod
+    go t = base t
+
+pubTyToSTyBase :: Ty Name -> Maybe (STy a)
+pubTyToSTyBase TUnit = return SUnit
+pubTyToSTyBase (TBool PublicL) = return $ SConst "bool"
+pubTyToSTyBase (TInt PublicL) = return $ SConst "int"
+pubTyToSTyBase GV {..} = return $ SConst ref
+pubTyToSTyBase _ = Nothing
+
+pubTyToSTy :: Ty Name -> Maybe (STy a)
+pubTyToSTy = tyToSTy_ pubTyToSTyBase
+
+pubTyToSTy' :: Ty Name -> LiftM (STy a)
 pubTyToSTy' t = case pubTyToSTy t of
   Just s -> return s
   _ -> errUnsupported
 
-sarrows_ :: [STy] -> STy -> STy
+tyToSTyBase :: Ty Name -> Maybe (STy a)
+tyToSTyBase (TBool OblivL) = return $ SConst $ oblivName "bool"
+tyToSTyBase (TInt OblivL) = return $ SConst $ oblivName "int"
+tyToSTyBase Psi {..} = return $ SConst oadtName
+tyToSTyBase t = pubTyToSTyBase t
+
+tyToSTy :: Ty Name -> STy a
+tyToSTy = fromJust . tyToSTy_ tyToSTyBase
+
+decompose :: STy a -> [STy a]
+decompose SUnit = []
+decompose (SConst x) = [SConst x]
+decompose (SV x) = [SV x]
+decompose (SProd l r) = decompose l <> decompose r
+decompose (SArrow dom cod) = decompose dom <> decompose cod
+
+decomposeMany :: [STy a] -> [STy a]
+decomposeMany = foldMap decompose
+
+sarrows_ :: [STy a] -> STy a -> STy a
 sarrows_ = flip $ foldr SArrow
 
 idxDoc :: Int -> Doc
 idxDoc idx = "a" <> if idx == 0 then "" else pretty idx
 
-instance Cute STy where
+instance Cute STy1 where
   cute SUnit = "unit"
   cute (SConst x) = cute x
   cute (SV idx) = return $ idxDoc idx
@@ -312,7 +551,7 @@ instance Cute STy where
     codDoc <- cute cod
     return $ group domDoc <+> "->" <> line <> codDoc
 
-instance HasPLevel STy where
+instance HasPLevel (STy a) where
   plevel = \case
     SUnit -> 0
     SConst _ -> 0
