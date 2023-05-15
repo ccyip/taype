@@ -59,7 +59,6 @@ data Constraint
   | LiftC {fn :: Text, ty :: Int}
   deriving stock (Show)
 
--- type Constraints = [Constraint]
 type Constraints = [Constraint]
 
 type CCtx a = [(a, (Ty a, Int))]
@@ -133,17 +132,17 @@ extendCCtx1 x t a = extendCCtx [(x, t, a)]
 -- expression may not be in ANF.
 liftExpr :: Expr Name -> Ty Name -> Int -> LiftM (Expr Name)
 liftExpr e@VUnit t@TUnit idx = do
-  tell [EqC idx (fromJust (pubTyToSTy t))]
+  tell1 $ EqC idx (fromJust (pubTyToSTy t))
   return e
 liftExpr e@BLit {} t@(TBool PublicL) idx = do
-  tell [EqC idx (fromJust (pubTyToSTy t))]
+  tell1 $ EqC idx (fromJust (pubTyToSTy t))
   return e
 liftExpr e@ILit {} t@(TInt PublicL) idx = do
-  tell [EqC idx (fromJust (pubTyToSTy t))]
+  tell1 $ EqC idx (fromJust (pubTyToSTy t))
   return e
 liftExpr e@V {..} _ idx = do
   (_, idx') <- lookupCCtx name
-  tell [CoerceC {from = idx', to = idx}]
+  tell1 $ CoerceC {from = idx', to = idx}
   return $
     Ppx (CoercePpx {fromTy = TV idx', toTy = TV idx}) @@ [e]
 liftExpr Let {..} t idx = do
@@ -158,7 +157,7 @@ liftExpr Lam {..} t idx =
     Just (dom, cod) -> do
       domIdx <- freshSV dom
       codIdx <- freshSV cod
-      tell [EqC idx (SArrow (SV domIdx) (SV codIdx))]
+      tell1 $ EqC idx (SArrow (SV domIdx) (SV codIdx))
       (x, body) <- unbind1 bnd
       body' <- extendCCtx1 x dom domIdx $ liftExpr body cod codIdx
       return Lam {argTy = Just (TV domIdx), bnd = abstract_ x body', ..}
@@ -168,7 +167,7 @@ liftExpr App {fn = GV {..}, ..} _ idx =
   lookupGDef ref >>= \case
     CtorDef {..} -> do
       domIds <- freshTVs paraTypes
-      tell [CtorC {ctor = ref, ret = idx, args = domIds}]
+      tell1 $ CtorC {ctor = ref, ret = idx, args = domIds}
       args' <- zipWith3M liftExpr args paraTypes domIds
       return $ Ppx (CtorPpx {ctor = ref, retTy = TV idx}) @@ [tuple_ args']
     _ -> oops "Not a constructor"
@@ -178,21 +177,21 @@ liftExpr App {..} _ idx = do
     Just (dom, _) -> do
       let doms = take (length args) dom
       domIds <- freshTVs doms
-      tell [EqC fnIdx (sarrows_ (SV <$> domIds) (SV idx))]
+      tell1 $ EqC fnIdx (sarrows_ (SV <$> domIds) (SV idx))
       args' <- zipWith3M liftExpr args doms domIds
       return App {args = args', ..}
     _ -> oops "Dependent function application"
 liftExpr Pair {..} Prod {olabel = PublicL} idx = do
   (_, leftIdx) <- lookupCCtx $ isV left
   (_, rightIdx) <- lookupCCtx $ isV right
-  tell [EqC idx (SProd (SV leftIdx) (SV rightIdx))]
+  tell1 $ EqC idx (SProd (SV leftIdx) (SV rightIdx))
   return Pair {..}
 liftExpr PMatch {pairKind = pairKind@PublicP, ..} t idx = do
   (condTy', condIdx) <- lookupCCtx $ isV cond
   let (leftTy, rightTy) = isProd condTy'
   leftIdx <- freshSV leftTy
   rightIdx <- freshSV rightTy
-  tell [EqC condIdx (SProd (SV leftIdx) (SV rightIdx))]
+  tell1 $ EqC condIdx (SProd (SV leftIdx) (SV rightIdx))
   ((xl, xr), body) <- unbind2 bnd2
   body' <-
     extendCCtx
@@ -203,7 +202,7 @@ liftExpr PMatch {pairKind = pairKind@PublicP, ..} t idx = do
   return PMatch {bnd2 = abstract_ (xl, xr) body', ..}
 liftExpr Ite {..} t idx = do
   (_, condIdx) <- lookupCCtx $ isV cond
-  tell [IteC condIdx idx]
+  tell1 $ IteC condIdx idx
   left' <- liftExpr left t idx
   right' <- liftExpr right t idx
   return $
@@ -215,7 +214,7 @@ liftExpr Match {..} t idx = do
     ADTDef {..} -> do
       let tss = snd <$> ctors
       argss <- mapM freshTVs tss
-      tell [MatchC {cond = condIdx, ret = idx, argss = toList argss}]
+      tell1 $ MatchC {cond = condIdx, ret = idx, argss = toList argss}
       alts' <- NE.zipWith3M go alts tss argss
       return $
         Ppx (MatchPpx {condTy = TV condIdx, retTy = TV idx}) @@ toList alts'
@@ -228,10 +227,10 @@ liftExpr Match {..} t idx = do
 liftExpr GV {..} _ idx =
   lookupGDef ref >>= \case
     BuiltinDef {} -> do
-      tell [BuiltinC {fn = ref, ty = idx}]
+      tell1 $ BuiltinC {fn = ref, ty = idx}
       return $ Ppx (BuiltinPpx {fn = ref, ty = TV idx})
     FunDef {} -> do
-      tell [LiftC {fn = ref, ty = idx}]
+      tell1 $ LiftC {fn = ref, ty = idx}
       return $ Ppx (LiftPpx {fn = ref, ty = TV idx})
     _ -> oops "Refer to a global name that is not a function or builtin"
 liftExpr _ _ _ = errUnsupported
@@ -389,7 +388,7 @@ freshSV cls = do
   n <- get
   put (n + 1)
   cls' <- pubTyToSTy' cls
-  tell [CompatibleC {idx = n, cls = cls'}]
+  tell1 $ CompatibleC {idx = n, cls = cls'}
   return n
 
 freshTVs :: [Ty Name] -> LiftM [Int]
@@ -537,6 +536,9 @@ decomposeMany = foldMap decompose
 
 sarrows_ :: [STy a] -> STy a -> STy a
 sarrows_ = flip $ foldr SArrow
+
+tell1 :: (MonadWriter w m, One w) => OneItem w -> m ()
+tell1 x = tell $ one x
 
 idxDoc :: Int -> Doc
 idxDoc idx = "a" <> if idx == 0 then "" else pretty idx
