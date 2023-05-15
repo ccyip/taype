@@ -99,6 +99,8 @@ data Options = Options
     optPrintSource :: Bool,
     optPrintLifted :: Bool,
     optPrintConstraints :: Bool,
+    optPrintSolverInput :: Bool,
+    optPrintSolverOutput :: Bool,
     optReadable :: Bool,
     optWidth :: Maybe Int
   }

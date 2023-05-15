@@ -22,7 +22,7 @@ import Data.Maybe (fromJust)
 import Relude.Extra.Bifunctor (secondF)
 import Taype.Common
 import Taype.Cute
-import Taype.Environment (GCtx, lookupGCtx)
+import Taype.Environment (GCtx, LCtx, lookupGCtx, makeLCtx)
 import Taype.Error
 import Taype.Name
 import Taype.NonEmpty qualified as NE
@@ -245,7 +245,7 @@ liftExpr _ _ _ = errUnsupported
 liftDefs :: Options -> GCtx Name -> Defs Name -> ExceptT Err IO (Defs Name)
 liftDefs options@Options {..} gctx defs = do
   lifted <- lifting [] $ hashNub $ fst <$> goals
-  let liftedDefs = secondF fst lifted
+  let liftedDefs = secondF (snd . fst) lifted
       liftedDefs' =
         fromClosedDefs $
           if optReadable then readableDefs liftedDefs else liftedDefs
@@ -257,15 +257,21 @@ liftDefs options@Options {..} gctx defs = do
   when optPrintConstraints $ printDoc options constraintsDoc
   writeDocOpt options "constraints.sexp" constraintsDoc
   let octx = buildOCtx defs
-      scs = [(name, reduceConstraints gctx octx cs) | (name, cs) <- constraints]
-  print scs
+      lctx = makeLCtx defs
+      lifted' =
+        [ (name, (def, reduceConstraints gctx octx cs))
+          | (name, (def, cs)) <- lifted
+        ]
+      inputDoc = makeSolverInput octx lctx lifted' goals
+  when optPrintSolverInput $ printDoc options inputDoc
+  writeDocOpt options "solver.input.sexp" inputDoc
   oops "Not implemented yet"
   where
     goals = collectLifts $ snd <$> defs
     lifting done [] = return done
     lifting done fs = do
       lifted <- mapM go fs
-      let fs' = hashNub $ fst <$> collectLifts [def | (_, (def, _)) <- lifted]
+      let fs' = hashNub $ fst <$> collectLifts [def | (_, ((_, def), _)) <- lifted]
           done' = lifted <> done
       lifting done' [f | f <- fs', isNothing $ lookup f done']
     go name =
@@ -277,12 +283,14 @@ liftDefs options@Options {..} gctx defs = do
                 x <- freshSV ty
                 expr' <- liftExpr expr ty x
                 return
-                  FunDef
-                    { loc = -1,
-                      expr = expr',
-                      ty = TV x,
-                      ..
-                    }
+                  ( x,
+                    FunDef
+                      { loc = -1,
+                        expr = expr',
+                        ty = TV x,
+                        ..
+                      }
+                  )
           _ -> oops "Not a function"
 
 reduceConstraints ::
@@ -379,6 +387,68 @@ reduceCompatC cs = runWriter $ mapM go cs
 
 belongto :: [STy2] -> [[STy2]] -> [[SConstraint]]
 belongto ts tss = tss <&> zipWith SEqC ts
+
+makeSolverInput ::
+  OCtx ->
+  LCtx Name ->
+  [(Text, ((Int, Def Name), (ACtx, CompatCtx, SConstraints)))] ->
+  [(Text, Ty Name)] ->
+  Doc
+makeSolverInput octx lctx lifted goals =
+  goalsDoc </> clsDoc </> ctxDoc </> fnDoc <> hardline2
+  where
+    goalsDoc = clause "goals" $ goalDoc1 <$> goals
+    clsDoc = clause "classes" $ clsDoc1 <$> octx
+    ctxDoc =
+      clause
+        "context"
+        $ ctxDoc1 <$> filter (isJust . flip lookup lifted . fst) lctx
+    fnDoc = clause "functions" $ fnDoc1 <$> lifted
+    clause name xs = parens $ hang $ sep $ name : xs
+    goalDoc1 (x, t) =
+      let ts = decompose $ tyToSTy t
+       in parens $ hang $ fillSep $ pretty x : (styDoc <$> ts)
+    clsDoc1 (x, OADTInfo {oadts}) =
+      parens $ align $ fillSep $ pretty <$> (x : oadts)
+    ctxDoc1 (x, ts) =
+      let tss = decompose . tyToSTy . fst <$> ts
+       in clause (pretty x) $ tss <&> parens . align . fillSep . fmap styDoc
+    fnDoc1 (x, ((idx, _), (actx, cctx, cs))) =
+      clause
+        (pretty x)
+        [ compatCtxDoc cctx,
+          argsDoc idx actx,
+          csDoc cs
+        ]
+    compatCtxDoc cctx =
+      parens $
+        align $
+          fillSep $
+            cctx <&> \(x, cls) ->
+              parens $ styDoc (SV x) <+> pretty cls
+    argsDoc idx actx =
+      let ts = decompose $ fromJust $ lookup idx actx
+       in parens $ align $ fillSep $ styDoc <$> ts
+    csDoc cs =
+      let (liftCs', cs') =
+            partition
+              ( \case
+                  SLiftC _ _ -> True
+                  _ -> False
+              )
+              cs
+       in scDocs cs' <> line <> scDocs liftCs'
+
+    styDoc :: STy SName -> Doc
+    styDoc (SConst x) = pretty x
+    styDoc (SV (x, y)) = pretty $ internalName $ show x <> "_" <> show y
+    styDoc _ = oops "Not a base type"
+
+    scDoc (SEqC t1 t2) = clause "=" [styDoc t1, styDoc t2]
+    scDoc (SLiftC x ts) = clause (pretty x) (styDoc <$> ts)
+    scDoc (SOrC css) =
+      clause "or" $ scDocs <$> css
+    scDocs cs = parens $ align $ lstDoc $ scDoc <$> cs
 
 ----------------------------------------------------------------
 -- Auxiliaries
@@ -602,9 +672,11 @@ cuteNamedConstraintsDoc options = foldMap ((<> hardline2) . go)
         hang $
           "constraints"
             <+> pretty name
-            </> parens (align (csDoc (runCuteM options . cute <$> cs)))
-    csDoc [] = mempty
-    csDoc (doc : docs) = doc <> foldMap sep1 docs
+            </> parens (align (lstDoc (runCuteM options . cute <$> cs)))
+
+lstDoc :: [Doc] -> Doc
+lstDoc [] = mempty
+lstDoc (doc : docs) = doc <> foldMap sep1 docs
 
 err :: Doc -> LiftM a
 err errMsg = do

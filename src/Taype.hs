@@ -161,6 +161,14 @@ opts = do
     switch $
       long "print-constraints"
         <> help "Whether to print the generated constraints"
+  optPrintSolverInput <-
+    switch $
+      long "print-solver-input"
+        <> help "Whether to print the input to the external constraints solver"
+  optPrintSolverOutput <-
+    switch $
+      long "print-solver-output"
+        <> help "Whether to print the output from the external constraints solver"
   optReadable <-
     switch $
       long "readable"
