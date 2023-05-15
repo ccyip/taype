@@ -1300,17 +1300,6 @@ elabPpxDefs options gctx defs =
     go e = return e
     ctx = makeLCtx defs
 
-makeLCtx :: Defs Name -> LCtx Name
-makeLCtx defs =
-  go
-    [ (fn, (ty, name))
-      | (name, FunDef {attr = KnownInst (LiftInst {..}), ..}) <- defs
-    ]
-  where
-    go ctx0 =
-      hashNub [fn | (fn, _) <- ctx0] <&> \fn ->
-        (fn, [entry | (fn', entry) <- ctx0, fn == fn'])
-
 typeOfItePpx :: Ty Name -> Ty Name -> Ty Name
 typeOfItePpx condTy retTy =
   arrows_ [condTy, arrow_ TUnit retTy, arrow_ TUnit retTy] retTy

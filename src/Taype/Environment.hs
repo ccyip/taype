@@ -40,6 +40,7 @@ module Taype.Environment
     withCur,
     withOption,
     withLabel,
+    makeLCtx,
 
     -- * Prelude context
     preludeGCtx,
@@ -221,6 +222,18 @@ withOption f = local $ \Env {..} -> Env {options = f options, ..}
 
 withLabel :: (MonadReader Env m) => LLabel -> m a -> m a
 withLabel l = local $ \Env {..} -> Env {label = l, ..}
+
+makeLCtx :: Defs Name -> LCtx Name
+makeLCtx defs =
+  go
+    [ (fn, (ty, name))
+      | (name, FunDef {attr = KnownInst (LiftInst {..}), ..}) <- defs
+    ]
+  where
+    go ctx0 =
+      [ (name, (ty, name) : [entry | (fn, entry) <- ctx0, name == fn])
+        | (name, FunDef {..}) <- defs
+      ]
 
 ----------------------------------------------------------------
 -- Prelude context
