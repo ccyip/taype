@@ -395,25 +395,25 @@ makeSolverInput ::
   [(Text, Ty Name)] ->
   Doc
 makeSolverInput octx lctx lifted goals =
-  goalsDoc </> clsDoc </> ctxDoc </> fnDoc <> hardline2
+  goalsDoc </> clsDoc </> axDoc </> defDoc <> hardline2
   where
     goalsDoc = clause "goals" $ goalDoc1 <$> goals
     clsDoc = clause "classes" $ clsDoc1 <$> octx
-    ctxDoc =
+    axDoc =
       clause
-        "context"
-        $ ctxDoc1 <$> filter (isJust . flip lookup lifted . fst) lctx
-    fnDoc = clause "functions" $ fnDoc1 <$> lifted
+        "axioms"
+        $ axDoc1 <$> filter (isJust . flip lookup lifted . fst) lctx
+    defDoc = clause "definitions" $ defDoc1 <$> lifted
     clause name xs = parens $ hang $ sep $ name : xs
     goalDoc1 (x, t) =
       let ts = decompose $ tyToSTy t
        in parens $ hang $ fillSep $ pretty x : (styDoc <$> ts)
     clsDoc1 (x, OADTInfo {oadts}) =
       parens $ align $ fillSep $ pretty <$> (x : oadts)
-    ctxDoc1 (x, ts) =
+    axDoc1 (x, ts) =
       let tss = decompose . tyToSTy . fst <$> ts
        in clause (pretty x) $ tss <&> parens . align . fillSep . fmap styDoc
-    fnDoc1 (x, ((idx, _), (actx, cctx, cs))) =
+    defDoc1 (x, ((idx, _), (actx, cctx, cs))) =
       clause
         (pretty x)
         [ compatCtxDoc cctx,
