@@ -95,3 +95,4 @@ examples/**/*.ml
 !examples/**/test_*.ml
 *.tpc
 *.oil
+*.sexp
