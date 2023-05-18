@@ -13,7 +13,7 @@ let parse_atom_list = function
 let parse_atom_lists = List.map parse_atom_list
 
 let parse_goal = function
-  | `List (`Atom name :: ty) -> (name, parse_atoms ty)
+  | `List (`Atom name :: ty) -> { name; ty = parse_atoms ty }
   | _ -> raise Ill_formed_input
 
 let parse_goals = function
@@ -95,6 +95,6 @@ let () =
     | Some file ->
         IO.with_out ~flags:[ Open_wronly; Open_creat; Open_text; Open_trunc ]
           file (fun oc ->
-            log_channel := Some oc;
+            Logs.set_channel oc;
             main input_file output_file)
     | None -> main input_file output_file

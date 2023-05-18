@@ -1,19 +1,33 @@
 open Containers
 module HashSet = CCHashSet
 
-let log_channel : out_channel option ref = ref None
+module Logs = struct
+  let channel : out_channel option ref = ref None
+  let set_channel oc = channel := Some oc
 
-let logging header msg =
-  match !log_channel with
-  | Some oc ->
-      IO.write_line oc "================================";
-      IO.write_line oc header;
-      IO.write_line oc "--------------------------------";
-      IO.write_line oc msg
-  | None -> ()
+  let info header msg =
+    match !channel with
+    | Some oc ->
+        IO.write_line oc "================================";
+        IO.write_line oc header;
+        IO.write_line oc "--------------------------------";
+        IO.write_line oc msg
+    | None -> ()
+end
 
 type ty = string list [@@deriving show]
-type goal = string * ty [@@deriving show]
+type goal = { name : string; ty : ty } [@@deriving show]
+
+module Goal = struct
+  type t = goal [@@deriving show]
+
+  let equal = Equal.poly
+  let hash { name; ty } = Hash.(pair string (list string)) (name, ty)
+
+  let subst model { name; ty } =
+    let get x = List.Assoc.get_exn x model ~eq:Equal.string in
+    { name; ty = List.map get ty }
+end
 
 type formula =
   | Eq of string * string
@@ -22,7 +36,6 @@ type formula =
   | Not of formula
 
 type formulas = formula list
-type model = (string * string) list [@@deriving show]
 
 type def = {
   vars : (string * string) list;
@@ -31,21 +44,7 @@ type def = {
   subgoals : goal list;
 }
 
-module Goal = struct
-  type t = goal
-
-  let equal = Equal.poly
-  let hash = Hash.(pair string (list string))
-end
-
-module GoalSet = struct
-  include HashSet.Make (Goal)
-
-  let pp = pp pp_goal
-end
-
-type goal_state = Given | Refused | In_progress | Solved of model * GoalSet.t
-[@@deriving show]
+type model = (string * string) list [@@deriving show]
 
 module SolverCtx = struct
   type solver = {
@@ -80,10 +79,10 @@ module SolverCtx = struct
     Hashtbl.add sort_tbl repr sort;
     Hashtbl.add_iter ctor_tbl (List.to_iter (List.combine clss exprs))
 
-  let init_var { tbl; _ } (name, cls) =
+  let init_var solver (name, cls) =
     let sort = Hashtbl.find sort_tbl cls in
     let expr = Z3.Expr.mk_const_s ctx name sort in
-    Hashtbl.add tbl name expr
+    Hashtbl.add solver.tbl name expr
 
   let find_expr tbl x =
     match Hashtbl.get tbl x with Some e -> e | None -> Hashtbl.find ctor_tbl x
@@ -101,8 +100,8 @@ module SolverCtx = struct
     | And conj -> Z3.Boolean.mk_and ctx (List.map (expr_of_formula tbl) conj)
     | Not f -> Z3.Boolean.mk_not ctx (expr_of_formula tbl f)
 
-  let add_formula { svr; tbl; _ } f =
-    Z3.Solver.add svr [ expr_of_formula tbl f ]
+  let add_formula solver f =
+    Z3.Solver.add solver.svr [ expr_of_formula solver.tbl f ]
 
   let add_formulas solver = List.iter (add_formula solver)
 
@@ -113,7 +112,7 @@ module SolverCtx = struct
     let solver = { svr = Z3.Solver.mk_simple_solver ctx; ty; subgoals; tbl } in
     List.iter (init_var solver) vars;
     add_formulas solver formulas;
-    logging ("Created solver for " ^ name) (Z3.Solver.to_string solver.svr);
+    Logs.info ("Created solver for " ^ name) (Z3.Solver.to_string solver.svr);
     Hashtbl.add solver_ctx name solver
 
   let init classes defs =
@@ -132,45 +131,54 @@ module SolverCtx = struct
 
   let mk_ty_eq = List.map2 (fun x y -> Eq (x, y))
 
-  let check_with ({ svr; ty; tbl; _ } as solver) ty' =
-    let fs = mk_ty_eq ty ty' in
+  let check_with ({ svr; _ } as solver) ty =
+    let fs = mk_ty_eq solver.ty ty in
     Z3.Solver.push svr;
     add_formulas solver fs;
     let result =
       match Z3.Solver.check svr [] with
       | SATISFIABLE -> (
           match Z3.Solver.get_model svr with
-          | Some model -> Some (convert_model model tbl)
+          | Some model -> Some (convert_model model solver.tbl)
           | None -> None)
       | UNSATISFIABLE | UNKNOWN -> None
     in
     Z3.Solver.pop svr 1;
     result
 
-  let refuse (name, ty) =
-    let refuse1 _ ({ subgoals; _ } as solver) =
-      let add (name', ty') =
-        if String.(name = name') then
-          add_formula solver (Not (And (mk_ty_eq ty ty')))
+  let refuse goal =
+    let refuse1 _ solver =
+      let add subgoal =
+        if String.(goal.name = subgoal.name) then
+          add_formula solver (Not (And (mk_ty_eq goal.ty subgoal.ty)))
       in
-      List.iter add subgoals
+      List.iter add solver.subgoals
     in
     Hashtbl.iter refuse1 solver_ctx
 end
+
+module GoalSet = struct
+  include HashSet.Make (Goal)
+
+  let pp = pp Goal.pp
+end
+
+type goal_state = Given | Refused | In_progress | Solved of model * GoalSet.t
+[@@deriving show]
 
 module GoalCtx = struct
   module Hashtbl = Hashtbl.Make' (Goal)
 
   type t = goal_state Hashtbl.t
 
-  let pp = Hashtbl.pp pp_goal pp_goal_state
+  let pp = Hashtbl.pp Goal.pp pp_goal_state
   let goal_ctx : t = Hashtbl.create 1024
   let set k v = Hashtbl.replace goal_ctx k v
-  let get k = Hashtbl.get goal_ctx k
   let unset k = Hashtbl.remove goal_ctx k
+  let get k = Hashtbl.get goal_ctx k
 
   let init axioms =
-    let init1 (name, tys) = List.iter (fun ty -> set (name, ty) Given) tys in
+    let init1 (name, tys) = List.iter (fun ty -> set { name; ty } Given) tys in
     List.iter init1 axioms
 
   let propagate goal new_deps =
@@ -205,14 +213,12 @@ module GoalCtx = struct
     Hashtbl.to_list goal_ctx |> List.filter_map solved
 end
 
-let rec solve_ ((name, ty) as goal) =
-  let solver = SolverCtx.find name in
-  match SolverCtx.check_with solver ty with
+let rec solve_ goal =
+  let solver = SolverCtx.find goal.name in
+  match SolverCtx.check_with solver goal.ty with
   | Some model ->
-      let get x = List.Assoc.get_exn x model ~eq:Equal.string in
-      let subst (name, ty) = (name, List.map get ty) in
-      let subgoals = List.map subst solver.subgoals in
-      let results = List.map solve1 subgoals in
+      let subgoals = List.map (Goal.subst model) solver.subgoals in
+      let results = List.map solve_goal subgoals in
       if List.mem Refused results then
         (* Solvers have been updated. *)
         solve_ goal
@@ -239,7 +245,7 @@ let rec solve_ ((name, ty) as goal) =
       GoalCtx.set goal st;
       st
 
-and solve1 goal =
+and solve_goal goal =
   match GoalCtx.get goal with
   | Some st -> st
   | None ->
@@ -250,6 +256,6 @@ let solve goals classes axioms defs : ((goal * model) list, goal list) result =
   GoalCtx.init axioms;
   SolverCtx.init classes defs;
 
-  let results = List.map solve1 goals in
+  let results = List.map solve_goal goals in
   if List.mem Refused results then Error (GoalCtx.get_refused ())
   else Ok (GoalCtx.get_solved ())
