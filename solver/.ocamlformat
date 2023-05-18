@@ -1,0 +1,4 @@
+profile = default
+version = 0.25.1
+parse-docstrings = true
+wrap-comments = true

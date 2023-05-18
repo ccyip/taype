@@ -1,0 +1,4 @@
+(library
+ (name lib)
+ (libraries containers containers-data z3)
+ (preprocess (pps ppx_deriving.show)))
