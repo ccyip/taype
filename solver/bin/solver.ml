@@ -74,8 +74,20 @@ let parse_input = function
   | _ -> raise Ill_formed_input
 
 let sexp_of_output = function
-  | Ok _ -> `List [ `Atom "solved" ]
-  | Error _ -> `List [ `Atom "failed" ]
+  | Ok solved ->
+      let to_sexp (goal, model) =
+        Sexp.of_variant goal.name
+        @@ Sexp.of_list (List.map Sexp.atom goal.ty)
+           :: List.map
+                (fun assn -> Sexp.of_pair (Pair.map_same Sexp.atom assn))
+                model
+      in
+      Sexp.of_variant "solved" @@ List.map to_sexp solved
+  | Error refused ->
+      let to_sexp goal =
+        Sexp.of_variant goal.name @@ List.map Sexp.atom goal.ty
+      in
+      Sexp.of_variant "failed" @@ List.map to_sexp refused
 
 let main input_file output_file =
   let input = Sexp.parse_file_list input_file |> Result.get_or_failwith in
