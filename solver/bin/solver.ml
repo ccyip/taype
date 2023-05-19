@@ -76,18 +76,10 @@ let parse_input = function
 let sexp_of_output = function
   | Ok solved ->
       let to_sexp (goal, model) =
-        Sexp.of_variant goal.name
-        @@ Sexp.of_list (List.map Sexp.atom goal.ty)
-           :: List.map
-                (fun assn -> Sexp.of_pair (Pair.map_same Sexp.atom assn))
-                model
+        Sexp.of_variant goal.name (sexp_of_ty goal.ty :: raw_sexp_of_model model)
       in
       Sexp.of_variant "solved" @@ List.map to_sexp solved
-  | Error refused ->
-      let to_sexp goal =
-        Sexp.of_variant goal.name @@ List.map Sexp.atom goal.ty
-      in
-      Sexp.of_variant "failed" @@ List.map to_sexp refused
+  | Error refused -> Sexp.of_variant "failed" @@ List.map Goal.to_sexp refused
 
 let main input_file output_file =
   let input = Sexp.parse_file_list input_file |> Result.get_or_failwith in

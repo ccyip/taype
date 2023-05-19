@@ -5,22 +5,37 @@ module Logs = struct
   let channel : out_channel option ref = ref None
   let set_channel oc = channel := Some oc
 
-  let info header msg =
+  type log = { printf : 'a. ('a, Format.formatter, unit) format -> 'a }
+  [@@unboxed]
+
+  let info msgf =
     match !channel with
     | Some oc ->
-        IO.write_line oc "================================";
-        IO.write_line oc header;
-        IO.write_line oc "--------------------------------";
-        IO.write_line oc msg
+        Format.with_out_chan oc (fun fmt ->
+            Format.fprintf fmt "%s@."
+              "================================================================";
+            msgf
+              {
+                printf =
+                  (fun (type a) (s : (a, Format.formatter, unit) format) ->
+                    Format.fprintf fmt s);
+              };
+            Format.fprintf fmt "@.")
     | None -> ()
 end
 
-type ty = string list [@@deriving show]
-type goal = { name : string; ty : ty } [@@deriving show]
+type ty = string list
+
+let raw_sexp_of_ty = List.map Sexp.atom
+let sexp_of_ty ty = Sexp.of_list (raw_sexp_of_ty ty)
+
+type goal = { name : string; ty : ty }
 
 module Goal = struct
-  type t = goal [@@deriving show]
+  type t = goal
 
+  let to_sexp { name; ty } = Sexp.of_variant name (raw_sexp_of_ty ty)
+  let pp = Format.map to_sexp Sexp.pp
   let equal = Equal.poly
   let hash { name; ty } = Hash.(pair string (list string)) (name, ty)
 
@@ -44,7 +59,13 @@ type def = {
   subgoals : goal list;
 }
 
-type model = (string * string) list [@@deriving show]
+type model = (string * string) list
+
+let raw_sexp_of_model =
+  List.map (fun assn -> Sexp.of_pair (Pair.map_same Sexp.atom assn))
+
+let pp_model =
+  Format.map raw_sexp_of_model (List.pp ~pp_sep:Format.space Sexp.pp)
 
 module SolverCtx = struct
   type solver = {
@@ -112,7 +133,9 @@ module SolverCtx = struct
     let solver = { svr = Z3.Solver.mk_simple_solver ctx; ty; subgoals; tbl } in
     List.iter (init_var solver) vars;
     add_formulas solver formulas;
-    Logs.info ("Created solver for " ^ name) (Z3.Solver.to_string solver.svr);
+    Logs.info (fun log ->
+        log.printf "Created solver for %s@.%s" name
+          (Z3.Solver.to_string solver.svr));
     Hashtbl.add solver_ctx name solver
 
   let init classes defs =
@@ -147,10 +170,16 @@ module SolverCtx = struct
     result
 
   let refuse goal =
-    let refuse1 _ solver =
+    let refuse1 name solver =
       let add subgoal =
-        if String.(goal.name = subgoal.name) then
-          add_formula solver (Not (And (mk_ty_eq goal.ty subgoal.ty)))
+        if String.(goal.name = subgoal.name) then (
+          let e =
+            expr_of_formula solver.tbl
+            @@ Not (And (mk_ty_eq goal.ty subgoal.ty))
+          in
+          Z3.Solver.add solver.svr [ e ];
+          Logs.info (fun log ->
+              log.printf "Added refutation to %s@.%s" name (Z3.Expr.to_string e)))
       in
       List.iter add solver.subgoals
     in
@@ -164,7 +193,7 @@ module GoalSet = struct
 end
 
 type goal_state = Given | Refused | In_progress | Solved of model * GoalSet.t
-[@@deriving show]
+[@@deriving show { with_path = false }]
 
 module GoalCtx = struct
   module Hashtbl = Hashtbl.Make' (Goal)
@@ -172,6 +201,7 @@ module GoalCtx = struct
   type t = goal_state Hashtbl.t
 
   let pp = Hashtbl.pp Goal.pp pp_goal_state
+  let show = Format.to_string pp
   let goal_ctx : t = Hashtbl.create 1024
   let set k v = Hashtbl.replace goal_ctx k v
   let unset k = Hashtbl.remove goal_ctx k
@@ -182,18 +212,26 @@ module GoalCtx = struct
     List.iter init1 axioms
 
   let propagate goal new_deps =
-    let replace_deps _ = function
+    let replace_deps goal' = function
       | Solved (_, deps) when GoalSet.mem deps goal ->
           GoalSet.remove deps goal;
-          GoalSet.union_mut ~into:deps new_deps
+          GoalSet.union_mut ~into:deps new_deps;
+          Logs.info (fun log ->
+              log.printf "Propagated assumptions of %a to %a" Goal.pp goal
+                Goal.pp goal';
+              log.printf ",@ whose assumptions are now:@.%a" GoalSet.pp deps)
       | _ -> ()
     in
     Hashtbl.iter replace_deps goal_ctx
 
   let invalidate goal =
     SolverCtx.refuse goal;
-    let remove _ = function
-      | Solved (_, deps) when GoalSet.mem deps goal -> None
+    let remove goal' = function
+      | Solved (_, deps) when GoalSet.mem deps goal ->
+          Logs.info (fun log ->
+              log.printf "Reset %a@ which depends on %a" Goal.pp goal' Goal.pp
+                goal);
+          None
       | st -> Some st
     in
     Hashtbl.filter_map_inplace remove goal_ctx
@@ -214,10 +252,15 @@ module GoalCtx = struct
 end
 
 let rec solve_ goal =
+  Logs.info (fun log -> log.printf "Solving %a" Goal.pp goal);
   let solver = SolverCtx.find goal.name in
   match SolverCtx.check_with solver goal.ty with
   | Some model ->
       let subgoals = List.map (Goal.subst model) solver.subgoals in
+      Logs.info (fun log ->
+          if not (List.is_empty subgoals) then
+            log.printf "%a requires subgoals@.%a" Goal.pp goal (List.pp Goal.pp)
+              subgoals);
       let results = List.map solve_goal subgoals in
       if List.mem Refused results then
         (* Solvers have been updated. *)
@@ -235,11 +278,18 @@ let rec solve_ goal =
         in
         List.iter add_deps results;
         GoalSet.remove deps goal;
+        Logs.info (fun log ->
+            if GoalSet.cardinal deps = 0 then
+              log.printf "Completely solved %a" Goal.pp goal
+            else
+              log.printf "Solved %a with assumptions@.%a" Goal.pp goal
+                GoalSet.pp deps);
         GoalCtx.propagate goal deps;
         let st = Solved (model, deps) in
         GoalCtx.set goal st;
         st
   | None ->
+      Logs.info (fun log -> log.printf "Refused %a" Goal.pp goal);
       GoalCtx.invalidate goal;
       let st = Refused in
       GoalCtx.set goal st;
@@ -252,10 +302,12 @@ and solve_goal goal =
       GoalCtx.set goal In_progress;
       solve_ goal
 
-let solve goals classes axioms defs : ((goal * model) list, goal list) result =
+let solve goals classes axioms defs =
   GoalCtx.init axioms;
   SolverCtx.init classes defs;
 
   let results = List.map solve_goal goals in
+  Logs.info (fun log ->
+      log.printf "Final goal context@.%a" GoalCtx.pp GoalCtx.goal_ctx);
   if List.mem Refused results then Error (GoalCtx.get_refused ())
   else Ok (GoalCtx.get_solved ())
