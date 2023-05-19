@@ -17,9 +17,13 @@ module Taype.Lift (liftDefs) where
 import Control.Monad.Error.Class
 import Control.Monad.RWS.CPS
 import Control.Monad.Writer.CPS
+import Data.Array
+import Data.Graph
 import Data.List (lookup, partition)
 import Data.Maybe (fromJust)
 import Relude.Extra.Bifunctor (secondF)
+import Relude.Extra.Foldable1 (maximum1)
+import Relude.Extra.Tuple (fmapToSnd)
 import Taype.Common
 import Taype.Cute
 import Taype.Environment (GCtx, LCtx, lookupGCtx, makeLCtx)
@@ -74,7 +78,7 @@ data Env = Env
 type LiftM a = FreshT (RWST Env Constraints Int (ExceptT Err IO)) a
 
 data OADTInfo = OADTInfo
-  { oadts :: [Text],
+  { oadts :: [(Text, Int)],
     coerces :: [[STy2]],
     joins :: [STy2],
     ctors :: [(Text, [[STy2]])],
@@ -409,7 +413,8 @@ makeSolverInput octx lctx lifted goals =
       let ts = decompose $ tyToSTy t
        in parens $ hang $ fillSep $ pretty x : (styDoc <$> ts)
     clsDoc1 (x, OADTInfo {oadts}) =
-      parens $ align $ fillSep $ pretty <$> (x : oadts)
+      parens $ align $ fillSep $ pairDoc <$> ((x, 0) : oadts)
+    pairDoc (x, y) = parens $ align $ fillSep [pretty x, pretty y]
     axDoc1 (x, ts) =
       let tss = decompose . tyToSTy . fst <$> ts
        in clause (pretty x) $ tss <&> parens . align . fillSep . fmap styDoc
@@ -494,7 +499,7 @@ buildOCtx defs =
   where
     builtinInfo name =
       OADTInfo
-        { oadts = [oblivName name],
+        { oadts = [(oblivName name, 1)],
           coerces = [[SConst name, SConst $ oblivName name]],
           joins = [SConst $ oblivName name],
           ctors = [],
@@ -502,20 +507,25 @@ buildOCtx defs =
         }
     adts = [(name, ctors) | (name, ADTDef {..}) <- defs]
     go adt ctorDefs =
-      let oadts = [name | (name, OADTDef {..}) <- defs, pubName == adt]
+      let oadtNames = [name | (name, OADTDef {..}) <- defs, pubName == adt]
+          userCoerces =
+            [ (oadtName, oadtTo)
+              | (_, FunDef {attr = KnownInst (CoerceInst {..})}) <- defs,
+                oadtName `elem` oadtNames
+            ]
+          oadts =
+            inferCosts adt oadtNames $
+              [(adt, oadtName) | oadtName <- oadtNames] <> userCoerces
           coerces =
             [ [SConst adt, SConst oadtName]
               | (_, FunDef {attr = KnownInst (ViewInst {..})}) <- defs,
-                oadtName `elem` oadts
+                oadtName `elem` oadtNames
             ]
-              <> [ [SConst oadtName, SConst oadtTo]
-                   | (_, FunDef {attr = KnownInst (CoerceInst {..})}) <- defs,
-                     oadtName `elem` oadts
-                 ]
+              <> [[SConst from, SConst to] | (from, to) <- userCoerces]
           reshapes =
             [ oadtName
               | (_, FunDef {attr = KnownInst (ReshapeInst {..})}) <- defs,
-                oadtName `elem` oadts
+                oadtName `elem` oadtNames
             ]
           joins =
             [ SConst oadtName
@@ -549,7 +559,7 @@ buildOCtx defs =
               )
               [ (poly, ty)
                 | (_, FunDef {attr = KnownInst (MatchInst {..}), ..}) <- defs,
-                  oadtName `elem` oadts
+                  oadtName `elem` oadtNames
               ]
           matches =
             ( ( SConst adt
@@ -558,7 +568,26 @@ buildOCtx defs =
                 : [decomposeMatch ty | (_, ty) <- matchesUn],
               [decomposeMatch ty | (_, ty) <- matchesMC]
             )
-       in OADTInfo {..}
+       in OADTInfo {oadts = oadts, ..}
+
+inferCosts :: Text -> [Text] -> [(Text, Text)] -> [(Text, Int)]
+inferCosts adt oadts coerces =
+  let costs = go sorted $ graph $> 0
+   in fmapToSnd (\k -> costs ! fromJust (toVertex k)) oadts
+  where
+    -- Edges are reversed.
+    (graph, _, toVertex) =
+      graphFromEdges $
+        (adt : oadts)
+          <&> \v -> (v, v, [from | (from, to) <- coerces, to == v])
+    sorted = reverseTopSort graph
+    -- Calculate the longest pathes.
+    go [] tbl = tbl
+    go (v : vs) tbl =
+      let incomings = graph ! v
+          costs = (tbl !) <$> incomings
+          tbl' = tbl // [(v, 1 + maximum1 (-1 :| costs))]
+       in go vs tbl'
 
 tyToSTy_ :: (Ty Name -> Maybe (STy a)) -> Ty Name -> Maybe (STy a)
 tyToSTy_ base = go

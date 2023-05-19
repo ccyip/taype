@@ -76,6 +76,7 @@ library
                      , lattices
                      , containers
                      , filepath
+                     , array
 
 executable taype
   import:              common-options
