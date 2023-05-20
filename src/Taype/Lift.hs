@@ -225,7 +225,8 @@ liftExpr Match {..} t idx = do
       tell1 $ MatchC {cond = condIdx, ret = idx, argss = toList argss}
       alts' <- NE.zipWith3M go alts tss argss
       return $
-        Ppx (MatchPpx {condTy = TV condIdx, retTy = TV idx}) @@ toList alts'
+        Ppx (MatchPpx {condTy = TV condIdx, retTy = TV idx})
+          @@ (cond : toList alts')
     _ -> oops "Not an ADT"
   where
     go MatchAlt {..} ts as = do
