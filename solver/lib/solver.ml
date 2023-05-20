@@ -82,7 +82,6 @@ module SolverCtx = struct
   let sort_tbl : (string, Z3.Sort.sort) Hashtbl.t = Hashtbl.create 1024
   let ty_tbl : (string, Z3.Expr.expr) Hashtbl.t = Hashtbl.create 1024
   let cls_tbl : (string, (string * int) list) Hashtbl.t = Hashtbl.create 1024
-  let find k = Hashtbl.find solver_ctx k
 
   let init_class cls =
     let names = List.map fst cls in
@@ -162,9 +161,12 @@ module SolverCtx = struct
     Hashtbl.map_list convert
 
   let mk_ty_eq = List.map2 (fun x y -> Eq (x, y))
+  let get_subgoals goal = (Hashtbl.find solver_ctx goal.name).subgoals
 
-  let check_with ({ svr; _ } as solver) ty =
-    let fs = mk_ty_eq solver.ty ty in
+  let check (goal : goal) =
+    let solver = Hashtbl.find solver_ctx goal.name in
+    let svr = solver.svr in
+    let fs = mk_ty_eq solver.ty goal.ty in
     Z3.Optimize.push svr;
     add_formulas solver fs;
     let result =
@@ -175,6 +177,9 @@ module SolverCtx = struct
           | None -> None)
       | UNSATISFIABLE | UNKNOWN -> None
     in
+    Logs.info (fun log ->
+        log.printf "Finished checking %a@.%s" Goal.pp goal
+          (Z3.Optimize.get_statistics svr |> Z3.Statistics.to_string));
     Z3.Optimize.pop svr;
     result
 
@@ -262,10 +267,11 @@ end
 
 let rec solve_ goal =
   Logs.info (fun log -> log.printf "Solving %a" Goal.pp goal);
-  let solver = SolverCtx.find goal.name in
-  match SolverCtx.check_with solver goal.ty with
+  match SolverCtx.check goal with
   | Some model ->
-      let subgoals = List.map (Goal.subst model) solver.subgoals in
+      let subgoals =
+        List.map (Goal.subst model) (SolverCtx.get_subgoals goal)
+      in
       Logs.info (fun log ->
           if not (List.is_empty subgoals) then
             log.printf "%a requires subgoals@.%a" Goal.pp goal (List.pp Goal.pp)
