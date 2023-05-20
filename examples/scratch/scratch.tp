@@ -208,18 +208,16 @@ fn ~map_ : (~int -> ~int) -> #~list -> #~list = \f xs =>
         %Cons #~list (f x, ~map_ f xs')
       end)
 
-fn ~elem : ~int -> #~list -> ~bool = %lift elem (~int -> #~list -> ~bool)
-fn ~insert : ~int -> #~list -> #~list = %lift insert (~int -> #~list -> #~list)
-fn ~map : (~int -> ~int) -> #~list -> #~list =
-  %lift map ((~int -> ~int) -> #~list -> #~list)
-fn ~filter : (~int -> ~bool) -> #~list -> #~list =
-  %lift filter ((~int -> ~bool) -> #~list -> #~list)
+fn ~elem : ~int -> #~list -> ~bool = %lift elem
+fn ~insert : ~int -> #~list -> #~list = %lift insert
+fn ~map : (~int -> ~int) -> #~list -> #~list = %lift map
+fn ~filter : (~int -> ~bool) -> #~list -> #~list = %lift filter
 
 fn ~test_map : #~list -> ~int -> #~list = \xs y =>
-  ~map (\x => %+ (~int -> ~int -> ~int) x y) xs
+  ~map (\x => x ~+ y) xs
 
 fn ~test_filter : #~list -> ~int -> #~list = \xs y =>
-  ~filter (\x => %<= (~int -> ~int -> ~bool) x y) xs
+  ~filter (\x => x ~<= y) xs
 
 // obliv ~list_ (k : int) =
 //   if k == 0

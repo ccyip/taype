@@ -452,8 +452,7 @@ grammar = mdo
           do
             loc <- pLocatedToken L.LiftPpx
             fn <- pIdent
-            ty <- pAtomType
-            return (loc, LiftPpx {..})
+            return (loc, LiftPpx {to = Nothing, ..})
         ]
 
   -- Type

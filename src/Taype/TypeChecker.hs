@@ -538,16 +538,13 @@ typing OMatch {..} mt = do
 typing Arb {oblivTy = Nothing} (Just t) = do
   oblivKinded t
   mkLet' t Arb {oblivTy = Just t}
-typing Ppx {..} Nothing = do
-  get >>= \case
-    PolyT _ ->
-      err
-        [ [ DD $
-              "Preprocessors are not allowed"
-                <+> "in polymorphic functions (OADT match instances) yet"
-          ]
-        ]
-    MonoT -> pass
+typing Ppx {ppx = LiftPpx {..}} (Just t) = do
+  checkPpxPoly
+  let ppx' = LiftPpx {to = Just t, ..}
+  t' <- typingPpx ppx'
+  mkLet' t' Ppx {ppx = ppx'}
+typing Ppx {..} Nothing | not (isLiftPpx ppx) = do
+  checkPpxPoly
   ppx' <- biplateM kinded ppx
   t' <- typingPpx ppx'
   mkLet' t' Ppx {ppx = ppx'}
@@ -1027,7 +1024,8 @@ processPpx ctx = go
       let t' = arrow_ fromTy toTy
       e' <- goCoerce fromTy toTy
       return (t', e')
-    go LiftPpx {..} =
+    go LiftPpx {..} = do
+      let ty = fromJust to
       case lookupLCtx fn ty ctx of
         Just name -> return (ty, GV name)
         _ ->
@@ -1598,6 +1596,18 @@ checkPoly =
           [DD "Only OADT match instances can be polymorphic at the moment"]
         ]
 
+checkPpxPoly :: TcM ()
+checkPpxPoly =
+  get >>= \case
+    PolyT _ ->
+      err
+        [ [ DD $
+              "Preprocessors are not allowed"
+                <+> "in polymorphic functions (OADT match instances) yet"
+          ]
+        ]
+    MonoT -> pass
+
 -- | Check if a type is a pi-type and return its components.
 --
 -- Unlike other dependent type theory, we do not perform weak head normalization
@@ -1708,6 +1718,10 @@ isMatchCond cond condTy =
             ],
             [DH "It has type", DC condTy]
           ]
+
+isLiftPpx :: Ppx Name -> Bool
+isLiftPpx LiftPpx {} = True
+isLiftPpx _ = False
 
 -- | Check if a well-kinded type in core Taype ANF is oblivious.
 isOblivKinded :: Ty Name -> Bool

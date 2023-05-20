@@ -242,7 +242,7 @@ liftExpr GV {..} _ idx =
       return $ Ppx (BuiltinPpx {fn = ref, ty = TV idx})
     FunDef {} -> do
       tell1 $ LiftC {fn = ref, ty = idx}
-      return $ Ppx (LiftPpx {fn = ref, ty = TV idx})
+      return $ Ppx (LiftPpx {fn = ref, to = Just (TV idx)})
     _ -> oops "Refer to a global name that is not a function or builtin"
 liftExpr _ _ _ = errUnsupported
 
@@ -383,7 +383,7 @@ liftDefs options@Options {..} gctx defs = do
           <+> "the following goals were refused"
           </> sepWith
             hardline
-            [ let t' = Ppx $ LiftPpx {fn = name, ..}
+            [ let t' = Ppx $ LiftPpx {fn = name, to = Just ty}
                in runCuteM options $ cute (fromClosed t' :: Ty Text)
               | (name, ty) <- refused'
             ]
@@ -634,7 +634,7 @@ collectLifts = runFreshM . foldMapM go
   where
     go def = do
       es <- universeBiM def
-      return $ [(fn, ty) | Ppx {ppx = LiftPpx {..}} <- es]
+      return $ [(fn, ty) | Ppx {ppx = LiftPpx {to = Just ty, ..}} <- es]
 
 buildOCtx :: Defs Name -> OCtx
 buildOCtx defs =
