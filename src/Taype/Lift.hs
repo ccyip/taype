@@ -25,15 +25,19 @@ import Relude.Extra.Bifunctor (secondF)
 import Relude.Extra.Foldable1 (maximum1)
 import Relude.Extra.Tuple (fmapToSnd)
 import Taype.Common
-import Taype.Cute
+import Taype.Cute hiding (space)
 import Taype.Environment (GCtx, LCtx, lookupGCtx, makeLCtx)
 import Taype.Error
+import Taype.Lexer qualified as TL
 import Taype.Name
 import Taype.NonEmpty qualified as NE
 import Taype.Plate
 import Taype.Prelude
 import Taype.Syntax
-import Prelude hiding (Constraint, group)
+import Text.Megaparsec hiding (label)
+import Text.Megaparsec.Char qualified as C
+import Text.Megaparsec.Char.Lexer qualified as L
+import Prelude hiding (Constraint, group, many)
 
 ----------------------------------------------------------------
 -- Environment for the lifting algorithm
@@ -269,7 +273,26 @@ liftDefs options@Options {..} gctx defs = do
       inputDoc = makeSolverInput octx lctx lifted' goals
   when optPrintSolverInput $ printDoc options inputDoc
   writeDocOpt options "solver.input.sexp" inputDoc
-  oops "Not implemented yet"
+  let outFile = fileNameOpt options "solver.output.sexp"
+  -- TODO: Call solver
+  content <- decodeUtf8 <$> readFileBS outFile
+  models <-
+    parseSolverOutput outFile content >>= \case
+      Left refused ->
+        errRefused
+          refused
+          [ (name, fromJust $ lookup a actx)
+            | (name, ((a, _), (actx, _, _))) <- lifted'
+          ]
+      Right models -> return models
+  let defs' =
+        runFreshM $
+          gen
+            models
+            [ (name, (def, actx))
+              | (name, ((_, def), (actx, _, _))) <- lifted'
+            ]
+  return $ defs <> defs'
   where
     goals = collectLifts $ snd <$> defs
     lifting done [] = return done
@@ -296,6 +319,40 @@ liftDefs options@Options {..} gctx defs = do
                       }
                   )
           _ -> oops "Not a function"
+    gen models ctx =
+      forM models $ \(name, model) -> do
+        let (def, actx) = fromJust $ lookup name ctx
+            actx' = secondF (substSTyToTy gctx model) actx
+            subst (TV x) = return $ fromJust $ lookup x actx'
+            subst e = return e
+            def' = runFreshM $ transformBiM subst def
+        x <- fresh
+        return
+          ( instName2 name "lift" (internalName (show x)),
+            case def' of
+              FunDef {..} -> FunDef {attr = KnownInst (LiftInst name), ..}
+              _ -> oops "Not a function"
+          )
+    errRefused refused ctx = do
+      let getModel sty = zipWith (\v t -> (isSV v, t)) $ decompose sty
+          lookupSTy x = fromJust (lookup x ctx)
+          refused' =
+            [ let sty = lookupSTy name
+               in (name, substSTyToTy gctx (getModel sty ts) sty)
+              | (name, ts) <- refused
+            ]
+      err_ (-1) $
+        "Cannot solve the lifting constraints;"
+          <+> "the following goals were refused"
+          </> sepWith
+            hardline
+            [ let t' = Ppx $ LiftPpx {fn = name, ..}
+               in runCuteM options $ cute (fromClosed t' :: Ty Text)
+              | (name, ty) <- refused'
+            ]
+
+----------------------------------------------------------------
+-- Reduction
 
 reduceConstraints ::
   GCtx Name -> OCtx -> Constraints -> (ACtx, CompatCtx, SConstraints)
@@ -392,6 +449,9 @@ reduceCompatC cs = runWriter $ mapM go cs
 belongto :: [STy2] -> [[STy2]] -> [[SConstraint]]
 belongto ts tss = tss <&> zipWith SEqC ts
 
+----------------------------------------------------------------
+-- Solving constraints
+
 makeSolverInput ::
   OCtx ->
   LCtx Name ->
@@ -454,6 +514,53 @@ makeSolverInput octx lctx lifted goals =
     scDoc (SOrC css) =
       clause "or" $ scDocs <$> css
     scDocs cs = parens $ align $ lstDoc $ scDoc <$> cs
+
+type Parser = TL.Parser
+
+parseSolverOutput ::
+  FilePath ->
+  Text ->
+  ExceptT Err IO (Either [(Text, [Text])] [(Text, [(SName, Text)])])
+parseSolverOutput file content =
+  case parse pOutput file content of
+    Left e ->
+      err_ (-1) $
+        "Cannot parse solver output"
+          </> pretty (errorBundlePretty e)
+    Right r -> return r
+  where
+    space :: Parser ()
+    space = L.space C.space1 empty empty
+    lexeme :: Parser a -> Parser a
+    lexeme = L.lexeme space
+    symbol :: Text -> Parser Text
+    symbol = L.symbol space
+    pList :: Parser a -> Parser a
+    pList = between (symbol "(") (symbol ")")
+    pAtom :: Parser Text
+    pAtom = lexeme TL.pIdentComp
+    pAssn :: Parser (SName, Text)
+    pAssn = pList $ do
+      void $ chunk internalPrefix
+      x <- L.decimal
+      void $ single '_'
+      y <- L.decimal
+      space
+      name <- pAtom
+      return ((x, y), name)
+    pModel :: Parser (Text, [(SName, Text)])
+    pModel = pList $ do
+      name <- pAtom
+      void $ pList $ many pAtom
+      assns <- many pAssn
+      return (name, assns)
+    pSolved :: Parser [(Text, [(SName, Text)])]
+    pSolved = pList $ symbol "solved" *> many pModel
+    pGoal :: Parser (Text, [Text])
+    pGoal = pList $ (,) <$> pAtom <*> many pAtom
+    pFailed :: Parser [(Text, [Text])]
+    pFailed = pList $ symbol "failed" *> many pGoal
+    pOutput = eitherP (try pFailed) pSolved
 
 ----------------------------------------------------------------
 -- Auxiliaries
@@ -623,6 +730,24 @@ tyToSTyBase t = pubTyToSTyBase t
 tyToSTy :: Ty Name -> STy a
 tyToSTy = fromJust . tyToSTy_ tyToSTyBase
 
+substSTyToTy :: GCtx a -> [(SName, Text)] -> STy2 -> Ty a
+substSTyToTy gctx model = go
+  where
+    go SUnit = TUnit
+    go (SConst x) = base x
+    go (SProd l r) = Prod {olabel = PublicL, left = go l, right = go r}
+    go (SArrow d c) = arrow_ (go d) (go c)
+    go (SV x) = base $ fromJust $ lookup x model
+
+    base x | x == "bool" = TBool PublicL
+    base x | x == oblivName "bool" = TBool OblivL
+    base x | x == "int" = TInt PublicL
+    base x | x == oblivName "int" = TInt OblivL
+    base x = case lookupGCtx x gctx of
+      Just ADTDef {} -> GV x
+      Just OADTDef {viewTy} -> Psi {oadtName = x, viewTy = Just viewTy}
+      _ -> oops $ "Unknown name " <> x
+
 decompose :: STy a -> [STy a]
 decompose SUnit = []
 decompose (SConst x) = [SConst x]
@@ -707,19 +832,22 @@ lstDoc :: [Doc] -> Doc
 lstDoc [] = mempty
 lstDoc (doc : docs) = doc <> foldMap sep1 docs
 
-err :: Doc -> LiftM a
-err errMsg = do
-  Env {..} <- ask
+err_ :: (MonadError Err m) => Int -> Doc -> m a
+err_ errLoc errMsg = do
   throwError
     Err
       { errCategory = "Lifting Error",
         errClass = ErrorC,
-        errLoc = defLoc,
-        errMsg =
-          "Cannot lift function"
-            <+> pretty defName
-            </> errMsg
+        ..
       }
+
+err :: Doc -> LiftM a
+err errMsg = do
+  Env {..} <- ask
+  err_ defLoc $
+    "Cannot lift function"
+      <+> pretty defName
+      </> errMsg
 
 errUnsupported :: LiftM a
 errUnsupported =

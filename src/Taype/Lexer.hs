@@ -13,8 +13,10 @@
 module Taype.Lexer
   ( Token (..),
     LocatedToken (..),
+    Parser,
     lex,
     printTokens,
+    pIdentComp,
   )
 where
 
@@ -162,7 +164,7 @@ isIdent c = isAlphaNum c || c == '_' || c == '\''
 
 pIdentComp :: Parser Text
 pIdentComp = do
-  accent <- option "" $ symbol oblivAccent
+  accent <- option "" $ chunk oblivAccent
   x <- satisfy isIdent0
   xs <- takeWhileP Nothing isIdent
   return $ accent <> T.cons x xs

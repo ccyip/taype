@@ -22,9 +22,9 @@ import Options.Applicative
 import Taype.Common
 import Taype.Cute
 import Taype.Error
-import Taype.Lexer
+import Taype.Lexer qualified as L
 import Taype.Lift
-import Taype.Parser
+import Taype.Parser qualified as P
 import Taype.Syntax
 import Taype.TypeChecker
 
@@ -40,9 +40,9 @@ run options@Options {optFile = file} = do
 
 process :: Options -> ExceptT Err IO ()
 process options@Options {optFile = file, optCode = code, ..} = do
-  tokens <- lex file code
-  when optPrintTokens $ printTokens file code tokens >> putStr "\n"
-  defs <- parse tokens
+  tokens <- L.lex file code
+  when optPrintTokens $ L.printTokens file code tokens >> putStr "\n"
+  defs <- P.parse tokens
   let srcDefs = closeDefs defs
       srcDoc = cuteDefsDoc options srcDefs
   when optPrintSource $ printDoc options srcDoc

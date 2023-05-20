@@ -28,6 +28,7 @@ module Taype.Cute
     printDoc,
     writeDoc,
     writeDocOpt,
+    fileNameOpt,
 
     -- * Pretty printing infrastructure
     Cute (..),
@@ -133,8 +134,11 @@ writeDoc file doc =
   liftIO $ withFile file WriteMode (`hPutDoc` doc)
 
 writeDocOpt :: (MonadIO m) => Options -> FilePath -> Doc -> m ()
-writeDocOpt Options {..} ext doc =
-  unless optNoFiles $ writeDoc (optFile -<.> ext) doc
+writeDocOpt options@Options {..} ext doc =
+  unless optNoFiles $ writeDoc (fileNameOpt options ext) doc
+
+fileNameOpt :: Options -> FilePath -> FilePath
+fileNameOpt Options {..} ext = optFile -<.> ext
 
 ----------------------------------------------------------------
 -- Pretty printing infrastructure
