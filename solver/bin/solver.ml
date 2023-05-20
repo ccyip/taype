@@ -21,7 +21,16 @@ let parse_goals = function
   | _ -> raise Ill_formed_input
 
 let parse_classes = function
-  | `List (`Atom "classes" :: (_ :: _ as classes)) -> parse_atom_lists classes
+  | `List (`Atom "classes" :: (_ :: _ as classes)) ->
+      let parse_base = function
+        | `List [ `Atom base; `Atom cost ] -> (base, Int.of_string_exn cost)
+        | _ -> raise Ill_formed_input
+      in
+      let parse_class = function
+        | `List cls -> List.map parse_base cls
+        | _ -> raise Ill_formed_input
+      in
+      List.map parse_class classes
   | _ -> raise Ill_formed_input
 
 let parse_axioms = function
@@ -36,11 +45,11 @@ let parse_axioms = function
 let rec parse_formula = function
   | `List [ `Atom "="; `Atom lhs; `Atom rhs ] -> Eq (lhs, rhs)
   | `List (`Atom "or" :: disj) ->
-      let parse1 = function
+      let parse_conj = function
         | `List conj -> And (List.map parse_formula conj)
         | _ -> raise Ill_formed_input
       in
-      Or (List.map parse1 disj)
+      Or (List.map parse_conj disj)
   | _ -> raise Ill_formed_input
 
 let parse_def vars ty formulas subgoals =

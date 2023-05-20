@@ -69,7 +69,7 @@ let pp_model =
 
 module SolverCtx = struct
   type solver = {
-    svr : Z3.Solver.solver;
+    svr : Z3.Optimize.optimize;
     ty : ty;
     subgoals : goal list;
     tbl : (string, Z3.Expr.expr) Hashtbl.t;
@@ -80,17 +80,19 @@ module SolverCtx = struct
   let solver_ctx : t = Hashtbl.create 1024
   let ctx = Z3.mk_context []
   let sort_tbl : (string, Z3.Sort.sort) Hashtbl.t = Hashtbl.create 1024
-  let ctor_tbl : (string, Z3.Expr.expr) Hashtbl.t = Hashtbl.create 1024
+  let ty_tbl : (string, Z3.Expr.expr) Hashtbl.t = Hashtbl.create 1024
+  let cls_tbl : (string, (string * int) list) Hashtbl.t = Hashtbl.create 1024
   let find k = Hashtbl.find solver_ctx k
 
-  let init_class clss =
-    let repr = List.hd clss in
+  let init_class cls =
+    let names = List.map fst cls in
+    let repr = List.hd names in
     let mk_ctor x =
       Z3.Datatype.mk_constructor_s ctx x
         (Z3.Symbol.mk_string ctx ("is-" ^ x))
         [] [] []
     in
-    let ctors = List.map mk_ctor clss in
+    let ctors = List.map mk_ctor names in
     let sort = Z3.Datatype.mk_sort_s ctx (repr ^ "-class") ctors in
     let get_ctor_expr ctor =
       Z3.Datatype.Constructor.get_constructor_decl ctor
@@ -98,15 +100,11 @@ module SolverCtx = struct
     in
     let exprs = List.map get_ctor_expr ctors in
     Hashtbl.add sort_tbl repr sort;
-    Hashtbl.add_iter ctor_tbl (List.to_iter (List.combine clss exprs))
-
-  let init_var solver (name, cls) =
-    let sort = Hashtbl.find sort_tbl cls in
-    let expr = Z3.Expr.mk_const_s ctx name sort in
-    Hashtbl.add solver.tbl name expr
+    Hashtbl.add cls_tbl repr cls;
+    Hashtbl.add_iter ty_tbl (List.to_iter (List.combine names exprs))
 
   let find_expr tbl x =
-    match Hashtbl.get tbl x with Some e -> e | None -> Hashtbl.find ctor_tbl x
+    match Hashtbl.get tbl x with Some e -> e | None -> Hashtbl.find ty_tbl x
 
   let rec expr_of_formula tbl = function
     | Eq (lhs, rhs) ->
@@ -122,20 +120,31 @@ module SolverCtx = struct
     | Not f -> Z3.Boolean.mk_not ctx (expr_of_formula tbl f)
 
   let add_formula solver f =
-    Z3.Solver.add solver.svr [ expr_of_formula solver.tbl f ]
+    Z3.Optimize.add solver.svr [ expr_of_formula solver.tbl f ]
 
   let add_formulas solver = List.iter (add_formula solver)
 
+  let init_var solver (var, repr) =
+    let sort = Hashtbl.find sort_tbl repr in
+    let expr = Z3.Expr.mk_const_s ctx var sort in
+    Hashtbl.add solver.tbl var expr;
+    let cls = Hashtbl.find cls_tbl repr in
+    let group = Z3.Symbol.mk_string ctx var in
+    let add_cost (name, cost) =
+      if cost > 0 then
+        let e = expr_of_formula solver.tbl (Not (Eq (var, name))) in
+        ignore @@ Z3.Optimize.add_soft solver.svr e (Int.to_string cost) group
+    in
+    List.iter add_cost cls
+
   let init_def (name, { vars; ty; formulas; subgoals }) =
     let tbl = Hashtbl.create 1024 in
-    (* FIXME: use Z3.Optimize *)
-    (* TODO: add cost constraints *)
-    let solver = { svr = Z3.Solver.mk_simple_solver ctx; ty; subgoals; tbl } in
+    let solver = { svr = Z3.Optimize.mk_opt ctx; ty; subgoals; tbl } in
     List.iter (init_var solver) vars;
     add_formulas solver formulas;
     Logs.info (fun log ->
         log.printf "Created solver for %s@.%s" name
-          (Z3.Solver.to_string solver.svr));
+          (Z3.Optimize.to_string solver.svr));
     Hashtbl.add solver_ctx name solver
 
   let init classes defs =
@@ -156,17 +165,17 @@ module SolverCtx = struct
 
   let check_with ({ svr; _ } as solver) ty =
     let fs = mk_ty_eq solver.ty ty in
-    Z3.Solver.push svr;
+    Z3.Optimize.push svr;
     add_formulas solver fs;
     let result =
-      match Z3.Solver.check svr [] with
+      match Z3.Optimize.check svr with
       | SATISFIABLE -> (
-          match Z3.Solver.get_model svr with
+          match Z3.Optimize.get_model svr with
           | Some model -> Some (convert_model model solver.tbl)
           | None -> None)
       | UNSATISFIABLE | UNKNOWN -> None
     in
-    Z3.Solver.pop svr 1;
+    Z3.Optimize.pop svr;
     result
 
   let refuse goal =
@@ -177,7 +186,7 @@ module SolverCtx = struct
             expr_of_formula solver.tbl
             @@ Not (And (mk_ty_eq goal.ty subgoal.ty))
           in
-          Z3.Solver.add solver.svr [ e ];
+          Z3.Optimize.add solver.svr [ e ];
           Logs.info (fun log ->
               log.printf "Added refutation to %s@.%s" name (Z3.Expr.to_string e)))
       in
