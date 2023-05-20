@@ -161,7 +161,7 @@ fn ~test_map' : (k : int) -> ~list k -> ~int -> ~list k = \k xs y =>
 // ----------------------------------------------------------------
 // Oblivious functions by preprocessors
 
-fn ~elem : ~int -> #~list -> ~bool = \y xs =>
+fn ~elem_ : ~int -> #~list -> ~bool = \y xs =>
   %match #~list ~bool
     xs
     (\_ => %coerce bool ~bool False)
@@ -170,10 +170,10 @@ fn ~elem : ~int -> #~list -> ~bool = \y xs =>
       (x, xs') =>
         %if ~bool ~bool (%== (~int -> ~int -> ~bool) x y)
           (\_ => %coerce bool ~bool True)
-          (\_ => ~elem y xs')
+          (\_ => ~elem_ y xs')
       end)
 
-fn ~insert : ~int -> #~list -> #~list = \y xs =>
+fn ~insert_ : ~int -> #~list -> #~list = \y xs =>
   %match #~list #~list
     xs
     (\_ => %Cons #~list (y, %Nil #~list ()))
@@ -182,50 +182,44 @@ fn ~insert : ~int -> #~list -> #~list = \y xs =>
       (x, xs') =>
         %if ~bool #~list (%<= (~int -> ~int -> ~bool) y x)
           (\_ => %Cons #~list (y, xs))
-          (\_ => %Cons #~list (x, ~insert y xs'))
+          (\_ => %Cons #~list (x, ~insert_ y xs'))
       end)
 
-fn ~filter : (~int -> ~bool) -> #~list -> #~list = \f xs =>
+fn ~filter_ : (~int -> ~bool) -> #~list -> #~list = \f xs =>
   %match #~list #~list
     xs
     (\_ => %Nil #~list ())
     (\p =>
       match p with
       (x, xs') =>
-        let v = ~filter f xs' in
+        let v = ~filter_ f xs' in
         %if ~bool #~list (f x)
           (\_ => %Cons #~list (x, v))
           (\_ => v)
       end)
 
-fn ~test_filter : #~list -> ~int -> #~list = \xs y =>
-  ~filter (\x => %<= (~int -> ~int -> ~bool) x y) xs
-
-fn ~map : (~int -> ~int) -> #~list -> #~list = \f xs =>
+fn ~map_ : (~int -> ~int) -> #~list -> #~list = \f xs =>
   %match #~list #~list
     xs
     (\_ => %Nil #~list ())
     (\p =>
       match p with
       (x, xs') =>
-        %Cons #~list (f x, ~map f xs')
+        %Cons #~list (f x, ~map_ f xs')
       end)
+
+fn ~elem : ~int -> #~list -> ~bool = %lift elem (~int -> #~list -> ~bool)
+fn ~insert : ~int -> #~list -> #~list = %lift insert (~int -> #~list -> #~list)
+fn ~map : (~int -> ~int) -> #~list -> #~list =
+  %lift map ((~int -> ~int) -> #~list -> #~list)
+fn ~filter : (~int -> ~bool) -> #~list -> #~list =
+  %lift filter ((~int -> ~bool) -> #~list -> #~list)
 
 fn ~test_map : #~list -> ~int -> #~list = \xs y =>
   ~map (\x => %+ (~int -> ~int -> ~int) x y) xs
 
-fn map#lift#~list : (~int -> ~int) -> #~list -> #~list = \f xs =>
-  %match #~list #~list
-    xs
-    (\_ => %Nil #~list ())
-    (\p =>
-      match p with
-      (x, xs') =>
-        %Cons #~list (f x, map#lift#~list f xs')
-      end)
-
-fn ~map2 : (~int -> ~int) -> #~list -> #~list =
-  %lift map ((~int -> ~int) -> #~list -> #~list)
+fn ~test_filter : #~list -> ~int -> #~list = \xs y =>
+  ~filter (\x => %<= (~int -> ~int -> ~bool) x y) xs
 
 // obliv ~list_ (k : int) =
 //   if k == 0
