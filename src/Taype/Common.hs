@@ -101,6 +101,8 @@ data Options = Options
     optPrintConstraints :: Bool,
     optPrintSolverInput :: Bool,
     optPrintSolverOutput :: Bool,
+    optSolverPath :: FilePath,
+    optNoSolverLog :: Bool,
     optReadable :: Bool,
     optWidth :: Maybe Int
   }

@@ -15,15 +15,17 @@
 module Taype.Lift (liftDefs) where
 
 import Control.Monad.Error.Class
-import Control.Monad.RWS.CPS
-import Control.Monad.Writer.CPS
+import Control.Monad.RWS.CPS hiding (pass)
+import Control.Monad.Writer.CPS hiding (pass)
 import Data.Array
 import Data.Graph
 import Data.List (lookup, partition)
 import Data.Maybe (fromJust)
+import Prettyprinter.Render.Text
 import Relude.Extra.Bifunctor (secondF)
 import Relude.Extra.Foldable1 (maximum1)
 import Relude.Extra.Tuple (fmapToSnd)
+import System.Process.Typed
 import Taype.Common
 import Taype.Cute hiding (space)
 import Taype.Environment (GCtx, LCtx, lookupGCtx, makeLCtx)
@@ -273,10 +275,8 @@ liftDefs options@Options {..} gctx defs = do
         ]
       inputDoc = makeSolverInput octx lctx lifted' goals
   when optPrintSolverInput $ printDoc options inputDoc
-  writeDocOpt options "solver.input.sexp" inputDoc
-  let outFile = fileNameOpt options "solver.output.sexp"
-  -- TODO: Call solver
-  content <- decodeUtf8 <$> readFileBS outFile
+  (outFile, content) <- runSolver inputDoc
+  when optPrintSolverOutput $ printDoc options $ pretty content
   models <-
     parseSolverOutput outFile content >>= \case
       Left refused ->
@@ -334,6 +334,42 @@ liftDefs options@Options {..} gctx defs = do
               FunDef {..} -> FunDef {attr = KnownInst (LiftInst name), ..}
               _ -> oops "Not a function"
           )
+
+    runSolver inputDoc = do
+      let inFile = fileNameOpt options "solver.input.sexp"
+          outFile = fileNameOpt options "solver.output.sexp"
+          logFile = fileNameOpt options "solver.log"
+          logArg = [logFile | not optNoSolverLog]
+      (ec, content) <-
+        if optNoFiles
+          then do
+            let pc =
+                  setStdin
+                    ( byteStringInput
+                        ( encodeUtf8 $
+                            renderLazy $
+                              layoutPretty defaultLayoutOptions inputDoc
+                        )
+                    )
+                    $ proc optSolverPath ["-in", "-out"]
+            secondF toStrict $ readProcessStdout pc
+          else do
+            writeDoc inFile inputDoc
+            ec <- runProcess $ proc optSolverPath $ [inFile, outFile] <> logArg
+            content <- case ec of
+              ExitSuccess -> readFileBS outFile
+              _ -> return ""
+            return (ec, content)
+      case ec of
+        ExitSuccess ->
+          return
+            ( if optNoFiles then "<none>" else outFile,
+              decodeUtf8 content
+            )
+        ExitFailure c ->
+          err_ (-1) $
+            "Solver failed with exit code" <+> pretty c
+
     errRefused refused ctx = do
       let getModel sty = zipWith (\v t -> (isSV v, t)) $ decompose sty
           lookupSTy x = fromJust (lookup x ctx)

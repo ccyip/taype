@@ -91,10 +91,18 @@ let sexp_of_output = function
   | Error refused -> Sexp.of_variant "failed" @@ List.map Goal.to_sexp refused
 
 let main input_file output_file =
-  let input = Sexp.parse_file_list input_file |> Result.get_or_failwith in
-  let goals, classes, axioms, defs = parse_input input in
-  let output = solve goals classes axioms defs in
-  Sexp.to_file output_file (sexp_of_output output)
+  let input =
+    match input_file with
+    | "-in" -> Sexp.parse_chan_list stdin
+    | _ -> Sexp.parse_file_list input_file
+  in
+  let goals, classes, axioms, defs =
+    parse_input (Result.get_or_failwith input)
+  in
+  let output = solve goals classes axioms defs |> sexp_of_output in
+  match output_file with
+  | "-out" -> Sexp.to_chan stdout output
+  | _ -> Sexp.to_file output_file output
 
 let () =
   if Array.length Sys.argv < 3 then invalid_arg "not enough"

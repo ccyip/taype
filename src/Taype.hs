@@ -169,6 +169,17 @@ opts = do
     switch $
       long "print-solver-output"
         <> help "Whether to print the output from the external constraints solver"
+  optSolverPath <-
+    strOption $
+      long "solver-path"
+        <> metavar "PATH"
+        <> value "solver/_build/default/bin/solver.exe"
+        <> showDefault
+        <> help "Path to the lifting constraints solver"
+  optNoSolverLog <-
+    switch $
+      long "no-solver-log"
+        <> help "Do not generate solver log file"
   optReadable <-
     switch $
       long "readable"
@@ -186,5 +197,6 @@ opts = do
         optFlagNoInline = optFlagNoInline || optFlagNoOptimization,
         optFlagNoMemo = optFlagNoMemo || optFlagNoOptimization,
         optFlagNoGuardReshape = optFlagNoGuardReshape || optFlagNoOptimization,
+        optNoSolverLog = optNoSolverLog || optNoFiles,
         ..
       }
