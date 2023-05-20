@@ -1729,12 +1729,13 @@ isOblivKinded = \case
   TUnit -> True
   TBool {olabel = OblivL} -> True
   TInt {olabel = OblivL} -> True
-  Pair {pairKind = OblivP} -> True
+  Prod {olabel = OblivL} -> True
   OSum {} -> True
   Let {} -> True
   Ite {} -> True
   Match {} -> True
   PMatch {} -> True
+  App {} -> True
   _ -> False
 
 oblivKinded :: Ty Name -> TcM ()
