@@ -373,20 +373,24 @@ liftDefs options@Options {..} gctx defs = do
     errRefused refused ctx = do
       let getModel sty = zipWith (\v t -> (isSV v, t)) $ decompose sty
           lookupSTy x = fromJust (lookup x ctx)
-          refused' =
+          allRefused =
             [ let sty = lookupSTy name
                in (name, substSTyToTy gctx (getModel sty ts) sty)
               | (name, ts) <- refused
             ]
-      err_ (-1) $
-        "Cannot solve the lifting constraints;"
-          <+> "the following goals were refused"
-          </> sepWith
+          refusedGoals = [ g | g <- goals, g `elem` allRefused ]
+          goalDocs gs = sepWith
             hardline
             [ let t' = Ppx $ LiftPpx {fn = name, to = Just ty}
                in runCuteM options $ cute (fromClosed t' :: Ty Text)
-              | (name, ty) <- refused'
+              | (name, ty) <- gs
             ]
+      err_ (-1) $
+        "Cannot solve the lifting constraints;"
+          <+> "the following goals were refused"
+          </> goalDocs refusedGoals
+          </> "Here are all refused subgoals"
+          </> goalDocs allRefused
 
 ----------------------------------------------------------------
 -- Reduction
