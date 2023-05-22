@@ -125,7 +125,7 @@ data Ty
     -- General type polymorphism is not supported. This type variable must be
     -- unique in a definition.
     TV
-  deriving stock (Eq)
+  deriving stock (Show, Eq)
 
 -- | The type of data size
 --
@@ -158,7 +158,7 @@ type Defs a = [NamedDef a]
 data Attribute
   = SectionAttr
   | LeakyAttr
-  | OADTAttr
+  | OADTAttr Ty
   | ReshapeAttr
   | InlineAttr
   | NoAttr

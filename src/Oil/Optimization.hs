@@ -194,7 +194,7 @@ inline ctx = transformM go
 memo :: Defs Name -> FreshM (Defs Name)
 memo = foldMapM go
   where
-    go (name, FunDef {attr = OADTAttr, ..}) = do
+    go (name, FunDef {attr = attr@(OADTAttr TInt), ..}) = do
       x <- fresh
       y <- fresh
       let name_ = name <> "_"
@@ -203,7 +203,7 @@ memo = foldMapM go
               lam' x $
                 GV "memo" @@ [V y, GV name_, V x]
           def' =
-            FunDef {attr = OADTAttr, expr = expr', ..}
+            FunDef {expr = expr', ..}
       return [(name_, FunDef {attr = NoAttr, ..}), (name, def')]
     go namedDef = return [namedDef]
 

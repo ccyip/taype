@@ -353,7 +353,7 @@ toOilDef T.OADTDef {..} = do
     FunDef
       { ty = Arrow viewTy' sizeTy,
         expr = lamB x binder body',
-        attr = OADTAttr
+        attr = OADTAttr viewTy'
       }
 toOilDef T.ADTDef {..} = do
   let ctors' = secondF (toOilTy <$>) $ toList ctors
@@ -369,7 +369,9 @@ filterConceal allDefs =
       -- filter out functions that do not reach any oblivious operations
       -- (primitive sections, array operations and oblivious integer
       -- arithmetics).
-      attr /= OADTAttr
+      case attr of
+        OADTAttr _ -> False
+        _ -> True
   ]
   where
     defs = [def | def@(_, FunDef {}) <- allDefs]
