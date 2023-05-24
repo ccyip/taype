@@ -1,131 +1,174 @@
 data list = Nil | Cons int list
 
-fn elem : int -> list -> bool = \ x xs ->
-  case xs of
-  | Nil -> False
-  | Cons y xs' -> x == y || elem x xs'
+fn length : list -> int = \xs =>
+  match xs with
+  | Nil => 0
+  | Cons _ xs' => 1 + length xs'
   end
 
-fn insert : int -> list -> list = \ x xs ->
-  case xs of
-  | Nil -> Cons x Nil
-  | Cons y xs' -> if x <= y then Cons x xs else Cons y (insert x xs')
+fn elem : int -> list -> bool = \y xs =>
+  match xs with
+  | Nil => False
+  | Cons x xs' => x == y || elem y xs'
   end
 
--- The two lists are of the same length.
-fn hamming_distance : list -> list -> int = \xs ys ->
-  case xs of
-  | Nil -> 0
-  | Cons x xs' ->
-    case ys of
-    | Nil -> 0
-    | Cons y ys' ->
-      let d = hamming_distance xs' ys'
-       in if x == y then d else d + 1
+fn insert : int -> list -> list = \y xs =>
+  match xs with
+  | Nil => Cons y Nil
+  | Cons x xs' => if y <= x then Cons y xs else Cons x (insert y xs')
+  end
+
+// The two lists are of the same length.
+fn hamming_distance : list -> list -> int = \xs ys =>
+  match xs with
+  | Nil => 0
+  | Cons x xs' =>
+    match ys with
+    | Nil => 0
+    | Cons y ys' =>
+      let d = hamming_distance xs' ys' in
+      if x == y then d else d + 1
     end
   end
 
--- The two lists have the same length.
-fn dot_prod : list -> list -> int = \xs ys ->
-  case xs of
-  | Nil -> 0
-  | Cons x xs' ->
-    case ys of
-    | Nil -> 0
-    | Cons y ys' ->
+// The two lists have the same length.
+fn dot_prod : list -> list -> int = \xs ys =>
+  match xs with
+  | Nil => 0
+  | Cons x xs' =>
+    match ys with
+    | Nil => 0
+    | Cons y ys' =>
       x * y + dot_prod xs' ys'
     end
   end
 
-fn min_euclidean_distance_with : list -> int -> int -> int = \xs y min ->
-  case xs of
-  | Nil -> min
-  | Cons x xs' ->
-    let min' = min_euclidean_distance_with xs' y min
-        d = x - y
-        cur = d * d
-     in if cur <= min' then cur else min'
+fn min_euclidean_distance_with : list -> int -> int -> int = \xs y min =>
+  match xs with
+  | Nil => min
+  | Cons x xs' =>
+
+    let min' = min_euclidean_distance_with xs' y min in
+    let d = x - y in
+    let cur = d * d in
+    if cur <= min' then cur else min'
+
+    // let d = x - y in
+    // let cur = d * d in
+    // let min' = if cur <= min then cur else min in
+    // min_euclidean_distance_with xs' y min'
+
+    // let d = x - y in
+    // let cur = d * d in
+    // if cur <= min then min_euclidean_distance_with xs' y cur
+    // else min_euclidean_distance_with xs' y min
+
   end
 
-fn min_euclidean_distance : list -> int -> int = \xs y ->
-  case xs of
-  | Nil -> (-1)
-  | Cons x xs' ->
-    let d = x - y
-        cur = d * d
-     in min_euclidean_distance_with xs' y cur
+fn min_euclidean_distance : list -> int -> int = \xs y =>
+  match xs with
+  | Nil => (-1)
+  | Cons x xs' =>
+    let d = x - y in
+    let cur = d * d in
+    min_euclidean_distance_with xs' y cur
   end
 
-fn map : (int -> int) -> list -> list = \f xs ->
-  case xs of
-  | Nil -> Nil
-  | Cons x xs' -> Cons (f x) (map f xs')
+fn map : (int -> int) -> list -> list = \f xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' => Cons (f x) (map f xs')
   end
 
-fn filter : (int -> bool) -> list -> list = \f xs ->
-  case xs of
-  | Nil -> Nil
-  | Cons x xs' ->
-    if f x
-    then Cons x (filter f xs')
-    else filter f xs'
+fn filter : (int -> bool) -> list -> list = \f xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' =>
+    let v = filter f xs' in
+    if f x then Cons x v else v
   end
 
-----------------------------------------------------------------
--- Oblivious types
+// ----------------------------------------------------------------
+// Oblivious list and its instances
 
-obliv `list (k : int) =
+obliv ~list (k : int) =
   if k == 0
   then unit
-  else unit `+ `int `* `list (k-1)
+  else unit ~+ ~int ~* ~list (k-1)
 
-#[section]
-fn s_list : (k : int) -> list -> `list k = \ k xs ->
+fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
   if k == 0
   then ()
-  else tape (case xs of
-             | Nil -> `inl ()
-             | Cons x xs' -> `inr `(tape (s_int x), s_list (k-1) xs')
-             end)
+  else match xs with
+       | Nil => ~inl ()
+       | Cons x xs' => ~inr ~(~int#s x, ~list#s (k-1) xs')
+       end
 
-#[retraction]
-fn r_list : (k : int) -> `list k -> list = \ k ->
+fn' ~list#r : (k : int) -> ~list k -> list = \k =>
   if k == 0
-  then \ _ -> Nil
-  else \ xs -> `case xs of
-               | `inl _ -> Nil
-               | `inr p -> `case p of
-                           `(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
-                           end
-               end
+  then \_ => Nil
+  else \xs => ~match xs with
+              | ~inl _ => Nil
+              | ~inr ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
+              end
 
-----------------------------------------------------------------
--- Lifted functions
+fn ~list#Nil : unit -> #~list = \_ =>
+  #(0, (() :: ~list 0))
 
-#[safe]
-fn `elem : (k : int) -> `int -> `list k -> `bool = \ k x xs ->
-  tape (s_bool (elem (r_int x) (r_list k xs)))
+fn ~list#Cons : ~int * #~list -> #~list = \p =>
+  match p with
+  (x, pxs) =>
+    match pxs with
+    #(k, xs) =>
+      #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
+    end
+  end
 
-#[safe]
-fn `insert : (k : int) -> `int -> `list k -> `list (k+1) = \ k x xs ->
-  s_list (k+1) (insert (r_int x) (r_list k xs))
+fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (if k == 0
+       then \_ => f1 ()
+       else \xs =>
+         ~match xs with
+         | ~inl _ => f1 ()
+         | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
+         end : ~list k -> 'a) xs
+    end
 
-#[safe]
-fn `hamming_distance : (k : int) -> `list k -> `list k -> `int = \k xs ys ->
-  tape (s_int (hamming_distance (r_list k xs) (r_list k ys)))
+fn ~list#view : list -> int = length
 
-#[safe]
-fn `dot_prod : (k : int) -> `list k -> `list k -> `int = \k xs ys ->
-  tape (s_int (dot_prod (r_list k xs) (r_list k ys)))
+fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
 
-#[safe]
-fn `min_euclidean_distance : (k : int) -> `list k -> `int -> `int = \k xs y ->
-  tape (s_int (min_euclidean_distance (r_list k xs) (r_int y)))
+fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
+  if k' == 0
+  then \_ => ()
+  else
+    if k == 0
+    then \_ => ~inl ()
+    else \xs =>
+      ~match xs with
+      | ~inl _ => ~inl ()
+      | ~inr ~(x, xs') => ~inr ~(x, ~list#reshape (k-1) (k'-1) xs')
+      end
 
-#[safe]
-fn `test_map : (k : int) -> `list k -> `int -> `list k = \k xs y ->
-  s_list k (map (\x -> x + r_int y) (r_list k xs))
+// ----------------------------------------------------------------
+// Lifted functions
 
-#[safe]
-fn `test_filter : (k : int) -> `list k -> `int -> `list k = \k xs y ->
-  s_list k (filter (\x -> x <= r_int y) (r_list k xs))
+fn ~elem : ~int -> #~list -> ~bool = %lift elem
+fn ~insert : ~int -> #~list -> #~list = %lift insert
+fn ~map : (~int -> ~int) -> #~list -> #~list = %lift map
+fn ~filter : (~int -> ~bool) -> #~list -> #~list = %lift filter
+
+fn ~test_map : #~list -> ~int -> #~list = \xs y =>
+  ~map (\x => x ~+ y) xs
+
+fn ~test_filter : #~list -> ~int -> #~list = \xs y =>
+  ~filter (\x => x ~<= y) xs
+
+fn ~hamming_distance : #~list -> #~list -> ~int = %lift hamming_distance
+
+fn ~dot_prod : #~list -> #~list -> ~int = %lift dot_prod
+
+fn ~min_euclidean_distance : #~list -> ~int -> ~int = %lift min_euclidean_distance
