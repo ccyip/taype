@@ -197,7 +197,7 @@ memo = foldMapM go
     go (name, FunDef {attr = attr@(OADTAttr TInt), ..}) = do
       x <- fresh
       y <- fresh
-      let name_ = name <> "_"
+      let name_ = internalName name
           expr' =
             let' y (GV "make_memo" @@ [GV "()"]) $
               lam' x $
