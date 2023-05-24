@@ -208,6 +208,9 @@ fn ~map_lifted : (~int -> ~int) -> #~list -> #~list = \f xs =>
         %Cons #~list (f x, ~map_lifted f xs')
       end)
 
+// ----------------------------------------------------------------
+// Oblivious functions by lifting
+
 fn ~elem : ~int -> #~list -> ~bool = %lift elem
 fn ~insert : ~int -> #~list -> #~list = %lift insert
 fn ~map : (~int -> ~int) -> #~list -> #~list = %lift map
