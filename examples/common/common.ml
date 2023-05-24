@@ -67,7 +67,7 @@ let print_stat () =
   print_newline ()
 
 let print_result ok = if ok then print_stat () else print_endline "failed"
-let print_sexp s = print_endline (Sexp.to_string s)
+let print_sexp s = print_endline (Sexp.to_string_hum s)
 
 let of_sexp_check of_sexp check view s =
   let data = of_sexp s in

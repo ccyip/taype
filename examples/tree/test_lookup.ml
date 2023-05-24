@@ -1,29 +1,29 @@
-(* open Driver *)
-(* open Prelude *)
-(* open Common *)
-(* open Sexplib *)
-(* open Tree *)
-(* open Tree_conceal *)
-(* open Tree_reveal *)
-(* open Tree_helper *)
+open Common
+module Driver = (val parse_options ())
+open Driver
+open Setup (Driver)
+open Tree.M (Driver)
+open Tree_helper.M (Driver)
 
-(* let _ = *)
-(*   parse_options (); *)
-(*   setup_driver_simple (); *)
+let () =
+  setup_driver_simple ();
 
-(*   let n = get_public_int () in *)
-(*   let t = get_private (tree_of_sexp_check n) (private_s_tree n) (obliv_tree n) in *)
-(*   let x = get_private_int () in *)
-(*   let expected = get_expected Conv.bool_of_sexp in *)
+  let k = get_public_int () in
+  let t =
+    get_private (tree_of_sexp_check k) (Conceal.obliv_tree_s k)
+      (Conceal.obliv_tree_s_for k)
+  in
+  let y = get_private_int () in
+  let expected = get_expected_bool () in
 
-(*   collect_stat (); *)
+  collect_stat ();
 
-(*   let obliv_res = obliv_lookup n t x in *)
+  let res = obliv_lookup t y in
 
-(*   record_stat (); *)
+  record_stat ();
 
-(*   let res = unsafe_r_bool obliv_res in *)
+  let res = Reveal.obliv_bool_r res in
 
-(*   finalize_driver (); *)
+  finalize_driver ();
 
-(*   expected = res |> print_result *)
+  expected = res |> print_result

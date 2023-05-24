@@ -1,84 +1,115 @@
 data tree = Leaf int | Node int tree tree
 
-fn lookup : tree -> int -> bool = \t x ->
-  case t of
-  | Leaf y -> x == y
-  | Node y l r ->
+fn lookup : tree -> int -> bool = \t x =>
+  match t with
+  | Leaf y => x == y
+  | Node y l r =>
     x == y || lookup l x || lookup r x
   end
 
-fn map : (int -> int) -> tree -> tree = \f t ->
-  case t of
-  | Leaf x -> Leaf (f x)
-  | Node x l r -> Node (f x) (map f l) (map f r)
+fn map : (int -> int) -> tree -> tree = \f t =>
+  match t with
+  | Leaf x => Leaf (f x)
+  | Node x l r => Node (f x) (map f l) (map f r)
   end
 
-fn prob : tree -> int -> int = \t x ->
-  case t of
-  | Leaf y -> if x == y then 100 else 0
-  | Node p l r ->
+fn prob : tree -> int -> int = \t x =>
+  match t with
+  | Leaf y => if x == y then 100 else 0
+  | Node p l r =>
     (p * (prob l x) + (100 - p) * (prob r x)) / 100
   end
 
 
-----------------------------------------------------------------
--- Oblivious types
+// ----------------------------------------------------------------
+// Oblivious types
 
-obliv `tree (k : int) =
+obliv ~tree (k : int) =
   if k == 0
-  then `int
-  else `int `+ `int `* `tree (k-1) `* `tree (k-1)
+  then ~int
+  else ~int ~+ ~int ~* ~tree (k-1) ~* ~tree (k-1)
 
-#[section]
-fn s_tree : (k : int) -> tree -> `tree k = \k t ->
+fn ~tree#s : (k : int) -> tree -> ~tree k = \k t =>
   if k == 0
-  then
-    tape
-      (case t of
-       | Leaf x -> tape (s_int x)
-       | Node x l r ->
-         -- Bogus
-         s_int 0
-       end)
-  else
-    tape
-      (case t of
-       | Leaf x -> `inl (tape (s_int x))
-       | Node x l r ->
-         `inr `(tape (s_int x), s_tree (k-1) l, s_tree (k-1) r)
-       end)
+  then match t with
+       | Leaf x => ~int#s x
+       | Node _ _ _ => ~~
+       end
+  else match t with
+       | Leaf x => ~inl (~int#s x)
+       | Node x l r =>
+           ~inr ~(~int#s x, ~tree#s (k-1) l, ~tree#s (k-1) r)
+       end
 
-#[retraction]
-fn r_tree : (k : int) -> `tree k -> tree = \k ->
+fn' ~tree#r : (k : int) -> ~tree k -> tree = \k =>
   if k == 0
-  then \t -> Leaf (r_int t)
-  else \t ->
-    `case t of
-    | `inl x -> Leaf (r_int x)
-    | `inr `(x, l, r) -> Node (r_int x) (r_tree (k-1) l) (r_tree (k-1) r)
+  then \t => Leaf (~int#r t)
+  else \t =>
+    ~match t with
+    | ~inl x => Leaf (~int#r x)
+    | ~inr ~(x, l, r) => Node (~int#r x) (~tree#r (k-1) l) (~tree#r (k-1) r)
     end
 
-----------------------------------------------------------------
--- Lifted functions
+fn ~tree#Leaf : ~int -> #~tree = \x =>
+  #(0, (x :: ~tree 0))
 
-#[safe]
-fn `lookup : (k : int) -> `tree k -> `int -> `bool = \k t x ->
-  tape (s_bool (lookup (r_tree k t) (r_int x)))
+fn ~tree#Node : ~int * #~tree * #~tree -> #~tree = \p =>
+  match p with
+  (x, lt, rt) =>
+    match lt with
+    #(lk, lt) =>
+      match rt with
+      #(rk, rt) =>
+        let k = ~tree#join lk rk in
+        (#(k+1, ((~inr ~(x, ~tree#reshape lk k lt, ~tree#reshape rk k rt)
+                  : ~int ~+ ~int ~* ~tree k ~* ~tree k)
+                  :: ~tree (k+1)))
+         : #~tree)
+      end
+    end
+  end
 
-#[safe]
-fn `test_map : (k : int) -> `tree k -> `int -> `tree k = \k t y ->
-  s_tree k (map (\x -> x + r_int y) (r_tree k t))
+fn ~tree#match :
+  #~tree ->
+  (~int -> 'a) ->
+  (~int * #~tree * #~tree -> 'a) ->
+  'a = \t f1 f2 =>
+  match t with
+  #(k, t) =>
+    (if k == 0 then \x => f1 x
+     else \n =>
+       ~match n with
+       | ~inl x => f1 x
+       | ~inr ~(x, lt, rt) => f2 (x, #(k-1, lt), #(k-1, rt))
+       end : ~tree k -> 'a) t
+  end
 
-#[safe]
-fn max : int -> int -> int = \x y -> if x <= y then y else x
+fn ~tree#join : int -> int -> int = \x y => if x <= y then y else x
 
-#[safe]
-fn `node :
-  (k1 : int) -> (k2 : int) -> `tree k1 -> `tree k2 -> `int ->
-  `tree (1 + max k1 k2) =
-  \k1 k2 t1 t2 x ->
-    s_tree (1 + max k1 k2) (Node (r_int x) (r_tree k1 t1) (r_tree k2 t2))
+fn ~tree#reshape : (k : int) -> (k' : int) -> ~tree k -> ~tree k' = \k k' =>
+  if k' == 0
+  then if k == 0 then \x => x
+       else \_ => ~~
+  else if k == 0 then \x => ~inl x
+       else \n =>
+         ~match n with
+         | ~inl x => ~inl x
+         | ~inr ~(x, lt, rt) =>
+             ~inr ~(x, ~tree#reshape (k-1) (k'-1) lt,
+                       ~tree#reshape (k-1) (k'-1) rt)
+         end
 
-#[safe]
-fn `prob : (k : int) -> `tree k -> `int -> `int = \k t x ->
-  tape (s_int (prob (r_tree k t) (r_int x)))
+// ----------------------------------------------------------------
+// Lifted functions
+
+fn ~lookup : #~tree -> ~int -> ~bool = %lift lookup
+
+fn ~test_map : #~tree -> ~int -> #~tree = \t y =>
+  let ~map : (~int -> ~int) -> #~tree -> #~tree = %lift map in
+  ~map (\x => x ~+ y) t
+
+fn ~node :
+  #~tree -> #~tree -> ~int -> #~tree =
+  \t1 t2 x => ~tree#Node (x, t1, t2)
+
+fn ~prob : #~tree -> ~int -> ~int = %lift prob
