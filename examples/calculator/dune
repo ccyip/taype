@@ -1,4 +1,3 @@
 (executables
  (names "test_calculator")
- (flags (:standard -w -27-33))
- (libraries common sexplib))
+ (libraries common))

@@ -6,5 +6,4 @@
         "test_db_analytics"
         "test_bmi_mse"
         "test_dtree")
- (flags (:standard -w -27-33))
- (libraries common sexplib))
+ (libraries common))

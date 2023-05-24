@@ -7,5 +7,4 @@
    "test_min_euclidean_distance"
    "test_map"
    "test_filter")
- (flags (:standard -w -27-33))
- (libraries common sexplib))
+ (libraries common))

@@ -3,5 +3,4 @@
    "test_millionaire"
    "test_voting1"
    "test_voting2")
- (flags (:standard -w -27-33))
- (libraries common sexplib))
+ (libraries common))

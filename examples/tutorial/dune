@@ -1,4 +1,3 @@
 (executables
  (names "test_elem" "test_insert")
- (flags (:standard -w -27-33))
- (libraries common sexplib))
+ (libraries common))

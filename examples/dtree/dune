@@ -5,5 +5,4 @@
    "test_dtree_spineF"
    "test_dtree_spine"
    "test_dtree_max")
- (flags (:standard -w -27-33))
- (libraries common sexplib))
+ (libraries common))
