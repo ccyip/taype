@@ -1,33 +1,34 @@
-(* open Driver *)
-(* open Prelude *)
-(* open Common *)
-(* open Sexplib *)
-(* open Misc *)
-(* open Misc_conceal *)
-(* open Misc_reveal *)
-(* open Misc_helper *)
+open Common
+module Driver = (val parse_options ())
+open Driver
+open Setup (Driver)
+open Misc.M (Driver)
+open Misc_helper.M (Driver)
 
-(* let _ = *)
-(*   parse_options (); *)
-(*   setup_driver_simple (); *)
+let () =
+  setup_driver_simple ();
 
-(*   let n = get_public_int () in *)
-(*   let k1 = get_public_int () in *)
-(*   let obliv_xs1 = *)
-(*     get_private (mylist_of_sexp_check k1) (private_s_list k1) (obliv_list k1) in *)
-(*   let k2 = get_public_int () in *)
-(*   let obliv_xs2 = *)
-(*     get_private (mylist_of_sexp_check k2) (private_s_list k2) (obliv_list k2) in *)
-(*   let expected = get_expected Conv.int_of_sexp in *)
+  let n = get_public_int () in
+  let k = get_public_int () in
+  let xs =
+    get_private (mylist_of_sexp_check k) (Conceal.obliv_list_s k)
+      (Conceal.obliv_list_s_for k)
+  in
+  let k = get_public_int () in
+  let ys =
+    get_private (mylist_of_sexp_check k) (Conceal.obliv_list_s k)
+      (Conceal.obliv_list_s_for k)
+  in
+  let expected = get_expected_int () in
 
-(*   collect_stat (); *)
+  collect_stat ();
 
-(*   let obliv_res = obliv_elect2 n k1 obliv_xs1 k2 obliv_xs2 in *)
+  let res = obliv_test_elect2 n xs ys in
 
-(*   record_stat (); *)
+  record_stat ();
 
-(*   let res = unsafe_r_int obliv_res in *)
+  let res = Reveal.obliv_int_r res in
 
-(*   finalize_driver (); *)
+  finalize_driver ();
 
-(*   expected = res |> print_result *)
+  expected = res |> print_result

@@ -1,146 +1,165 @@
 data list = Nil | Cons int list
 
-fn length : list -> int = \xs ->
-  case xs of
-  | Nil -> 0
-  | Cons _ xs' -> 1 + length xs'
+fn length : list -> int = \xs =>
+  match xs with
+  | Nil => 0
+  | Cons _ xs' => 1 + length xs'
   end
 
-fn append : list -> list -> list = \xs ys ->
-  case xs of
-  | Nil -> ys
-  | Cons x xs' -> Cons x (append xs' ys)
+fn append : list -> list -> list = \xs ys =>
+  match xs with
+  | Nil => ys
+  | Cons x xs' => Cons x (append xs' ys)
   end
 
-fn map : (int -> int) -> list -> list = \f xs ->
-  case xs of
-  | Nil -> Nil
-  | Cons x xs' -> Cons (f x) (map f xs')
+fn map : (int -> int) -> list -> list = \f xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' => Cons (f x) (map f xs')
   end
 
-fn mapi' : int -> (int -> int -> int) -> list -> list = \i f xs ->
-  case xs of
-  | Nil -> Nil
-  | Cons x xs' -> Cons (f i x) (mapi' (i+1) f xs')
+fn mapi' : int -> (int -> int -> int) -> list -> list = \i f xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' => Cons (f i x) (mapi' (i+1) f xs')
   end
 
 fn mapi : (int -> int -> int) -> list -> list = mapi' 0
 
-fn map2 : (int -> int -> int) -> list -> list -> list = \f xs ys ->
-  case xs of
-  | Nil -> Nil
-  | Cons x xs' ->
-    case ys of
-    | Nil -> Nil
-    | Cons y ys' ->
+fn map2 : (int -> int -> int) -> list -> list -> list = \f xs ys =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' =>
+    match ys with
+    | Nil => Nil
+    | Cons y ys' =>
       Cons (f x y) (map2 f xs' ys')
     end
   end
 
-fn init' : int -> int -> (int -> int) -> list = \i n f ->
+fn init' : int -> int -> (int -> int) -> list = \i n f =>
   if n <= 0
   then Nil
   else Cons (f i) (init' (i+1) (n-1) f)
 
 fn init : int -> (int -> int) -> list = init' 0
 
-----------------------------------------------------------------
--- Millionaire problem
+// ----------------------------------------------------------------
+// Millionaire problem
 
--- Yes it is quite dumb, as we can simply invoke the oblivious comparison
--- directly.
-fn le : int -> int -> bool = \a b -> a <= b
+// Yes it is quite dumb, as we can simply invoke the oblivious comparison
+// directly.
+fn le : int -> int -> bool = \a b => a <= b
 
-----------------------------------------------------------------
--- Voting
+// ----------------------------------------------------------------
+// Voting
 
--- We consider two variants of the voting problem. In the first variant, each
--- party provides a list whose indices represent the candicates and the elements
--- are the corresponding votes. This is realistic as each party can sort their
--- votes locally first. The second variant is slightly more complex: each party
--- simply gives a list of votes, i.e. every element is an index of the
--- candicate. The algorithm here is also responsible for counting them. In
--- either variant, the main function returns the index of the candicate who has
--- the most votes.
+// We consider two variants of the voting problem. In the first variant, each
+// party provides a list whose indices represent the candicates and the elements
+// are the corresponding votes. This is realistic as each party can sort their
+// votes locally first. The second variant is slightly more complex: each party
+// simply gives a list of votes, i.e. every element is an index of the
+// candicate. The algorithm here is also responsible for counting them. In
+// either variant, the main function returns the index of the candicate who has
+// the most votes.
 
-fn elect1' : list -> int -> int -> int -> int * int = \xs i m mi ->
-  case xs of
-  | Nil -> (m, mi)
-  | Cons x xs' ->
-    case elect1' xs' (i+1) m mi of
-    (m', mi') ->
+fn elect1' : list -> int -> int -> int -> int * int = \xs i m mi =>
+  match xs with
+  | Nil => (m, mi)
+  | Cons x xs' =>
+    match elect1' xs' (i+1) m mi with
+    (m', mi') =>
       if x <= m'
       then (m', mi')
       else (x, i)
     end
   end
 
--- The first variant. The input list consists of counted votes for each
--- candicate (as index).
-fn elect1 : list -> int = \xs ->
-  case xs of
-  | Nil -> (-1)
-  | Cons x xs' ->
-    case elect1' xs' 1 x 0 of (_, i) -> i end
+// The first variant. The input list consists of counted votes for each
+// candicate (as index).
+fn elect1 : list -> int = \xs =>
+  match xs with
+  | Nil => (-1)
+  | Cons x xs' =>
+    match elect1' xs' 1 x 0 with (_, i) => i end
   end
 
-fn count_votes : list -> int -> int = \xs i ->
-  case xs of
-  | Nil -> 0
-  | Cons x xs' ->
+fn test_elect1 : list -> list -> int = \xs ys =>
+  elect1 (map2 (\x y => x + y) xs ys)
+
+fn count_votes : list -> int -> int = \xs i =>
+  match xs with
+  | Nil => 0
+  | Cons x xs' =>
     if x == i
     then 1 + count_votes xs' i
     else count_votes xs' i
   end
 
--- The second variant. The input list consists of candicate indices. This
--- function also takes the number of candicates.
-fn elect2 : int -> list -> int = \n xs ->
+// The second variant. The input list consists of candicate indices. This
+// function also takes the number of candicates.
+fn elect2 : int -> list -> int = \n xs =>
   let votes = init n (count_votes xs) in
   elect1 votes
 
-----------------------------------------------------------------
--- Oblivious types
+fn test_elect2 : int -> list -> list -> int = \n xs ys =>
+  elect2 n (append xs ys)
 
--- Exact length as the public view.
-obliv `list (k : int) =
+// ----------------------------------------------------------------
+// Oblivious types
+
+// Exact length as the public view.
+obliv ~list (k : int) =
   if k == 0
   then unit
-  else `int `* `list (k-1)
+  else ~int ~* ~list (k-1)
 
-#[section]
-fn s_list : (k : int) -> list -> `list k = \k xs ->
+fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
   if k == 0
   then ()
-  else tape (case xs of
-             | Nil ->
-               -- Bogus
-               `(tape (s_int 0), s_list (k-1) Nil)
-             | Cons x xs' ->
-               `(tape (s_int x), s_list (k-1) xs')
-             end)
+  else match xs with
+       | Nil => ~~
+       | Cons x xs' => ~(~int#s x, ~list#s (k-1) xs')
+       end
 
-#[retraction]
-fn r_list : (k : int) -> `list k -> list = \k ->
+fn' ~list#r : (k : int) -> ~list k -> list = \k =>
   if k == 0
-  then \_ -> Nil
-  else \xs -> `case xs of
-               `(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
-               end
+  then \_ => Nil
+  else \xs => ~match xs with
+              ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
+              end
 
-----------------------------------------------------------------
--- Lifted functions
+fn ~list#Nil : unit -> #~list = \_ =>
+  #(0, (() :: ~list 0))
 
-#[safe]
-fn `le : `int -> `int -> `bool = \a b ->
-  tape (s_bool (le (r_int a) (r_int b)))
+fn ~list#Cons : ~int * #~list -> #~list = \p =>
+  match p with
+  (x, pxs) =>
+    match pxs with
+    #(k, xs) =>
+      #(k+1, (~(x, xs) :: ~list (k+1)))
+    end
+  end
 
-#[safe]
-fn `elect1 : (k : int) -> `list k -> `list k -> `int =
-  \k xs1 xs2 ->
-    tape (s_int (elect1 (map2 (\x y -> x + y) (r_list k xs1) (r_list k xs2))))
+fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (if k == 0
+       then \_ => f1 ()
+       else \xs =>
+         ~match xs with
+         | ~(x, xs') => f2 (x, #(k-1, xs'))
+         end : ~list k -> 'a) xs
+    end
 
-#[safe]
-fn `elect2 : int -> (k1 : int) -> `list k1 -> (k2 : int) -> `list k2 -> `int =
-  \n k1 xs1 k2 xs2 ->
-    tape (s_int (elect2 n (append (r_list k1 xs1) (r_list k2 xs2))))
+fn ~list#view : list -> int = length
+
+// ----------------------------------------------------------------
+// Lifted functions
+
+fn ~le : ~int -> ~int -> ~bool = %lift le
+
+fn ~test_elect1 : #~list -> #~list -> ~int = %lift test_elect1
+
+fn ~test_elect2 : int -> #~list -> #~list -> ~int = %lift test_elect2
