@@ -1,41 +1,37 @@
-(* open Driver *)
-(* open Common *)
-(* open Sexplib *)
-(* open Prelude *)
-(* open Record *)
-(* open Record_conceal *)
-(* open Record_reveal *)
-(* open Record_helper *)
+open Common
+module Driver = (val parse_options ())
+open Driver
+open Setup (Driver)
+open Record.M (Driver)
+open Record_helper.M (Driver)
 
-(* let _ = *)
-(*   parse_options (); *)
-(*   setup_driver_simple (); *)
+let () =
+  setup_driver_simple ();
 
-(*   let v1 = get_public db_view_of_sexp in *)
-(*   let db1 = get_private *)
-(*       (db_of_sexp_check v1) *)
-(*       (private_s_db v1) *)
-(*       (obliv_db v1) in *)
-(*   let v2 = get_public db_view_of_sexp in *)
-(*   let db2 = get_private *)
-(*       (db_of_sexp_check v2) *)
-(*       (private_s_db v2) *)
-(*       (obliv_db v2) in *)
+  let v = get_public db_view_of_sexp in
+  let db1 = get_private
+      (db_of_sexp_check v)
+      (Conceal.obliv_db_s v)
+      (Conceal.obliv_db_s_for v) in
+  let v = get_public db_view_of_sexp in
+  let db2 = get_private
+      (db_of_sexp_check v)
+      (Conceal.obliv_db_s v)
+      (Conceal.obliv_db_s_for v) in
 
-(*   collect_stat (); *)
+  collect_stat ();
 
-(*   let db = obliv_db_concat v1 v2 db1 db2 in *)
-(*   let v = db_view_concat v1 v2 in *)
-(*   let obliv_mean = obliv_age_mean v db in *)
-(*   let obliv_variance = obliv_age_variance v db in *)
+  let db = obliv_db_concat db1 db2 in
+  let obliv_mean = obliv_age_mean db in
+  let obliv_variance = obliv_age_variance db in
 
-(*   record_stat (); *)
+  record_stat ();
 
-(*   let mean = unsafe_r_int obliv_mean in *)
-(*   let variance = unsafe_r_int obliv_variance in *)
+  let mean = Reveal.obliv_int_r obliv_mean in
+  let variance = Reveal.obliv_int_r obliv_variance in
 
-(*   finalize_driver (); *)
+  finalize_driver ();
 
-(*   print_stat (); *)
-(*   Conv.sexp_of_int mean |> print_sexp; *)
-(*   Conv.sexp_of_int variance |> print_sexp *)
+  print_stat ();
+  Printf.printf "%d\n" mean;
+  Printf.printf "%d\n" variance

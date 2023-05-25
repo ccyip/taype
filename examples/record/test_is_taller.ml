@@ -1,36 +1,33 @@
-(* open Driver *)
-(* open Common *)
-(* open Sexplib *)
-(* open Prelude *)
-(* open Record *)
-(* open Record_conceal *)
-(* open Record_reveal *)
-(* open Record_helper *)
+open Common
+module Driver = (val parse_options ())
+open Driver
+open Setup (Driver)
+open Record.M (Driver)
+open Record_helper.M (Driver)
 
-(* let _ = *)
-(*   parse_options (); *)
-(*   setup_driver_simple (); *)
+let () =
+  setup_driver_simple ();
 
-(*   let va = get_public patient_view_of_sexp in *)
-(*   let a = get_private *)
-(*       (patient_of_sexp_check va) *)
-(*       (private_s_patient va) *)
-(*       (obliv_patient va) in *)
-(*   let vb = get_public patient_view_of_sexp in *)
-(*   let b = get_private *)
-(*       (patient_of_sexp_check vb) *)
-(*       (private_s_patient vb) *)
-(*       (obliv_patient vb) in *)
-(*   let expected = get_expected Conv.bool_of_sexp in *)
+  let v = get_public patient_view_of_sexp in
+  let a = get_private
+      (patient_of_sexp_check v)
+      (Conceal.obliv_patient_s v)
+      (Conceal.obliv_patient_s_for v) in
+  let v = get_public patient_view_of_sexp in
+  let b = get_private
+      (patient_of_sexp_check v)
+      (Conceal.obliv_patient_s v)
+      (Conceal.obliv_patient_s_for v) in
+  let expected = get_expected_bool () in
 
-(*   collect_stat (); *)
+  collect_stat ();
 
-(*   let obliv_res = obliv_is_taller va vb a b in *)
+  let obliv_res = obliv_is_taller a b in
 
-(*   record_stat (); *)
+  record_stat ();
 
-(*   let res = unsafe_r_bool obliv_res in *)
+  let res = Reveal.obliv_bool_r obliv_res in
 
-(*   finalize_driver (); *)
+  finalize_driver ();
 
-(*   expected = res |> print_result *)
+  expected = res |> print_result
