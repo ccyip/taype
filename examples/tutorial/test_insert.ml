@@ -1,31 +1,28 @@
-(* open Driver *)
-(* open Common *)
-(* open Sexplib *)
-(* open Prelude *)
-(* open Tutorial *)
-(* open Tutorial_conceal *)
-(* open Tutorial_reveal *)
-(* open Tutorial_helper *)
+open Common
+module Driver = (val parse_options ())
+open Driver
+open Setup (Driver)
+open Tutorial.M (Driver)
+open Tutorial_helper.M (Driver)
 
-(* let _ = *)
-(*   parse_options (); *)
-(*   setup_driver_simple (); *)
+let () =
+  setup_driver_simple ();
+  let n = get_public_int () in
+  let xs =
+    get_private (mylist_of_sexp_check n) (Conceal.obliv_list_s n)
+      (Conceal.obliv_list_s_for n)
+  in
+  let y = get_private_int () in
+  let expected = get_expected mylist_of_sexp in
 
-(*   let n = get_public_int () in *)
-(*   let size = obliv_list n in *)
-(*   let obliv_xs = get_private (mylist_of_sexp_check n) (private_s_list n) size in *)
-(*   let obliv_x = get_private_int () in *)
+  collect_stat ();
 
-(*   collect_stat (); *)
+  let res = obliv_insert y xs in
 
-(*   let obliv_res = obliv_insert n obliv_x obliv_xs in *)
+  record_stat ();
 
-(*   record_stat (); *)
+  let res = Reveal.obliv_list_r res in
 
-(*   (\* Make sure the public view is consistent with the one defined in taype. *\) *)
-(*   let res = unsafe_r_list (n+1) obliv_res in *)
+  finalize_driver ();
 
-(*   finalize_driver (); *)
-
-(*   print_stat (); *)
-(*   mylist_to_sexp res |> print_sexp *)
+  expected = res |> print_result
