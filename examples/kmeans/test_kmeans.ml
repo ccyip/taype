@@ -1,37 +1,38 @@
-(* open Driver *)
-(* open Prelude *)
-(* open Common *)
-(* open Sexplib *)
-(* open Kmeans *)
-(* open Kmeans_conceal *)
-(* open Kmeans_reveal *)
-(* open Kmeans_helper *)
+open Common
+module Driver = (val parse_options ())
+open Driver
+open Setup (Driver)
+open Kmeans.M (Driver)
+open Kmeans_helper.M (Driver)
 
-(* let _ = *)
-(*   parse_options (); *)
-(*   setup_driver_simple (); *)
+let () =
+  setup_driver_simple ();
 
-(*   let n_iter = get_public_int () in *)
-(*   let n_clusters = get_public_int () in *)
-(*   let dim = get_public_int () in *)
-(*   let k1 = get_public_int () in *)
-(*   let obliv_xs1 = get_private *)
-(*       (vlist_of_sexp_check (dim, k1)) *)
-(*       (private_s_vlist (dim, k1)) (obliv_vlist (dim, k1)) in *)
-(*   let k2 = get_public_int () in *)
-(*   let obliv_xs2 = get_private *)
-(*       (vlist_of_sexp_check (dim, k2)) *)
-(*       (private_s_vlist (dim, k2)) (obliv_vlist (dim, k2)) in *)
+  let n_iter = get_public_int () in
+  let n_clusters = get_public_int () in
+  let dim = get_public_int () in
+  let k = get_public_int () in
+  let v = (dim, k) in
+  let xs1 =
+    get_private (vlist_of_sexp_check v) (Conceal.obliv_vlist_s v)
+      (Conceal.obliv_vlist_s_for v)
+  in
+  let k = get_public_int () in
+  let v = (dim, k) in
+  let xs2 =
+    get_private (vlist_of_sexp_check v) (Conceal.obliv_vlist_s v)
+      (Conceal.obliv_vlist_s_for v)
+  in
 
-(*   collect_stat (); *)
+  collect_stat ();
 
-(*   let obliv_res = obliv_kmeans n_iter n_clusters dim k1 k2 obliv_xs1 obliv_xs2 in *)
+  let res = obliv_test_kmeans n_iter n_clusters dim xs1 xs2 in
 
-(*   record_stat (); *)
+  record_stat ();
 
-(*   let res = unsafe_r_vec (k1+k2) obliv_res in *)
+  let res = Reveal.obliv_vec_r res in
 
-(*   finalize_driver (); *)
+  finalize_driver ();
 
-(*   print_stat (); *)
-(*   vec_to_sexp res |> print_sexp *)
+  print_stat ();
+  vec_to_sexp res |> print_sexp

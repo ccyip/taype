@@ -1,68 +1,68 @@
--- These two types are essentially list types, but due to the lack of type
--- polymorphism, we have to define them and their functions separately.
+// These two types are essentially list types, but due to the lack of type
+// polymorphism, we have to define them and their functions separately.
 
 data vec = Nil | Cons int vec
 
 data vlist = VNil | VCons vec vlist
 
-fn vlength : vlist -> int = \xs ->
-  case xs of
-  | VNil -> 0
-  | VCons _ xs' -> 1 + vlength xs'
+fn vlength : vlist -> int = \xs =>
+  match xs with
+  | VNil => 0
+  | VCons _ xs' => 1 + vlength xs'
   end
 
-fn vappend : vlist -> vlist -> vlist = \xs ys ->
-  case xs of
-  | VNil -> ys
-  | VCons x xs' -> VCons x (vappend xs' ys)
+fn vappend : vlist -> vlist -> vlist = \xs ys =>
+  match xs with
+  | VNil => ys
+  | VCons x xs' => VCons x (vappend xs' ys)
   end
 
--- Calculuate the (squared) distance of two vectors.
-fn dist : vec -> vec -> int = \xs ys ->
-  case xs of
-  | Nil -> 0
-  | Cons x xs' ->
-    case ys of
-    | Nil -> 0
-    | Cons y ys' ->
+// Calculuate the (squared) distance of two vectors.
+fn dist : vec -> vec -> int = \xs ys =>
+  match xs with
+  | Nil => 0
+  | Cons x xs' =>
+    match ys with
+    | Nil => 0
+    | Cons y ys' =>
       let d = x - y in
       d*d + dist xs' ys'
     end
   end
 
--- Return a zero vector of given dimension.
-fn zero : int -> vec = \dim ->
+// Return a zero vector of given dimension.
+fn zero : int -> vec = \dim =>
   if dim == 0
   then Nil
   else Cons 0 (zero (dim-1))
 
--- Add two vectors pointwise.
-fn add : vec -> vec -> vec = \xs ys ->
-  case xs of
-  | Nil -> Nil
-  | Cons x xs' ->
-    case ys of
-    | Nil -> Nil
-    | Cons y ys' ->
+// Add two vectors pointwise.
+fn add : vec -> vec -> vec = \xs ys =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' =>
+    match ys with
+    | Nil => Nil
+    | Cons y ys' =>
       Cons (x+y) (add xs' ys')
     end
   end
 
--- Divide a vector by a number pointwise.
-fn div : vec -> int -> vec = \xs n ->
-  case xs of
-  | Nil -> Nil
-  | Cons x xs' ->
+// Divide a vector by a number pointwise.
+fn div : vec -> int -> vec = \xs n =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' =>
     Cons (x / n) (div xs' n)
   end
 
--- Pick [n_clusters] arbitrary centroids. Here we pick them according to a
--- stride.
+// Pick [n_clusters] arbitrary centroids. Here we pick them according to a
+// stride.
 fn init_centroids : int -> int -> int -> vlist -> vlist =
-  \n_clusters stride n centroids ->
-    case centroids of
-    | VNil -> VNil
-    | VCons v vs ->
+  \n_clusters stride n centroids =>
+    match centroids with
+    | VNil => VNil
+    | VCons v vs =>
       if n_clusters == 0 then VNil
       else if n == 0
       then VCons v (init_centroids (n_clusters-1) stride (stride-1) vs)
@@ -70,44 +70,44 @@ fn init_centroids : int -> int -> int -> vlist -> vlist =
     end
 
 fn best' : vec -> int -> int -> int -> vlist -> int =
-  \p min min_idx idx centroids ->
-    case centroids of
-    | VNil -> min_idx
-    | VCons v vs ->
+  \p min min_idx idx centroids =>
+    match centroids with
+    | VNil => min_idx
+    | VCons v vs =>
       let d = dist p v in
-      if d <= min
-      then best' p d idx (idx+1) vs
-      else best' p min min_idx (idx+1) vs
+      let min' = if d <= min then d else min in
+      let idx' = if d <= min then idx else min_idx in
+      best' p min' idx' (idx+1) vs
     end
 
--- Find the index of the best centroid with respect to a point, i.e. this
--- centroid and the point have the minimal euclidean distance.
-fn best : vec -> vlist -> int = \p centroids ->
-  case centroids of
-  | VNil -> (-1)
-  | VCons v vs -> best' p (dist p v) 0 1 vs
+// Find the index of the best centroid with respect to a point, i.e. this
+// centroid and the point have the minimal euclidean distance.
+fn best : vec -> vlist -> int = \p centroids =>
+  match centroids with
+  | VNil => (-1)
+  | VCons v vs => best' p (dist p v) 0 1 vs
   end
 
--- Assign each data point the index of the closest centroid. Return the list of
--- assignment of the same length as the data point list.
-fn assign : vlist -> vlist -> vec = \centroids xs ->
-  case xs of
-  | VNil -> Nil
-  | VCons x xs' ->
+// Assign each data point the index of the closest centroid. Return the list of
+// assignment of the same length as the data point list.
+fn assign : vlist -> vlist -> vec = \centroids xs =>
+  match xs with
+  | VNil => Nil
+  | VCons x xs' =>
     Cons (best x centroids) (assign centroids xs')
   end
 
--- Calculate the sum and the number of data points in a cluster.
+// Calculate the sum and the number of data points in a cluster.
 fn sum_clusters : int -> int -> vlist -> vec -> vec * int =
-  \dim idx xs clus ->
-    case xs of
-    | VNil -> (zero dim, 0)
-    | VCons x xs' ->
-      case clus of
-      | Nil -> (zero dim, 0)
-      | Cons c cs' ->
-        case sum_clusters dim idx xs' cs' of
-        | (sum, n) ->
+  \dim idx xs clus =>
+    match xs with
+    | VNil => (zero dim, 0)
+    | VCons x xs' =>
+      match clus with
+      | Nil => (zero dim, 0)
+      | Cons c cs' =>
+        match sum_clusters dim idx xs' cs' with
+        | (sum, n) =>
           if c == idx
           then (add x sum, n+1)
           else (sum, n)
@@ -116,116 +116,181 @@ fn sum_clusters : int -> int -> vlist -> vec -> vec * int =
     end
 
 fn update' : int -> int -> vlist -> vec -> vlist -> vlist =
-  \dim idx xs clus centroids ->
-    case centroids of
-    | VNil -> VNil
-    | VCons v vs ->
-      let v' = case sum_clusters dim idx xs clus of
-               (sum, n) -> if n == 0 then v else div sum n
+  \dim idx xs clus centroids =>
+    match centroids with
+    | VNil => VNil
+    | VCons v vs =>
+      let v' = match sum_clusters dim idx xs clus with
+               (sum, n) => if n == 0 then v else div sum n
                end
-          vs' = update' dim (idx+1) xs clus vs in
+      in
+      let vs' = update' dim (idx+1) xs clus vs in
       VCons v' vs'
     end
 
--- Update centroids according to the current clusters.
+// Update centroids according to the current clusters.
 fn update : int -> vlist -> vec -> vlist -> vlist =
-  \dim -> update' dim 0
+  \dim => update' dim 0
 
--- Repeatedly assign clusters and update centroids, according to the given
--- number of iteration.
+// Repeatedly assign clusters and update centroids, according to the given
+// number of iteration.
 fn kmeans_loop : int -> int -> vlist -> vlist -> vec -> vlist * vec =
-  \n dim xs centroids clus ->
+  \n dim xs centroids clus =>
     if n == 0
     then (centroids, clus)
-    else let centroids' = update dim xs clus centroids
-             clus' = assign centroids xs in
+    else let centroids' = update dim xs clus centroids in
+         let clus' = assign centroids xs in
          kmeans_loop (n-1) dim xs centroids' clus'
 
--- The entry point of the k-mean algorithm.
+// The entry point of the k-mean algorithm.
 fn kmeans : int -> int -> int -> vlist -> vec =
-  \n_iter n_clusters dim xs ->
-    let len = vlength xs
-        stride = len / n_clusters
-        centroids = init_centroids n_clusters stride (stride-1) xs
-        clus = assign centroids xs in
-        case kmeans_loop n_iter dim xs centroids clus of
-        | (_, clus) -> clus
-        end
+  \n_iter n_clusters dim xs =>
+    let len = vlength xs in
+    let stride = len / n_clusters in
+    let centroids = init_centroids n_clusters stride (stride-1) xs in
+    let clus = assign centroids xs in
+    match kmeans_loop n_iter dim xs centroids clus with
+    (_, clus) => clus
+    end
 
+fn test_kmeans : int -> int -> int -> vlist -> vlist -> vec =
+  \n_iter n_clusters dim xs ys =>
+    kmeans n_iter n_clusters dim (vappend xs ys)
 
-----------------------------------------------------------------
--- Oblivious types
+// --------------------------------------------------------------
+// Oblivious types
 
--- We know the exact dimension of a vector.
-obliv `vec (k : int) =
+// We know the exact dimension of a vector.
+obliv ~vec (k : int) =
   if k == 0
   then unit
-  else `int `* `vec (k-1)
+  else ~int ~* ~vec (k-1)
 
-#[section]
-fn s_vec : (k : int) -> vec -> `vec k = \k xs ->
+fn ~vec#s : (k : int) -> vec -> ~vec k = \k xs =>
   if k == 0
   then ()
-  else tape (case xs of
-             | Nil ->
-               -- Bogus
-               `(tape (s_int 0), s_vec (k-1) Nil)
-             | Cons x xs' ->
-               `(tape (s_int x), s_vec (k-1) xs')
-             end)
+  else match xs with
+       | Nil => ~~
+       | Cons x xs' =>
+         ~(~int#s x, ~vec#s (k-1) xs')
+       end
 
-#[retraction]
-fn r_vec : (k : int) -> `vec k -> vec = \k ->
+fn' ~vec#r : (k : int) -> ~vec k -> vec = \k =>
   if k == 0
-  then \_ -> Nil
-  else \xs -> `case xs of
-              | `(x, xs') -> Cons (r_int x) (r_vec (k-1) xs')
+  then \_ => Nil
+  else \xs => ~match xs with
+              ~(x, xs') => Cons (~int#r x) (~vec#r (k-1) xs')
               end
 
--- The public view is the dimension of the payload vectors and the length of
--- the list.
-obliv `vlist (p : int * int) =
-  case p of
-  (dim, k) ->
+fn ~vec#Nil : unit -> #~vec = \_ => #(0, (() :: ~vec 0))
+fn ~vec#Cons : ~int * #~vec -> #~vec = \p =>
+  match p with
+  (x, pxs) =>
+    match pxs with
+    #(k, xs) =>
+      #(k+1, (~(x, xs) :: ~vec (k+1)))
+    end
+  end
+
+fn ~vec#match : #~vec -> (unit -> 'a) -> (~int * #~vec -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (if k == 0
+       then \_ => f1 ()
+       else \xs =>
+         ~match xs with
+         | ~(x, xs') => f2 (x, #(k-1, xs'))
+         end : ~vec k -> 'a) xs
+    end
+
+fn ~vec#view : vec -> int = \v =>
+  match v with
+  | Nil => 0
+  | Cons _ v' => 1 + ~vec#view v'
+  end
+
+// The public view is the dimension of the payload vectors and the length of
+// the list.
+obliv ~vlist (p : int * int) =
+  match p with
+  (dim, k) =>
     if k == 0
     then unit
-    else `vec dim `* `vlist (dim, k-1)
+    else ~vec dim ~* ~vlist (dim, k-1)
   end
 
-#[section]
-fn s_vlist : (p : int * int) -> vlist -> `vlist p = \p xs ->
-  case p of
-  (dim, k) ->
+fn ~vlist#s : (p : int * int) -> vlist -> ~vlist p = \p xs =>
+  match p with
+  (dim, k) =>
     if k == 0
     then ()
-    else tape (case xs of
-               | VNil ->
-                 -- Bogus
-                 `(s_vec dim Nil, s_vlist (dim, k-1) VNil)
-               | VCons x xs' ->
-                 `(s_vec dim x, s_vlist (dim, k-1) xs')
-               end)
+    else match xs with
+         | VNil => ~~
+         | VCons x xs' => ~(~vec#s dim x, ~vlist#s (dim, k-1) xs')
+         end
   end
 
-#[retraction]
-fn r_vlist : (p : int * int) -> `vlist p -> vlist = \p ->
-  case p of
-  (dim, k) ->
+fn' ~vlist#r : (p : int * int) -> ~vlist p -> vlist = \p =>
+  match p with
+  (dim, k) =>
     if k == 0
-    then \_ -> VNil
-    else \xs -> `case xs of
-                `(x, xs') -> VCons (r_vec dim x) (r_vlist (dim, k-1) xs')
+    then \_ => VNil
+    else \xs => ~match xs with
+                ~(x, xs') => VCons (~vec#r dim x) (~vlist#r (dim, k-1) xs')
                 end
   end
 
-----------------------------------------------------------------
--- Lifted functions
+fn ~vlist#VNil : unit -> #~vlist = \_ => #((0, 0), (() :: ~vlist (0, 0)))
+fn ~vlist#VCons : #~vec * #~vlist -> #~vlist = \p =>
+  match p with
+  (v, vs) =>
+    match v with
+    #(dim, v) =>
+      match vs with
+      #(k, vs) =>
+        match k with
+        (_, k) => #((dim, k+1), (~(v, vs) :: ~vlist (dim, k+1)))
+        end
+      end
+    end
+  end
 
-#[safe]
-fn `kmeans : int -> int -> (dim : int) ->
-            (k1 : int) -> (k2 : int) ->
-            `vlist (dim, k1) -> `vlist (dim, k2) -> `vec (k1+k2) =
-  \n_iter n_clusters dim k1 k2 xs1 xs2 ->
-    s_vec (k1+k2)
-          (kmeans n_iter n_clusters dim
-                  (vappend (r_vlist (dim, k1) xs1) (r_vlist (dim, k2) xs2)))
+fn ~vlist#match : #~vlist -> (unit -> 'a) -> (#~vec * #~vlist -> 'a) -> 'a =
+  \vs f1 f2 =>
+    match vs with
+    #(k', vs) =>
+      (match k' with
+       (dim, k) =>
+         if k == 0 then \_ => f1 ()
+         else \vs =>
+           ~match vs with
+           ~(v, vs') => f2 (#(dim, v), #((dim, k-1), vs'))
+           end
+       end : ~vlist k' -> 'a) vs
+    end
+
+fn ~vlist#view : vlist -> int * int = \vs =>
+  match vs with
+  | VNil => (0, 0)
+  | VCons v _ => (~vec#view v, vlength vs)
+  end
+
+// Technically [~vec] does not have join structure. We cheat here by observing
+// that, throughout the k-means computation, the dimension of the vectors remain
+// the same. We still need a join structure because the compiler cannot
+// statically decide if that is indeed the case. Note that this can result in
+// incorrect implementation if we ever need to merge two [#~vec] with different
+// dimensions.
+fn ~vec#join : int -> int -> int = \k k' =>
+  if k == k' then k else (-1)
+fn ~vec#reshape : (k : int) -> (k' : int) -> ~vec k -> ~vec k' =
+  \k k' v =>
+    if k == k' then (v :: ~vec k')
+    else ~~
+
+// --------------------------------------------------------------
+// Lifted functions
+
+fn ~test_kmeans : int -> int -> int -> #~vlist -> #~vlist -> #~vec =
+  %lift test_kmeans
