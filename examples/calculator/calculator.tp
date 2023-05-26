@@ -8,143 +8,182 @@ data expr
 
 data vars = Nil | Cons int vars
 
-fn lookup : vars -> int -> int = \xs idx ->
-  case xs of
-  | Nil -> 0
-  | Cons x xs' ->
+fn lookup : vars -> int -> int = \xs idx =>
+  match xs with
+  | Nil => 0
+  | Cons x xs' =>
     if idx <= 0
     then x
     else lookup xs' (idx-1)
   end
 
-fn eval : vars -> expr -> int = \xs e ->
-  case e of
-  | Const x -> x
-  | Var idx -> lookup xs idx
-  | Add e1 e2 -> eval xs e1 + eval xs e2
-  | Sub e1 e2 -> eval xs e1 - eval xs e2
-  | Mul e1 e2 -> eval xs e1 * eval xs e2
-  | Div e1 e2 -> eval xs e1 / eval xs e2
+fn eval : vars -> expr -> int = \xs e =>
+  match e with
+  | Const x => x
+  | Var idx => lookup xs idx
+  | Add e1 e2 => eval xs e1 + eval xs e2
+  | Sub e1 e2 => eval xs e1 - eval xs e2
+  | Mul e1 e2 => eval xs e1 * eval xs e2
+  | Div e1 e2 => eval xs e1 / eval xs e2
   end
 
-----------------------------------------------------------------
--- Oblivious types
+// ----------------------------------------------------------------
+// Oblivious types
 
--- k is the maximum depth of the expression.
-obliv `expr (k : int) =
+// k is the maximum depth of the expression.
+obliv ~expr (k : int) =
   if k == 0
   then
-    -- Either Const or Var
-    `int `+ `int
+    // Either Const or Var
+    ~int ~+ ~int
   else
-    -- Const
-    `int `+
-    -- Var
-    `int `+
-    -- Add
-    `expr (k-1) `* `expr (k-1) `+
-    -- Sub
-    `expr (k-1) `* `expr (k-1) `+
-    -- Mul
-    `expr (k-1) `* `expr (k-1) `+
-    -- Div
-    `expr (k-1) `* `expr (k-1)
+    // Const
+    ~int ~+
+    // Var
+    ~int ~+
+    // Add
+    ~expr (k-1) ~* ~expr (k-1) ~+
+    // Sub
+    ~expr (k-1) ~* ~expr (k-1) ~+
+    // Mul
+    ~expr (k-1) ~* ~expr (k-1) ~+
+    // Div
+    ~expr (k-1) ~* ~expr (k-1)
 
-#[section]
-fn s_expr : (k : int) -> expr -> `expr k = \k e ->
+fn ~expr#s : (k : int) -> expr -> ~expr k = \k e =>
   if k == 0
   then
-    tape
-      (case e of
-       | Const x -> `inl (tape (s_int x))
-       | Var idx -> `inr (tape (s_int idx))
-       -- Bogus
-       | Add _ _ -> `inl (s_int 0)
-       | Sub _ _ -> `inl (s_int 0)
-       | Mul _ _ -> `inl (s_int 0)
-       | Div _ _ -> `inl (s_int 0)
-       end)
-  else
-    tape
-      (case e of
-       | Const x -> `inl (tape (s_int x))
-       | Var idx -> `inr (`inl (tape (s_int idx)))
-       | Add e1 e2 ->
-         `inr (`inr (`inl `(s_expr (k-1) e1, s_expr (k-1) e2)))
-       | Sub e1 e2 ->
-         `inr (`inr (`inr (`inl `(s_expr (k-1) e1, s_expr (k-1) e2))))
-       | Mul e1 e2 ->
-         `inr (`inr (`inr (`inr (`inl `(s_expr (k-1) e1, s_expr (k-1) e2)))))
-       | Div e1 e2 ->
-         `inr (`inr (`inr (`inr (`inr `(s_expr (k-1) e1, s_expr (k-1) e2)))))
-       end)
-
-#[retraction]
-fn r_expr : (k : int) -> `expr k -> expr = \k ->
-  if k == 0
-  then \e ->
-    `case e of
-    | `inl x -> Const (r_int x)
-    | `inr idx -> Var (r_int idx)
+    match e with
+    | Const x => ~inl (~int#s x)
+    | Var idx => ~inr (~int#s idx)
+    // Bogus
+    | Add _ _ => ~~
+    | Sub _ _ => ~~
+    | Mul _ _ => ~~
+    | Div _ _ => ~~
     end
-  else \e ->
-    `case e of
-    | `inl x -> Const (r_int x)
-    | `inr e ->
-      `case e of
-      | `inl idx -> Var (r_int idx)
-      | `inr e ->
-        `case e of
-        | `inl `(e1, e2) -> Add (r_expr (k-1) e1) (r_expr (k-1) e2)
-        | `inr e ->
-          `case e of
-          | `inl `(e1, e2) -> Sub (r_expr (k-1) e1) (r_expr (k-1) e2)
-          | `inr e ->
-            `case e of
-            | `inl `(e1, e2) -> Mul (r_expr (k-1) e1) (r_expr (k-1) e2)
-            | `inr `(e1, e2) -> Div (r_expr (k-1) e1) (r_expr (k-1) e2)
+  else
+    match e with
+    | Const x => ~inl (~int#s x)
+    | Var idx => ~inr (~inl (~int#s idx))
+    | Add e1 e2 =>
+      ~inr (~inr (~inl ~(~expr#s (k-1) e1, ~expr#s (k-1) e2)))
+    | Sub e1 e2 =>
+      ~inr (~inr (~inr (~inl ~(~expr#s (k-1) e1, ~expr#s (k-1) e2))))
+    | Mul e1 e2 =>
+      ~inr (~inr (~inr (~inr (~inl ~(~expr#s (k-1) e1, ~expr#s (k-1) e2)))))
+    | Div e1 e2 =>
+      ~inr (~inr (~inr (~inr (~inr ~(~expr#s (k-1) e1, ~expr#s (k-1) e2)))))
+    end
+
+fn' ~expr#r : (k : int) -> ~expr k -> expr = \k =>
+  if k == 0
+  then \e =>
+    ~match e with
+    | ~inl x => Const (~int#r x)
+    | ~inr idx => Var (~int#r idx)
+    end
+  else \e =>
+    ~match e with
+    | ~inl x => Const (~int#r x)
+    | ~inr e =>
+      ~match e with
+      | ~inl idx => Var (~int#r idx)
+      | ~inr e =>
+        ~match e with
+        | ~inl ~(e1, e2) => Add (~expr#r (k-1) e1) (~expr#r (k-1) e2)
+        | ~inr e =>
+          ~match e with
+          | ~inl ~(e1, e2) => Sub (~expr#r (k-1) e1) (~expr#r (k-1) e2)
+          | ~inr e =>
+            ~match e with
+            | ~inl ~(e1, e2) => Mul (~expr#r (k-1) e1) (~expr#r (k-1) e2)
+            | ~inr ~(e1, e2) => Div (~expr#r (k-1) e1) (~expr#r (k-1) e2)
             end
           end
         end
       end
     end
 
--- k is the exact length of the variable list.
-obliv `vars (k : int) =
+fn ~expr#match :
+  #~expr ->
+  (~int -> 'a) ->
+  (~int -> 'a) ->
+  (#~expr * #~expr -> 'a) ->
+  (#~expr * #~expr -> 'a) ->
+  (#~expr * #~expr -> 'a) ->
+  (#~expr * #~expr -> 'a) ->
+  'a = \e fc fv fa fs fm fd =>
+  match e with
+  #(k, e) =>
+    (if k == 0
+     then \e =>
+       ~match e with
+       | ~inl x => fc x
+       | ~inr idx => fv idx
+       end
+     else \e =>
+       ~match e with
+       | ~inl x => fc x
+       | ~inr e =>
+         ~match e with
+         | ~inl idx => fv idx
+         | ~inr e =>
+           ~match e with
+           | ~inl ~(e1, e2) => fa (#(k-1, e1), #(k-1, e2))
+           | ~inr e =>
+             ~match e with
+             | ~inl ~(e1, e2) => fs (#(k-1, e1), #(k-1, e2))
+             | ~inr e =>
+               ~match e with
+               | ~inl ~(e1, e2) => fm (#(k-1, e1), #(k-1, e2))
+               | ~inr ~(e1, e2) => fd (#(k-1, e1), #(k-1, e2))
+               end
+             end
+           end
+         end
+       end : ~expr k -> 'a) e
+  end
+
+// k is the exact length of the variable list.
+obliv ~vars (k : int) =
   if k == 0
   then unit
-  else `int `* `vars (k-1)
+  else ~int ~* ~vars (k-1)
 
-#[section]
-fn s_vars : (k : int) -> vars -> `vars k = \k xs ->
+fn ~vars#s : (k : int) -> vars -> ~vars k = \k xs =>
   if k == 0
   then ()
   else
-    tape
-      (case xs of
-       | Nil ->
-         -- Bogus
-         `(s_int 0, s_vars (k-1) Nil)
-       | Cons x xs' -> `(tape (s_int x), s_vars (k-1) xs')
-       end)
-
-#[retraction]
-fn r_vars : (k : int) -> `vars k -> vars = \k ->
-  if k == 0
-  then \_ -> Nil
-  else \xs ->
-    `case xs of
-    `(x, xs') -> Cons (r_int x) (r_vars (k-1) xs')
+    match xs with
+    | Nil => ~~
+    | Cons x xs' => ~(~int#s x, ~vars#s (k-1) xs')
     end
 
-----------------------------------------------------------------
--- Lifted functions
+fn' ~vars#r : (k : int) -> ~vars k -> vars = \k =>
+  if k == 0
+  then \_ => Nil
+  else \xs =>
+    ~match xs with
+    ~(x, xs') => Cons (~int#r x) (~vars#r (k-1) xs')
+    end
 
-#[safe]
-fn `eval : (vk : int) -> (ek : int) -> `vars vk -> `expr ek -> `int =
-  \vk ek xs e ->
-    tape (s_int (eval (r_vars vk xs) (r_expr ek e)))
+fn ~vars#match : #~vars -> (unit -> 'a) -> (~int * #~vars -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (if k == 0
+       then \_ => f1 ()
+       else \xs =>
+         ~match xs with
+         | ~(x, xs') => f2 (x, #(k-1, xs'))
+         end : ~vars k -> 'a) xs
+    end
 
-#[safe]
-fn `vars2 : `int -> `int -> `vars 2 = \x y ->
-  s_vars 2 (Cons (r_int x) (Cons (r_int y) Nil))
+//--------------------------------------------------------------
+// Lifted functions
+
+fn ~eval : #~vars -> #~expr -> ~int = %lift eval
+
+fn ~vars2 : ~int -> ~int -> #~vars = \x y =>
+  #(2, (~(x, ~(y, ())) :: ~vars 2))
