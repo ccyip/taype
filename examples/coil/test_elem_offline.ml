@@ -3,8 +3,8 @@ open Common
 open Taype_driver_coil
 open Driver
 open Setup (Driver)
-open Scratch.M (Driver)
-open Scratch_helper.M (Driver)
+open Coil.M (Driver)
+open Coil_helper.M (Driver)
 
 let () =
   setup_driver_simple ();

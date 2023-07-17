@@ -1,0 +1,146 @@
+data list = Nil | Cons int list
+
+// ----------------------------------------------------------------
+// Oblivious list and its instances
+
+obliv ~list (k : int) =
+  if k == 0
+  then unit
+  else unit ~+ ~int ~* ~list (k-1)
+
+fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
+  if k == 0
+  then ()
+  else match xs with
+       | Nil => ~inl ()
+       | Cons x xs' => ~inr ~(~int#s x, ~list#s (k-1) xs')
+       end
+
+fn' ~list#r : (k : int) -> ~list k -> list = \k =>
+  if k == 0
+  then \_ => Nil
+  else \xs => ~match xs with
+              | ~inl _ => Nil
+              | ~inr ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
+              end
+
+fn ~list#Nil : unit -> #~list = \_ =>
+  #(0, (() :: ~list 0))
+
+fn ~list#Cons : ~int * #~list -> #~list = \p =>
+  match p with
+  (x, pxs) =>
+    match pxs with
+    #(k, xs) =>
+      #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
+    end
+  end
+
+fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (if k == 0
+       then \_ => f1 ()
+       else \xs =>
+         ~match xs with
+         | ~inl _ => f1 ()
+         | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
+         end : ~list k -> 'a) xs
+    end
+
+fn length : list -> int = \xs =>
+  match xs with
+  | Nil => 0
+  | Cons _ xs' => 1 + length xs'
+  end
+
+fn ~list#view : list -> int = length
+
+fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
+
+fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
+  if k' == 0
+  then \_ => ()
+  else
+    if k == 0
+    then \_ => ~inl ()
+    else \xs =>
+      ~match xs with
+      | ~inl _ => ~inl ()
+      | ~inr ~(x, xs') => ~inr ~(x, ~list#reshape (k-1) (k'-1) xs')
+      end
+
+obliv ~list_eq (k : int) =
+  if k == 0
+  then unit
+  else ~int ~* ~list_eq (k-1)
+
+fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
+  if k == 0
+  then ()
+  else match xs with
+       | Nil => ~~
+       | Cons x xs' => ~(~int#s x, ~list_eq#s (k-1) xs')
+       end
+
+fn' ~list_eq#r : (k : int) -> ~list_eq k -> list = \k =>
+  if k == 0
+  then \_ => Nil
+  else \xs => ~match xs with
+              ~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
+              end
+
+fn ~list_eq#Nil : unit -> #~list_eq = \_ =>
+  #(0, (() :: ~list_eq 0))
+
+fn ~list_eq#Cons : ~int * #~list_eq -> #~list_eq = \p =>
+  match p with
+  (x, pxs) =>
+    match pxs with
+    #(k, xs) =>
+      #(k+1, (~(x, xs) :: ~list_eq (k+1)))
+    end
+  end
+
+fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (if k == 0
+       then \_ => f1 ()
+       else \xs =>
+         ~match xs with
+         | ~(x, xs') => f2 (x, #(k-1, xs'))
+         end : ~list_eq k -> 'a) xs
+    end
+
+fn ~list_eq#view : list -> int = length
+
+fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
+  %match #~list_eq #~list pxs
+    (\_ => ~list#Nil ())
+    (\xs =>
+      match xs with
+      (x, xs') => ~list#Cons (x, ~list_eq#~list#coerce xs')
+      end)
+
+// ----------------------------------------------------------------
+// Functionality
+
+fn elem : int -> list -> bool = \y xs =>
+  match xs with
+  | Nil => False
+  | Cons x xs' => if x == y then True else elem y xs'
+  end
+
+fn map : (int -> int) -> list -> list = \f xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' => Cons (f x) (map f xs')
+  end
+
+// ----------------------------------------------------------------
+// Lifted oblivious functions
+
+fn ~elem : ~int -> #~list_eq -> ~bool = %lift elem

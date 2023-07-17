@@ -1,0 +1,3 @@
+(executables
+ (names "test_elem_offline")
+ (libraries common taype-driver-coil))
