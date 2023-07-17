@@ -26,7 +26,7 @@ import Data.Text qualified as T
 import Taype.Common
 import Taype.Cute hiding (space)
 import Taype.Error
-import Text.Megaparsec hiding (Token, token, tokens)
+import Text.Megaparsec hiding (Token, token, tokens, showErrorItem)
 import Text.Megaparsec.Char qualified as C
 import Text.Megaparsec.Char.Lexer qualified as L
 
