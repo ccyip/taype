@@ -185,21 +185,19 @@ toOCamlTy TV = return "'a"
 -- module M (Driver : Taype_driver.S) = struct
 --   open Driver
 --   ... mainOil ...
---   module Conceal = struct
---     open Plaintext
+--   module Plaintext = struct
+--     include Driver.Plaintext
 --     ... concealOil ...
+--     ... revealOil ...
+--   end
+--   module Conceal = struct
 --     include Driver.Conceal
---     let s_ = s
---     let s k x = (k, obliv_array_conceal_with (s_ k) x)
+--     let s k x = (k, obliv_array_conceal_with (Plaintext.s k) x)
 --     let s_for k party = (k, obliv_array_new_for party (oadt k))
 --   end
 --   module Reveal = struct
---     open Plaintext
---     open Plaintext.Reveal
---     ... revealOil ...
 --     include Driver.Reveal
---     let r_ = r
---     let r (k, a) = obliv_array_reveal_with (r_ k) a
+--     let r (k, a) = obliv_array_reveal_with (Plaintext.r k) a
 --   end
 -- end
 -- @
@@ -215,21 +213,22 @@ toOCaml options Program {..} =
       modDoc "M (Driver : Taype_driver.S)" $
         "open Driver"
           <//> go mainDefs
+          <//> plaintextDoc
           <//> concealDoc
           <//> revealDoc
-    -- Reexport functions in the Conceal and Reveal module.
+    -- Reexport functions in the Plaintext, Conceal and Reveal module.
+    plaintextDoc =
+      modDoc "Plaintext" $
+        "include Driver.Plaintext"
+          <//> go concealDefs
+          <//> go revealDefs
     concealDoc =
       modDoc "Conceal" $
-        "open Plaintext"
-          <//> go concealDefs
-          <//> "include Driver.Conceal"
+        "include Driver.Conceal"
           <//> sepWith hardline2 (sectionDoc <$> oadts)
     revealDoc =
       modDoc "Reveal" $
-        "open Plaintext"
-          </> "open Plaintext.Reveal"
-          <//> go revealDefs
-          <//> "include Driver.Reveal"
+        "include Driver.Reveal"
           <//> sepWith hardline2 (retractionDoc <$> oadts)
     modDoc name body =
       align $
@@ -243,15 +242,11 @@ toOCaml options Program {..} =
       let s = pretty $ toValidName section
           oadt = pretty $ toValidName oadtName
        in "let"
-            <+> s <> "_"
-            <+> "="
-            <+> s
-            </> "let"
             <+> s
             <+> "k x ="
             <+> parens
               ( "k, obliv_array_conceal_with"
-                  <+> parens (s <> "_" <+> "k")
+                  <+> parens ("Plaintext." <> s <+> "k")
                   <+> "x"
               )
             </> "let"
@@ -266,14 +261,10 @@ toOCaml options Program {..} =
     retractionDoc OADTInfo {..} =
       let r = pretty $ toValidName retraction
        in "let"
-            <+> r <> "_"
-            <+> "="
-            <+> r
-            </> "let"
             <+> r
             <+> parens "k, a"
             <+> "= obliv_array_reveal_with"
-            <+> parens (r <> "_" <+> "k")
+            <+> parens ("Plaintext." <> r <+> "k")
             <+> "a"
 
 data OCamlDefKind = NonRecDef | RecDef | AndDef
