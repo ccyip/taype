@@ -1,27 +1,18 @@
 open Taype_driver
-open Common
 open Taype_driver_coil
 open Driver
-open Setup (Driver)
 open Coil.M (Driver)
-open Coil_helper.M (Driver)
 
 let () =
-  setup_driver_simple ();
+  setup_driver "127.0.0.1" 12345 Party.Public;
 
-  let n = 8 in
-  let xs = Conceal.obliv_list_s_for n (Party.Private 1) in
-  let y = Conceal.obliv_int_s 3 in
+  let n = 2 in
+
+  let xs = Conceal.obliv_list_eq_s_for n Party.Trusted in
+  let y = Conceal.obliv_int_s_for Party.Trusted in
 
   let res = obliv_elem y xs in
 
-  (* let n = 8 in *)
-  (* let xs = Conceal.obliv_list_s_for n (Party.Private 1) in *)
-  (* let y = Conceal.obliv_int_s 3 in *)
-
-  (* let (_, res) = obliv_insert' y xs in *)
-
-  print_coil res;
-  print_newline ();
+  compile_coil "elem" res;
 
   finalize_driver ()

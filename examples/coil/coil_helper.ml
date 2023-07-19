@@ -1,5 +1,4 @@
 open Sexplib
-open Common
 
 module M (Driver : Taype_driver.S) = struct
   open Coil.M (Driver)
@@ -17,8 +16,8 @@ module M (Driver : Taype_driver.S) = struct
 
   let mylist_of_sexp s = Conv.list_of_sexp Conv.int_of_sexp s |> mylist_of_list
   let mylist_check xs k = Stdlib.List.length (mylist_to_list xs) <= k
-  let mylist_of_sexp_check = of_sexp_check mylist_of_sexp mylist_check
+  (* let mylist_of_sexp_check = of_sexp_check mylist_of_sexp mylist_check *)
 
   let mylist_eq_check xs k = Stdlib.List.length (mylist_to_list xs) = k
-  let mylist_eq_of_sexp_check = of_sexp_check mylist_of_sexp mylist_eq_check
+  (* let mylist_eq_of_sexp_check = of_sexp_check mylist_of_sexp mylist_eq_check *)
 end

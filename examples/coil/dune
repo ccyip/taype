@@ -1,3 +1,3 @@
 (executables
- (names "test_elem_offline")
- (libraries common taype-driver-coil))
+ (names "test_elem_offline" "test_elem_online")
+ (libraries sexplib taype-driver-coil))
