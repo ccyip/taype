@@ -93,6 +93,11 @@ examples/**/*.ml
 !examples/common/*.ml
 !examples/**/*helper.ml
 !examples/**/test_*.ml
+examples/coil/*.input
+examples/coil/*.output
+examples/coil/*.pita
+examples/coil/coil-build
+examples/coil/helib.log
 *.tpc
 *.oil
 *.sexp
