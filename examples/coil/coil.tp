@@ -140,7 +140,20 @@ fn map : (int -> int) -> list -> list = \f xs =>
   | Cons x xs' => Cons (f x) (map f xs')
   end
 
+fn filter : (int -> bool) -> list -> list = \f xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' =>
+    let v = filter f xs' in
+    if f x then Cons x v else v
+  end
+
 // ----------------------------------------------------------------
 // Lifted oblivious functions
 
 fn ~elem : ~int -> #~list_eq -> ~bool = %lift elem
+
+fn ~filter : (~int -> ~bool) -> #~list -> #~list = %lift filter
+
+fn ~test_filter : #~list -> ~int -> #~list = \xs y =>
+  ~filter (\x => x ~<= y) xs

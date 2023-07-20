@@ -6,6 +6,7 @@ open Coil.M (Driver)
 let () =
   setup_driver "127.0.0.1" 12345 Party.Public;
 
+  (* TODO: bug with bigger n *)
   let n = 2 in
 
   let xs = Conceal.obliv_list_eq_s_for n Party.Trusted in
