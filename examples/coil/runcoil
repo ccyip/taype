@@ -16,7 +16,7 @@ OUT_FILE="${NAME}.output"
 BUILD_DIR=coil-build
 PROG="$BUILD_DIR"/"$TGT_FILE"
 
-[ "$FAKE_COIL" = 1 -o -f "$COIL_DIR" ] || exit 1
+[ "$FAKE_COIL" = 1 -o -d "$COIL_DIR" ] || exit 1
 
 case "$CMD" in
     "compile")
