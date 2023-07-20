@@ -38,7 +38,7 @@ stack.yaml.lock
 *.cmxa
 
 # ocamlbuild working directory
-_build/
+_build*
 
 # ocamlbuild targets
 *.byte
