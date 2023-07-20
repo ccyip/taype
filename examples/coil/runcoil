@@ -21,7 +21,8 @@ PROG="$BUILD_DIR"/"$TGT_FILE"
 case "$CMD" in
     "compile")
         if [ "$FAKE_COIL" = 1 ]; then
-            echo compiled
+            echo compiling "$SRC_FILE"
+            echo generated "$PROG"
         else
             [ -f "$SRC_FILE" ] || exit 1
 
@@ -35,7 +36,8 @@ case "$CMD" in
         ;;
     "run")
         if [ "$FAKE_COIL" = 1 ]; then
-            echo exited
+            echo running "$PROG"
+            echo generated "$OUT_FILE"
             echo 1 > "$OUT_FILE"
         else
             [ -f "$IN_FILE" ] || exit 1
