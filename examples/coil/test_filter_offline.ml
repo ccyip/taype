@@ -1,6 +1,8 @@
+open Sexplib
 open Taype_driver
 open Taype_driver_coil
 open Driver
+open Coil_helper
 open Coil.M (Driver)
 
 let () =
@@ -13,8 +15,6 @@ let () =
 
   let res = obliv_test_filter xs y in
 
-  (* TODO: figure out a better way communicating public view of the result. *)
-  Printf.printf "%d\n" (fst res);
-  compile_coil "filter_list" (snd res);
+  compile_coil "filter_list" res (output_sexp_conv Conv.sexp_of_int);
 
   finalize_driver ()
