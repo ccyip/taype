@@ -95,6 +95,7 @@ examples/**/*.ml
 !examples/**/test_*.ml
 examples/coil/*.input
 examples/coil/*.output
+examples/coil/*.view
 examples/coil/*.pita
 examples/coil/coil-build
 examples/coil/helib.log
