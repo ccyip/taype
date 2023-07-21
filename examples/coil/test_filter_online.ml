@@ -16,7 +16,7 @@ let () =
       (input_sexp_conv Conv.int_of_sexp)
     |> Plaintext.obliv_list_r
   in
-  mylist_to_sexp res |> Sexp.to_string_hum |> print_endline;
+  mylist_to_sexp res |> print_sexp;
 
   let xs = mylist_of_list [ 1; 2 ] in
   let y = 1 in
@@ -27,4 +27,4 @@ let () =
       (input_sexp_conv Conv.int_of_sexp)
     |> Plaintext.obliv_list_r
   in
-  mylist_to_sexp res |> Sexp.to_string_hum |> print_endline
+  mylist_to_sexp res |> print_sexp

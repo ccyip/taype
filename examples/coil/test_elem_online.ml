@@ -14,7 +14,7 @@ let () =
       [ Plaintext.obliv_list_eq_s n xs; Plaintext.obliv_int_s y ]
     |> Plaintext.obliv_bool_r
   in
-  Conv.sexp_of_bool res |> Sexp.to_string_hum |> print_endline;
+  Conv.sexp_of_bool res |> print_sexp;
 
   let xs = mylist_of_list [ 1; 2; 3; 4 ] in
   let y = 5 in
@@ -24,4 +24,4 @@ let () =
       [ Plaintext.obliv_list_eq_s n xs; Plaintext.obliv_int_s y ]
     |> Plaintext.obliv_bool_r
   in
-  Conv.sexp_of_bool res |> Sexp.to_string_hum |> print_endline
+  Conv.sexp_of_bool res |> print_sexp

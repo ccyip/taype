@@ -4,6 +4,8 @@ let output_sexp_conv conv i oc = Sexp.output oc (conv i)
 
 let input_sexp_conv conv ic = conv (Sexp.input_sexp ic)
 
+let print_sexp s = print_endline (Sexp.to_string_hum s)
+
 module M (Driver : Taype_driver.S) = struct
   open Coil.M (Driver)
 
