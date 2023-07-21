@@ -1,5 +1,6 @@
 (executables
  (names
    "test_elem_offline" "test_elem_online"
-   "test_filter_offline" "test_filter_online")
+   "test_filter_offline" "test_filter_online"
+   "test_linear_oram_offline" "test_linear_oram_online")
  (libraries sexplib taype-driver-coil))
