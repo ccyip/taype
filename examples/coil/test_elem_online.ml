@@ -1,6 +1,7 @@
 open Sexplib
 open Taype_driver_coil
 open Coil.M (Driver)
+open Coil_helper
 open Coil_helper.M (Driver)
 
 let () =
