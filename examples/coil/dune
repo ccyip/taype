@@ -2,5 +2,10 @@
  (names
    "test_elem_offline" "test_elem_online"
    "test_filter_offline" "test_filter_online"
-   "test_linear_oram_offline" "test_linear_oram_online")
+   "test_dtree_offline" "test_dtree_online"
+   "test_assoc_lookup_offline" "test_assoc_lookup_online"
+   "test_linear_oram_offline" "test_linear_oram_online"
+   "test_log_oram_offline" "test_log_oram_online"
+   "test_map_as_filter_offline" "test_map_as_filter_online"
+   "test_merge_offline" "test_merge_online")
  (libraries sexplib taype-driver-coil))
