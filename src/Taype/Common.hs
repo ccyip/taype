@@ -209,7 +209,6 @@ fromClosedDefs = secondF fromClosed
 
 -- | Check if a name is a constructor.
 isCtor :: Text -> Bool
-isCtor "(,)" = True
 isCtor x = maybe False (\(c, _) -> isUpper c) $ T.uncons x
 
 ----------------------------------------------------------------

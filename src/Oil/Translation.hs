@@ -60,7 +60,7 @@ toOilExpr T.V {..} = return V {..}
 toOilExpr T.GV {..} = return GV {..}
 -- Unit value is an empty oblivious array.
 toOilExpr T.VUnit = return $ GV aNew @@ [ILit 0]
-toOilExpr T.BLit {..} = return $ if bLit then GV "True" else GV "False"
+toOilExpr T.BLit {..} = return $ if bLit then GV "true" else GV "false"
 toOilExpr T.ILit {..} = return ILit {..}
 toOilExpr T.Lam {..} = do
   (x, body) <- unbind1 bnd
@@ -130,7 +130,10 @@ toOilExpr T.PMatch {..} = do
         matchB
           cond'
           [("(,)", [(xl, lBinder), (xr, rBinder)], body')]
-toOilExpr T.OInj {..} = do
+toOilExpr T.Inj {olabel = PublicL, ..} = do
+  expr' <- toOilExpr expr
+  return $ GV (if tag then "inl" else "inr") @@ [expr']
+toOilExpr T.Inj {olabel = OblivL, ..} = do
   expr' <- toOilExpr expr
   let (leftTy, rightTy) = fromJust injTy
   lSize <- toOilSize leftTy
@@ -138,6 +141,18 @@ toOilExpr T.OInj {..} = do
   return $
     GV (oblivName $ if tag then "inl" else "inr")
       @@ [lSize, rSize, expr']
+toOilExpr T.SMatch {olabel = PublicL, ..} = do
+  cond' <- toOilExpr cond
+  (xl, lBody) <- unbind1 lBnd
+  (xr, rBody) <- unbind1 rBnd
+  lBody' <- toOilExpr lBody
+  rBody' <- toOilExpr rBody
+  return $
+    matchB
+      cond'
+      [ ("inl", [(xl, lBinder)], lBody'),
+        ("inr", [(xr, rBinder)], rBody')
+      ]
 toOilExpr T.OProj {..} = do
   expr' <- toOilExpr expr
   let (leftTy, rightTy) = fromJust projTy
@@ -176,7 +191,7 @@ toOilSize T.Prod {olabel = OblivL, ..} = do
   lSize <- toOilSize left
   rSize <- toOilSize right
   return $ GV "+" @@ [lSize, rSize]
-toOilSize T.OSum {..} = do
+toOilSize T.Sum {olabel = OblivL, ..} = do
   lSize <- toOilSize left
   rSize <- toOilSize right
   return $ GV "+" @@ [ILit 1, GV (internalName "max") @@ [lSize, rSize]]
@@ -226,6 +241,7 @@ toOilTy T.Prod {..} = prod_ (toOilTy left) (toOilTy right)
 -- NOTE: Psi type is translated to a pair for now. This may change in the
 -- future.
 toOilTy T.Psi {..} = prod_ (toOilTy (fromJust viewTy)) OArray
+toOilTy T.Sum {olabel = PublicL, ..} = sum_ (toOilTy left) (toOilTy right)
 toOilTy T.Pi {..} =
   let dom = toOilTy ty
       -- We instantiate the pi type argument with some arbitrary term, as the

@@ -79,6 +79,7 @@ import Taype.NonEmpty qualified as NE
 import Taype.Plate
 import Taype.Prelude
 import Taype.Syntax
+import Prelude hiding (Sum (..))
 
 ----------------------------------------------------------------
 -- Bidirectional type and kind checkers
@@ -495,13 +496,15 @@ typing OIte {..} mt = do
   (t', left') <- typing left mt
   right' <- check right t'
   mkOIteExpr cond' left' right' t'
-typing OInj {..} (Just t) = do
-  (leftTy', rightTy') <- isOSum t
+typing Inj {..} (Just t) = do
+  (leftTy', rightTy') <- case olabel of
+    PublicL -> isSum t
+    OblivL -> isOSum t
   let injTy' = if tag then leftTy' else rightTy'
   e' <- check expr injTy'
   x <- fresh
   secondF (let' x injTy' e') $
-    mkLet' t OInj {injTy = Just (leftTy', rightTy'), expr = V x, ..}
+    mkLet' t Inj {injTy = Just (leftTy', rightTy'), expr = V x, ..}
 typing OProj {..} Nothing = do
   (t, e') <- infer expr
   (leftTy', rightTy') <- withLoc_ expr $ isOSum t
@@ -512,7 +515,32 @@ typing OProj {..} Nothing = do
   x <- fresh
   secondF (let' x t e') $
     mkLet' t' OProj {projTy = Just (leftTy', rightTy'), expr = V x, ..}
-typing OMatch {..} mt = do
+-- NOTE: as sum type is added mainly for optimization, we do not allow dependent
+-- types here for simplicity.
+typing SMatch {olabel = PublicL, ..} mt = do
+  (t, cond') <- infer cond
+  (leftTy', rightTy') <- withLoc_ cond $ isSum t
+  (xl, lBody) <- unbind1 lBnd
+  (xr, rBody) <- unbind1 rBnd
+  (t', lBody') <-
+    extendCtx1 xl leftTy' lBinder $
+      typing lBody mt
+  rBody' <-
+    extendCtx1 xr rightTy' rBinder $
+      check rBody t'
+  let condTy' = Sum {olabel = PublicL, left = leftTy', right = rightTy'}
+  x <- fresh
+  secondF (let' x condTy' cond') $
+    mkLet'
+      t'
+      SMatch
+        { olabel = PublicL,
+          cond = V x,
+          lBnd = abstract_ xl lBody',
+          rBnd = abstract_ xr rBody',
+          ..
+        }
+typing SMatch {olabel = OblivL, ..} mt = do
   (t, cond') <- infer cond
   (leftTy', rightTy') <- withLoc_ cond $ isOSum t
   (xl, lBody) <- unbind1 lBnd
@@ -525,7 +553,7 @@ typing OMatch {..} mt = do
       check rBody t'
   x <- fresh
   let projTy = Just (leftTy', rightTy')
-      condTy' = OSum {left = leftTy', right = rightTy'}
+      condTy' = Sum {olabel = OblivL, left = leftTy', right = rightTy'}
       expr = V x
   secondF
     ( lets'
@@ -806,10 +834,14 @@ kinding Prod {olabel = olabel@OblivL, ..} Nothing = do
   left' <- checkKind left OblivK
   right' <- checkKind right OblivK
   return (OblivK, Prod {left = left', right = right', ..})
-kinding OSum {..} Nothing = do
+kinding Sum {olabel = olabel@PublicL, ..} Nothing = do
+  (leftK, left') <- inferKind left
+  (rightK, right') <- inferKind right
+  return (leftK \/ rightK \/ PublicK, Sum {left = left', right = right', ..})
+kinding Sum {olabel = olabel@OblivL, ..} Nothing = do
   left' <- checkKind left OblivK
   right' <- checkKind right OblivK
-  return (OblivK, OSum {left = left', right = right'})
+  return (OblivK, Sum {left = left', right = right', ..})
 kinding Pi {..} Nothing = do
   ty' <- kinded ty
   (x, body) <- unbind1 bnd
@@ -1435,11 +1467,14 @@ equate_ e e' = do
             equate_ cond cond'
             (_, body, body') <- unbind2With bnd2 bnd2'
             equate_ body body'
-    go OSum {left, right} OSum {left = left', right = right'} = do
-      equate_ left left'
-      equate_ right right'
-    go OInj {tag, expr} OInj {tag = tag', expr = expr'}
-      | tag == tag' = equate_ expr expr'
+    go
+      Sum {olabel, left, right}
+      Sum {olabel = olabel', left = left', right = right'}
+        | olabel == olabel' = do
+            equate_ left left'
+            equate_ right right'
+    go Inj {olabel, tag, expr} Inj {olabel = olabel', tag = tag', expr = expr'}
+      | olabel == olabel' && tag == tag' = equate_ expr expr'
     go OProj {projKind, expr} OProj {projKind = projKind', expr = expr'}
       | projKind == projKind' = equate_ expr expr'
     go nf nf' | nf == nf' = pass
@@ -1679,6 +1714,16 @@ isProdLike PublicP = isProd
 isProdLike OblivP = isOProd
 isProdLike _ = oops "Psi type"
 
+-- | Check if a type is a sum type and return its components.
+isSum :: Ty Name -> TcM (Ty Name, Ty Name)
+isSum Sum {olabel = PublicL, ..} = return (left, right)
+isSum Loc {..} = isSum expr
+isSum t =
+  err
+    [ [DD "Expecting a sum"],
+      [DH "But instead got", DC t]
+    ]
+
 -- | Check if a type is an oblivious sum type and return its components.
 --
 -- The returned types are in core Taype ANF if the given type is in core Taype.
@@ -1697,7 +1742,7 @@ isOSum_ :: Ty Name -> TcM (Ty Name, Ty Name)
 isOSum_ t = do
   nf <- whnf_ t
   case nf of
-    OSum {..} -> return (left, right)
+    Sum {olabel = OblivL, ..} -> return (left, right)
     _ ->
       err
         [ [DD "Expecting an oblivious sum"],
@@ -1730,7 +1775,7 @@ isOblivKinded = \case
   TBool {olabel = OblivL} -> True
   TInt {olabel = OblivL} -> True
   Prod {olabel = OblivL} -> True
-  OSum {} -> True
+  Sum {olabel = OblivL} -> True
   Let {} -> True
   Ite {} -> True
   Match {} -> True
@@ -2025,7 +2070,7 @@ preCheckName (defName, def) = do
       checkBinder rBinder
       whenJust (findDupBinderName (catMaybes [lBinder, rBinder])) errConflict
       return e
-    go e@OMatch {..} = checkBinder lBinder >> checkBinder rBinder >> return e
+    go e@SMatch {..} = checkBinder lBinder >> checkBinder rBinder >> return e
     go e = return e
 
 -- | Pre-check a global definition signature.

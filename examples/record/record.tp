@@ -28,7 +28,7 @@ data db = Db_Empty | Db_More patient db
 
 fn is_obese_by_id : db -> int -> bool = \ps id =>
   match ps with
-  | Db_Empty => False
+  | Db_Empty => false
   | Db_More p ps' =>
     match p with
     | Patient id' _ _ _ =>

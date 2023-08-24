@@ -15,8 +15,8 @@ data list = Nil | Cons int list
 // oblivious functions.
 fn elem : int -> list -> bool = \y xs =>
   match xs with
-  | Nil => False
-  | Cons x xs' => if x == y then True else elem y xs'
+  | Nil => false
+  | Cons x xs' => if x == y then true else elem y xs'
   end
 
 // Here is an insertion function that inserts a new element to the right place
@@ -72,7 +72,7 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
   // function argument [~list k] can take the condition [k == 0] into account.
   // For example, the type of argument [xs] in the second branch is equivalent
   // to [unit ~+ ~int ~* ~list (k-1)], only under the assumption that [k == 0]
-  // is [False].
+  // is [false].
   if k == 0
   // In this case, the list can only be a [Nil].
   then \_ => Nil
@@ -104,7 +104,7 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
 fn ~list#Nil : unit -> #~list = \_ =>
   // A [Nil] may have public view [0]. Apparently, [~list 0] is equivalent to
   // the unit value [()], but the current type checker is not smart enough to
-  // know [0 == 0] is [True]. We provide a "cheating" operator, [::], which is
+  // know [0 == 0] is [true]. We provide a "cheating" operator, [::], which is
   // similar to the ascription operator [:], and it asks the type checker to
   // "trust me". In this case, we ask the type checker to trust that [unit] and
   // [~list 0] are equivalent. The compiler will generate a warning, and we

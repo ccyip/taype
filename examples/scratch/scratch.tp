@@ -10,8 +10,8 @@ fn length : list -> int = \xs =>
 
 fn elem : int -> list -> bool = \y xs =>
   match xs with
-  | Nil => False
-  | Cons x xs' => if x == y then True else elem y xs'
+  | Nil => false
+  | Cons x xs' => if x == y then true else elem y xs'
   end
 
 fn insert : int -> list -> list = \y xs =>
@@ -104,13 +104,13 @@ fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
 
 fn ~elem' : (k : int) -> ~int -> ~list k -> ~bool = \k ~y =>
   if k == 0
-  then \_ => ~bool#s False
+  then \_ => ~bool#s false
   else \~xs =>
     ~match ~xs with
-    | ~inl _ => ~bool#s False
+    | ~inl _ => ~bool#s false
     | ~inr ~(~x, ~xs') =>
       ~if ~x ~== ~y
-      then ~bool#s True
+      then ~bool#s true
       else ~elem' (k-1) ~y ~xs'
     end
 
@@ -164,12 +164,12 @@ fn ~test_map' : (k : int) -> ~list k -> ~int -> ~list k = \k xs y =>
 fn ~elem_lifted : ~int -> #~list -> ~bool = \y xs =>
   %match #~list ~bool
     xs
-    (\_ => %coerce bool ~bool False)
+    (\_ => %coerce bool ~bool false)
     (\p =>
       match p with
       (x, xs') =>
         %if ~bool ~bool (%== (~int -> ~int -> ~bool) x y)
-          (\_ => %coerce bool ~bool True)
+          (\_ => %coerce bool ~bool true)
           (\_ => ~elem_lifted y xs')
       end)
 
@@ -290,7 +290,7 @@ fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
 // fn ~list_filter_pad : (k : int) -> ~list_filter k = \k =>
 //   if k == 0
 //   then ()
-//   else ~(~bool#s False, ~~, ~list_filter_pad (k-1))
+//   else ~(~bool#s false, ~~, ~list_filter_pad (k-1))
 
 // fn ~list_filter#s : (k : int) -> list -> ~list_filter k = \k xs =>
 //   if k == 0
@@ -298,8 +298,8 @@ fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
 //   else match xs with
 //        | Nil =>
 //            // ~list_filter_pad k
-//            ~(~bool#s False, ~~, ~list_filter_pad (k-1))
-//        | Cons x xs' => ~(~bool#s True, ~int#s x, ~list_filter#s (k-1) xs')
+//            ~(~bool#s false, ~~, ~list_filter_pad (k-1))
+//        | Cons x xs' => ~(~bool#s true, ~int#s x, ~list_filter#s (k-1) xs')
 //        end
 
 // fn' ~list_filter#r : (k : int) -> ~list_filter k -> list = \k =>
@@ -320,7 +320,7 @@ fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
 //   (x, pxs) =>
 //     match pxs with
 //     #(k, xs) =>
-//       #(k+1, (~(~bool#s True, x, xs) :: ~list_filter (k+1)))
+//       #(k+1, (~(~bool#s true, x, xs) :: ~list_filter (k+1)))
 //     end
 //   end
 

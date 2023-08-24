@@ -27,6 +27,7 @@ import Taype.Lexer qualified as L
 import Taype.Prelude
 import Taype.Syntax
 import Text.Earley hiding (Parser, token)
+import Prelude hiding (Sum (..))
 
 type Parser r = Prod r Text LocatedToken
 
@@ -73,10 +74,10 @@ pLocatedBinder =
 pBinder :: Parser r Binder
 pBinder = snd <$> pLocatedBinder
 
-pLocatedOInj :: Parser r (Int, Bool)
-pLocatedOInj = pLocatedTerminal match
+pLocatedInj :: Parser r (Int, (OLabel, Bool))
+pLocatedInj = pLocatedTerminal match
   where
-    match (L.OInj b) = Just b
+    match (L.Inj l b) = Just (l, b)
     match _ = Nothing
 
 pLocatedOProj :: Parser r (Int, OProjKind)
@@ -111,9 +112,10 @@ setLoc loc Loc {loc = _, ..} = Loc {..}
 setLoc loc expr = Loc {..}
 
 infixToTypeFormer :: Text -> (Ty a -> Ty a -> Ty a)
+infixToTypeFormer "+" = Sum PublicL
 infixToTypeFormer "*" = Prod PublicL
 infixToTypeFormer x | x == oblivName "*" = Prod OblivL
-infixToTypeFormer x | x == oblivName "+" = OSum
+infixToTypeFormer x | x == oblivName "+" = Sum OblivL
 infixToTypeFormer _ = oops "unknown type infix"
 
 -- | The grammar for taype language
@@ -159,6 +161,23 @@ grammar = mdo
         body <- pBody
         pToken L.End
         return Loc {expr = former cond pat body, ..}
+      -- Sum elimination
+      pSMatch matchToken olabel = do
+        loc <- pLocatedToken matchToken
+        cond <- pExpr
+        pToken L.With
+        optional $ pToken L.Bar
+        pToken $ L.Inj olabel True
+        lPat <- pOPat
+        pToken L.DArrow
+        lBody <- pExpr
+        pToken L.Bar
+        pToken $ L.Inj olabel False
+        rPat <- pOPat
+        pToken L.DArrow
+        rBody <- pExpr
+        pToken L.End
+        return Loc {expr = smatchPat_ olabel cond lPat lBody rPat rBody, ..}
       -- Public match-like elimination
       pMatch pBody = do
         let pAlt = do
@@ -279,23 +298,10 @@ grammar = mdo
             pExpr,
           -- ADT elimination
           pMatch pExpr,
+          -- Public sum elimination
+          pSMatch L.Match PublicL,
           -- Oblivious (possibly leaky) sum elimination
-          do
-            loc <- pLocatedToken L.OMatch
-            cond <- pExpr
-            pToken L.With
-            optional $ pToken L.Bar
-            pToken $ L.OInj True
-            lPat <- pOPat
-            pToken L.DArrow
-            lBody <- pExpr
-            pToken L.Bar
-            pToken $ L.OInj False
-            rPat <- pOPat
-            pToken L.DArrow
-            rBody <- pExpr
-            pToken L.End
-            return Loc {expr = omatchPat_ cond lPat lBody rPat rBody, ..},
+          pSMatch L.OMatch OblivL,
           -- Next precedence
           pOrExpr
         ]
@@ -380,11 +386,11 @@ grammar = mdo
           pPair (Pair OblivP) L.LOParen,
           -- Dependent pair (Psi type)
           pPair (Pair PsiP) L.LPParen,
-          -- Oblivious injection
+          -- Injection
           do
-            ~(loc, tag) <- pLocatedOInj
+            ~(loc, (olabel, tag)) <- pLocatedInj
             expr <- pAtomExpr
-            return Loc {expr = oinj_ tag expr, ..},
+            return Loc {expr = inj_ olabel tag expr, ..},
           -- Oblivious projection
           do
             ~(loc, tag) <- pLocatedOProj
@@ -468,7 +474,7 @@ grammar = mdo
             ~(loc, binder, ty) <-
               choice
                 [ do
-                    ty <- pProdType
+                    ty <- pSumType
                     return (getLoc ty, Anon, ty),
                   do
                     loc <- pLocatedToken L.LParen
@@ -490,10 +496,14 @@ grammar = mdo
           -- ADT elimination
           pMatch pType,
           -- Next precedence
-          pProdType
+          pSumType
         ]
 
   let pInfixType = pInfix infixToTypeFormer
+
+  -- Right-associative sum type
+  pSumType <-
+    rule $ choice [pInfixType ["+"] pProdType pSumType, pProdType]
 
   -- Right-associative product type
   pProdType <-
@@ -661,7 +671,10 @@ renderToken = \case
   L.OMatch -> pretty $ oblivName "match"
   L.With -> "with"
   L.End -> "end"
-  L.OInj tag -> pretty $ oblivName $ if tag then "inl" else "inr"
+  L.Inj olabel tag ->
+    pretty $
+      accentOfOLabel olabel
+        <> if tag then "inl" else "inr"
   L.OProj tag -> pretty $ oblivName $ case tag of
     TagP -> "prt"
     LeftP -> "prl"

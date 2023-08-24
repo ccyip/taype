@@ -93,8 +93,8 @@ toOCamlExpr Let {..} = do
 toOCamlExpr
   Match
     { alts =
-        [ MatchAlt {ctor = "False", binders = [], bnd = rBnd},
-          MatchAlt {ctor = "True", binders = [], bnd = lBnd}
+        [ MatchAlt {ctor = "false", binders = [], bnd = rBnd},
+          MatchAlt {ctor = "true", binders = [], bnd = lBnd}
           ],
       ..
     } = do
@@ -129,11 +129,12 @@ toOCamlExpr Match {..} = do
         </> "end"
   where
     goAltDoc MatchAlt {..} = do
+      let ctorDoc = pretty $ fromMaybe ctor $ isBuiltinExprName ctor
       xs <- toValidName <<$>> mapM freshNameOrBinder binders
       bodyDoc <- toOCamlExpr $ instantiateName xs bnd
       return $
         hang $
-          pretty ctor
+          ctorDoc
             <> ( case xs of
                    [] -> ""
                    [x] -> space <> pretty x
@@ -362,10 +363,12 @@ withExprNamePrefix = withNamePrefix "internal_x"
 
 builtinExprTable :: [(Text, Text)]
 builtinExprTable =
-  [ ("True", "true"),
-    ("False", "false"),
+  [ ("true", "true"),
+    ("false", "false"),
     ("()", "()"),
     (internalName "max", "max"),
+    ("inl", "Either.Left"),
+    ("inr", "Either.Right"),
     ("<=", "<="),
     ("==", "="),
     ("+", "+"),
@@ -381,7 +384,8 @@ builtinTyTable :: [(Text, Text)]
 builtinTyTable =
   [ ("bool", "bool"),
     ("unit", "unit"),
-    ("*", "*")
+    ("*", "*"),
+    ("+", "Either.t")
   ]
 
 isBuiltinExprName :: Text -> Maybe Text

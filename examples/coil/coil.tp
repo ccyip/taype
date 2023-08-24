@@ -228,8 +228,8 @@ fn ~dtree_max#reshape :
 
 fn elem : int -> list -> bool = \y xs =>
   match xs with
-  | Nil => False
-  | Cons x xs' => if x == y then True else elem y xs'
+  | Nil => false
+  | Cons x xs' => if x == y then true else elem y xs'
   end
 
 fn map : (int -> int) -> list -> list = \f xs =>

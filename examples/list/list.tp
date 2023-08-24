@@ -8,7 +8,7 @@ fn length : list -> int = \xs =>
 
 fn elem : int -> list -> bool = \y xs =>
   match xs with
-  | Nil => False
+  | Nil => false
   | Cons x xs' => x == y || elem y xs'
   end
 

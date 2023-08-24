@@ -39,14 +39,14 @@ module Taype.Syntax
     ite_,
     oite_,
     mux_,
-    oinj_,
+    inj_,
     oproj_,
     prod_,
     tuple_,
     thunk_,
     match_,
-    omatch_,
-    omatchPat_,
+    smatch_,
+    smatchPat_,
     pmatch_,
     pmatchPat_,
     lam',
@@ -87,7 +87,7 @@ import Taype.Name
 import Taype.Plate
 import Taype.Prelude
 import Text.Show qualified
-import Prelude hiding (group)
+import Prelude hiding (Sum (..), group)
 
 ----------------------------------------------------------------
 -- Syntax
@@ -175,11 +175,14 @@ data Expr a
         rBinder :: Maybe Binder,
         bnd2 :: Scope Bool Expr a
       }
-  | -- | Oblivious sum type
-    OSum {left :: Ty a, right :: Ty a}
-  | -- | Oblivious injection
-    OInj
+  | -- | Public and oblivious sum type
+    --
+    -- Public sum type is mostly used for optimization.
+    Sum {olabel :: OLabel, left :: Ty a, right :: Ty a}
+  | -- | Public and oblivious injection
+    Inj
       { injTy :: Maybe (Ty a, Ty a),
+        olabel :: OLabel,
         tag :: Bool,
         expr :: Expr a
       }
@@ -189,12 +192,14 @@ data Expr a
         projKind :: OProjKind,
         expr :: Expr a
       }
-  | -- | Oblivious sum type pattern matching
+  | -- | Sum type pattern matching
     --
-    -- This does not appear in the core language, as it is just syntax sugar for
-    -- oblivious if and oblivious sum projections.
-    OMatch
-      { cond :: Expr a,
+    -- Oblivious sum type pattern matching does not appear in the core language,
+    -- as it is just syntax sugar for oblivious if and oblivious sum
+    -- projections.
+    SMatch
+      { olabel :: OLabel,
+        cond :: Expr a,
         lBinder :: Maybe Binder,
         lBnd :: Scope () Expr a,
         rBinder :: Maybe Binder,
@@ -404,9 +409,9 @@ instance Monad Expr where
         condTy = condTy <&> bimapBoth (>>= f),
         ..
       }
-  OSum {..} >>= f = OSum {left = left >>= f, right = right >>= f}
-  OInj {..} >>= f =
-    OInj
+  Sum {..} >>= f = Sum {left = left >>= f, right = right >>= f, ..}
+  Inj {..} >>= f =
+    Inj
       { injTy = injTy <&> bimapBoth (>>= f),
         expr = expr >>= f,
         ..
@@ -417,8 +422,8 @@ instance Monad Expr where
         projTy = projTy <&> bimapBoth (>>= f),
         ..
       }
-  OMatch {..} >>= f =
-    OMatch
+  SMatch {..} >>= f =
+    SMatch
       { cond = cond >>= f,
         lBnd = lBnd >>>= f,
         rBnd = rBnd >>>= f,
@@ -503,19 +508,28 @@ instance Eq1 Expr where
       pairKind == pairKind'
         && liftEq eq cond cond'
         && liftEq eq bnd2 bnd2'
-  liftEq eq OSum {left, right} OSum {left = left', right = right'} =
-    liftEq eq left left' && liftEq eq right right'
-  liftEq eq OInj {tag, expr} OInj {tag = tag', expr = expr'} =
-    -- Ignore type annotations
-    tag == tag' && liftEq eq expr expr'
+  liftEq
+    eq
+    Sum {olabel, left, right}
+    Sum {olabel = olabel', left = left', right = right'} =
+      olabel == olabel' && liftEq eq left left' && liftEq eq right right'
+  liftEq
+    eq
+    Inj {olabel, tag, expr}
+    Inj {olabel = olabel', tag = tag', expr = expr'} =
+      -- Ignore type annotations
+      olabel == olabel' && tag == tag' && liftEq eq expr expr'
   liftEq eq OProj {projKind, expr} OProj {projKind = projKind', expr = expr'} =
     projKind == projKind' && liftEq eq expr expr'
   liftEq
     eq
-    OMatch {cond, lBnd, rBnd}
-    OMatch {cond = cond', lBnd = lBnd', rBnd = rBnd'} =
+    SMatch {olabel, cond, lBnd, rBnd}
+    SMatch {olabel = olabel', cond = cond', lBnd = lBnd', rBnd = rBnd'} =
       -- Ignore type annotations
-      liftEq eq cond cond' && liftEq eq lBnd lBnd' && liftEq eq rBnd rBnd'
+      olabel == olabel'
+        && liftEq eq cond cond'
+        && liftEq eq lBnd lBnd'
+        && liftEq eq rBnd rBnd'
   liftEq eq Asc {expr} expr' = liftEq eq expr expr'
   liftEq eq expr' Asc {expr} = liftEq eq expr' expr
   liftEq eq Loc {expr} expr' = liftEq eq expr expr'
@@ -605,26 +619,26 @@ instance PlateM (Expr Name) where
           bnd2 = abstract_ (xl, xr) body',
           ..
         }
-  plateM f OSum {..} = do
+  plateM f Sum {..} = do
     left' <- f left
     right' <- f right
-    return OSum {left = left', right = right'}
-  plateM f OInj {..} = do
+    return Sum {left = left', right = right', ..}
+  plateM f Inj {..} = do
     injTy' <- mapM (traverseBoth f) injTy
     expr' <- f expr
-    return OInj {injTy = injTy', expr = expr', ..}
+    return Inj {injTy = injTy', expr = expr', ..}
   plateM f OProj {..} = do
     projTy' <- mapM (traverseBoth f) projTy
     expr' <- f expr
     return OProj {projTy = projTy', expr = expr', ..}
-  plateM f OMatch {..} = do
+  plateM f SMatch {..} = do
     cond' <- f cond
     (xl, lBody) <- unbind1 lBnd
     lBody' <- f lBody
     (xr, rBody) <- unbind1 rBnd
     rBody' <- f rBody
     return
-      OMatch
+      SMatch
         { cond = cond',
           lBnd = abstract_ xl lBody',
           rBnd = abstract_ xr rBody',
@@ -743,8 +757,8 @@ oite_ cond left right = OIte {label = LeakyL, ..}
 mux_ :: Expr a -> Expr a -> Expr a -> Expr a
 mux_ cond left right = OIte {label = SafeL, ..}
 
-oinj_ :: Bool -> Expr a -> Expr a
-oinj_ tag expr = OInj {injTy = Nothing, ..}
+inj_ :: OLabel -> Bool -> Expr a -> Expr a
+inj_ olabel tag expr = Inj {injTy = Nothing, ..}
 
 oproj_ :: OProjKind -> Expr a -> Expr a
 oproj_ projKind expr = OProj {projTy = Nothing, ..}
@@ -763,16 +777,17 @@ thunk_ e = Lam {argTy = Just TUnit, binder = Nothing, bnd = abstract0 e}
 match_ :: (a ~ Text) => Expr a -> NonEmpty (Text, [BinderM a], Expr a) -> Expr a
 match_ cond alts = Match {alts = uncurry3 matchAlt_ <$> alts, ..}
 
-omatch_ ::
+smatch_ ::
   (a ~ Text) =>
+  OLabel ->
   Expr a ->
   BinderM a ->
   Expr a ->
   BinderM a ->
   Expr a ->
   Expr a
-omatch_ cond lBinder lBody rBinder rBody =
-  OMatch
+smatch_ olabel cond lBinder lBody rBinder rBody =
+  SMatch
     { lBinder = Just lBinder,
       lBnd = abstractBinder lBinder lBody,
       rBinder = Just rBinder,
@@ -780,20 +795,31 @@ omatch_ cond lBinder lBody rBinder rBody =
       ..
     }
 
-omatchPat_ ::
+smatchPat_ ::
   (a ~ Text) =>
+  OLabel ->
   Expr a ->
   Pat a ->
   Expr a ->
   Pat a ->
   Expr a ->
   Expr a
-omatchPat_ cond lPat lBody rPat rBody = runFreshM $ do
+smatchPat_ olabel cond lPat lBody rPat rBody = runFreshM $ do
   xl <- freshPatBinder lPat
-  lBody' <- elabPat (pmatch_ OblivP) lPat (V $ fromBinder xl) lBody
+  lBody' <-
+    elabPat
+      (pmatch_ (pairKindOfOLabel olabel))
+      lPat
+      (V $ fromBinder xl)
+      lBody
   xr <- freshPatBinder rPat
-  rBody' <- elabPat (pmatch_ OblivP) rPat (V $ fromBinder xr) rBody
-  return $ omatch_ cond xl lBody' xr rBody'
+  rBody' <-
+    elabPat
+      (pmatch_ (pairKindOfOLabel olabel))
+      rPat
+      (V $ fromBinder xr)
+      rBody
+  return $ smatch_ olabel cond xl lBody' xr rBody'
 
 pmatch_ ::
   (a ~ Text) => PairKind -> Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
@@ -1005,7 +1031,7 @@ instance Cute (Expr Text) where
   cute TUnit = "unit"
   cute VUnit = "()"
   cute TBool {..} = cute $ accentOfOLabel olabel <> "bool"
-  cute BLit {..} = if bLit then "True" else "False"
+  cute BLit {..} = if bLit then "true" else "false"
   cute TInt {..} = cute $ accentOfOLabel olabel <> "int"
   cute ILit {..} = cute iLit
   cute Ite {..} = cuteIte PublicL cond left right
@@ -1015,10 +1041,10 @@ instance Cute (Expr Text) where
   cute Psi {..} = cute $ psiName oadtName
   cute Pair {..} = cutePair pairKind left right
   cute PMatch {..} = cutePMatch pairKind cond lBinder rBinder bnd2
-  cute e@OSum {..} = cuteInfix e (oblivName "+") left right
-  cute OInj {..} = do
+  cute e@Sum {..} = cuteInfix e (accentOfOLabel olabel <> "+") left right
+  cute Inj {..} = do
     cuteApp_
-      (pretty (oblivName $ if tag then "inl" else "inr"))
+      (pretty (accentOfOLabel olabel <> if tag then "inl" else "inr"))
       [expr]
   cute OProj {..} = do
     projDoc <-
@@ -1029,17 +1055,17 @@ instance Cute (Expr Text) where
             LeftP -> "l"
             RightP -> "r"
     cuteApp_ projDoc [expr]
-  cute OMatch {..} = do
+  cute SMatch {..} = do
     condDoc <- cute cond
     (xl, lBody) <- unbind1NameOrBinder lBinder lBnd
     (xr, rBody) <- unbind1NameOrBinder rBinder rBnd
     lBodyDoc <- cute lBody
     rBodyDoc <- cute rBody
     return $
-      cuteMatchDoc OblivL True condDoc $
+      cuteMatchDoc olabel True condDoc $
         cuteAltDocs
-          [ (oblivName "inl", [xl], lBodyDoc),
-            (oblivName "inr", [xr], rBodyDoc)
+          [ (accentOfOLabel olabel <> "inl", [xl], lBodyDoc),
+            (accentOfOLabel olabel <> "inr", [xr], rBodyDoc)
           ]
   cute Asc {..} = do
     tyDoc <- cute ty
@@ -1169,8 +1195,8 @@ instance HasPLevel (Expr a) where
     ILit {} -> 0
     Prod {} -> 20
     Pair {} -> 0
-    OSum {} -> 20
-    OInj {} -> 10
+    Sum {} -> 20
+    Inj {} -> 10
     Asc {} -> 0
     Loc {..} -> plevel expr
     Arb {} -> 0

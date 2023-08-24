@@ -31,6 +31,7 @@ module Oil.Syntax
     Apply (..),
     ite_,
     prod_,
+    sum_,
     pair_,
     tGV,
     lamB,
@@ -296,14 +297,17 @@ ite_ :: (Eq a) => Expr a -> Expr a -> Expr a -> Expr a
 ite_ cond left right =
   Match
     { alts =
-        [ MatchAlt {ctor = "False", binders = [], bnd = abstract_ [] right},
-          MatchAlt {ctor = "True", binders = [], bnd = abstract_ [] left}
+        [ MatchAlt {ctor = "false", binders = [], bnd = abstract_ [] right},
+          MatchAlt {ctor = "true", binders = [], bnd = abstract_ [] left}
         ],
       ..
     }
 
 prod_ :: Ty -> Ty -> Ty
 prod_ a b = "*" @@ [a, b]
+
+sum_ :: Ty -> Ty -> Ty
+sum_ a b = "+" @@ [a, b]
 
 pair_ :: Expr a -> Expr a -> Expr a
 pair_ a b = GV "(,)" @@ [a, b]
@@ -377,8 +381,8 @@ instance Cute (Expr Text) where
   cute
     Match
       { alts =
-          [ MatchAlt {ctor = "False", binders = [], bnd = rBnd},
-            MatchAlt {ctor = "True", binders = [], bnd = lBnd}
+          [ MatchAlt {ctor = "false", binders = [], bnd = rBnd},
+            MatchAlt {ctor = "true", binders = [], bnd = lBnd}
             ],
         ..
       } = do

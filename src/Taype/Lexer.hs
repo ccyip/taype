@@ -66,7 +66,7 @@ data Token
   | OMatch
   | With
   | End
-  | OInj Bool
+  | Inj OLabel Bool
   | OProj OProjKind
   | Ident Text
   | Infix Text
@@ -117,7 +117,6 @@ pToken =
           Fn LeakyL <$ symbol "fn'",
           Fn SafeL <$ symbol "fn",
           Let <$ symbol "let",
-          In <$ symbol "in",
           If <$ symbol "if",
           OIf <$ symbol (oblivName "if"),
           Then <$ symbol "then",
@@ -126,16 +125,19 @@ pToken =
           OMatch <$ symbol (oblivName "match"),
           With <$ symbol "with",
           End <$ symbol "end",
-          OInj True <$ symbol (oblivName "inl"),
-          OInj False <$ symbol (oblivName "inr"),
+          Inj PublicL True <$ symbol "inl",
+          Inj PublicL False <$ symbol "inr",
+          Inj OblivL True <$ symbol (oblivName "inl"),
+          Inj OblivL False <$ symbol (oblivName "inr"),
+          In <$ symbol "in",
           OProj TagP <$ symbol (oblivName "prt"),
           OProj LeftP <$ symbol (oblivName "prl"),
           OProj RightP <$ symbol (oblivName "prr")
         ]
         <?> "keyword",
       choice
-        [ BLit True <$ symbol "True",
-          BLit False <$ symbol "False",
+        [ BLit True <$ symbol "true",
+          BLit False <$ symbol "false",
           ILit <$> pILit
         ]
         <?> "literal",
@@ -224,6 +226,8 @@ reserved =
     oblivName "match",
     "with",
     "end",
+    "inl",
+    "inr",
     oblivName "inl",
     oblivName "inr",
     oblivName "prt",
@@ -234,8 +238,8 @@ reserved =
     oblivName "bool",
     "int",
     oblivName "int",
-    "True",
-    "False"
+    "true",
+    "false"
   ]
 
 -- | Parse a token with offset.
