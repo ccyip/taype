@@ -892,4 +892,5 @@ err errMsg = do
 
 errUnsupported :: LiftM a
 errUnsupported =
-  err "Lifting oblivious constructs or preprocessors is not supported"
+  err "Do not support lifting oblivious constructs, preprocessors, \
+  \or polymorphic equality (except for integer equality)"

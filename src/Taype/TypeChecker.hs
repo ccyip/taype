@@ -572,9 +572,25 @@ typing PolyEq {..} Nothing = do
   rhs' <- check rhs t
   x <- fresh
   y <- fresh
-  secondF
-    (lets' [(x, t, lhs'), (y, t, rhs')])
-    $ mkLet' (TBool PublicL) PolyEq {lhs = V x, rhs = V y}
+  -- Elaborate polymorphic equality to known monomorphic ones.
+  case t of
+    TInt PublicL -> do
+      f <- fresh
+      secondF
+        ( lets'
+            [ (f, arrows_ [TInt PublicL, TInt PublicL] (TBool PublicL), GV "="),
+              (x, t, lhs'),
+              (y, t, rhs')
+            ]
+        )
+        $ mkLet'
+          (TBool PublicL)
+          (V f @@ [V x, V y])
+    _ ->
+      secondF (lets' [(x, t, lhs'), (y, t, rhs')]) $
+        mkLet'
+          (TBool PublicL)
+          PolyEq {lhs = V x, rhs = V y}
 typing Ppx {ppx = LiftPpx {..}} (Just t) = do
   checkPpxPoly
   let ppx' = LiftPpx {to = Just t, ..}
