@@ -88,7 +88,7 @@ toOCamlExpr Let {..} = do
   x <- toValidName <$> freshNameOrBinder binder
   rhsDoc <- toOCamlExpr rhs
   bodyDoc <- toOCamlExpr $ instantiateName x bnd
-  return $ toOCamlLet (pretty x) rhsDoc bodyDoc
+  return $ cuteLetDoc (pretty x) rhsDoc bodyDoc
 -- Use if conditional in OCaml for pattern matching on boolean.
 toOCamlExpr
   Match
@@ -111,7 +111,7 @@ toOCamlExpr Match {alts = [MatchAlt {ctor = "(,)", ..}], ..} = do
       condDoc <- toOCamlExpr cond
       bodyDoc <- toOCamlExpr $ instantiateName xs bnd
       return $
-        toOCamlLet
+        cuteLetDoc
           (group $ toOCamlTuple [pretty xl, pretty xr])
           condDoc
           bodyDoc
@@ -439,19 +439,6 @@ toOCamlLam isRoot e = do
       (binderDocs, bodyDoc) <- go $ instantiateName x bnd
       return (pretty x : binderDocs, bodyDoc)
     go expr = ([],) <$> toOCamlExpr expr
-
-toOCamlLet :: Doc -> Doc -> Doc -> Doc
-toOCamlLet binderDoc rhsDoc bodyDoc =
-  align $
-    group
-      ( hang
-          ( "let"
-              <+> (binderDoc <+> equals <> sep1 rhsDoc)
-          )
-          <> line
-          <> "in"
-      )
-      </> bodyDoc
 
 toOCamlTuple :: [Doc] -> Doc
 toOCamlTuple = parens . align . sepWith (comma <> line)

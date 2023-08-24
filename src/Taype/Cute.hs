@@ -304,17 +304,18 @@ cuteLamDoc_ kw delim isRoot binderDocs bodyDoc =
 cuteLamDoc :: Bool -> [Doc] -> Doc -> Doc
 cuteLamDoc = cuteLamDoc_ backslash "=>"
 
-cuteLetDoc :: [(Doc, Doc)] -> Doc -> Doc
-cuteLetDoc [] bodyDoc = group $ align bodyDoc
-cuteLetDoc bindingDocs bodyDoc =
-  group $
-    align $
-      "let"
-        <+> align (sepWith hardline (mkBindingDoc <$> bindingDocs)) <> line'
-        <+> "in"
-        <+> align bodyDoc
-  where
-    mkBindingDoc (binderDoc, rhsDoc) = hang $ binderDoc <+> equals <> sep1 rhsDoc
+cuteLetDoc :: Doc -> Doc -> Doc -> Doc
+cuteLetDoc binderDoc rhsDoc bodyDoc =
+  align $
+    group
+      ( hang
+          ( "let"
+              <+> (binderDoc <+> equals <> sep1 rhsDoc)
+          )
+          <> line
+          <> "in"
+      )
+      </> bodyDoc
 
 cuteAppDoc :: Doc -> [Doc] -> Doc
 cuteAppDoc fnDoc docs =

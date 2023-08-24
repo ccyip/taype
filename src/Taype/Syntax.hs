@@ -1025,18 +1025,12 @@ instance Cute (Expr Text) where
   cute e@App {fn = GV {..}, args = [left, right]}
     | isInfix ref = cuteInfix e ref left right
   cute App {..} = cuteApp fn args
-  cute e@Let {} = do
-    (bindingDocs, bodyDoc) <- go e
-    return $ cuteLetDoc bindingDocs bodyDoc
-    where
-      go Let {..} = do
-        (x, body) <- unbind1NameOrBinder binder bnd
-        binderDoc <- cuteBinder x rhsTy
-        rhsDoc <- cute rhs
-        (bindingDocs, bodyDoc) <- go body
-        return ((binderDoc, rhsDoc) : bindingDocs, bodyDoc)
-      go Loc {..} = go expr
-      go expr = ([],) <$> cute expr
+  cute Let {..} = do
+    (x, body) <- unbind1NameOrBinder binder bnd
+    binderDoc <- cuteBinder x rhsTy
+    rhsDoc <- cute rhs
+    bodyDoc <- cute body
+    return $ cuteLetDoc binderDoc rhsDoc bodyDoc
   cute TUnit = "unit"
   cute VUnit = "()"
   cute TBool {..} = cute $ accentOfOLabel olabel <> "bool"
