@@ -9,7 +9,7 @@ fn length : list -> int = \xs =>
 fn elem : int -> list -> bool = \y xs =>
   match xs with
   | Nil => false
-  | Cons x xs' => x == y || elem y xs'
+  | Cons x xs' => x = y || elem y xs'
   end
 
 fn insert : int -> list -> list = \y xs =>
@@ -27,7 +27,7 @@ fn hamming_distance : list -> list -> int = \xs ys =>
     | Nil => 0
     | Cons y ys' =>
       let d = hamming_distance xs' ys' in
-      if x == y then d else d + 1
+      if x = y then d else d + 1
     end
   end
 
@@ -92,12 +92,12 @@ fn filter : (int -> bool) -> list -> list = \f xs =>
 // Oblivious list and its instances
 
 obliv ~list (k : int) =
-  if k == 0
+  if k = 0
   then unit
   else unit ~+ ~int ~* ~list (k-1)
 
 fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
-  if k == 0
+  if k = 0
   then ()
   else match xs with
        | Nil => ~inl ()
@@ -105,7 +105,7 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
        end
 
 fn' ~list#r : (k : int) -> ~list k -> list = \k =>
-  if k == 0
+  if k = 0
   then \_ => Nil
   else \xs => ~match xs with
               | ~inl _ => Nil
@@ -128,7 +128,7 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
   \pxs f1 f2 =>
     match pxs with
     #(k, xs) =>
-      (if k == 0
+      (if k = 0
        then \_ => f1 ()
        else \xs =>
          ~match xs with
@@ -142,10 +142,10 @@ fn ~list#view : list -> int = length
 fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
 
 fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
-  if k' == 0
+  if k' = 0
   then \_ => ()
   else
-    if k == 0
+    if k = 0
     then \_ => ~inl ()
     else \xs =>
       ~match xs with

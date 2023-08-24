@@ -11,7 +11,7 @@ fn length : list -> int = \xs =>
 fn elem : int -> list -> bool = \y xs =>
   match xs with
   | Nil => false
-  | Cons x xs' => if x == y then true else elem y xs'
+  | Cons x xs' => if x = y then true else elem y xs'
   end
 
 fn insert : int -> list -> list = \y xs =>
@@ -38,12 +38,12 @@ fn map : (int -> int) -> list -> list = \f xs =>
 // Oblivious list and its instances
 
 obliv ~list (k : int) =
-  if k == 0
+  if k = 0
   then unit
   else unit ~+ ~int ~* ~list (k-1)
 
 fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
-  if k == 0
+  if k = 0
   then ()
   else match xs with
        | Nil => ~inl ()
@@ -51,7 +51,7 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
        end
 
 fn' ~list#r : (k : int) -> ~list k -> list = \k =>
-  if k == 0
+  if k = 0
   then \_ => Nil
   else \xs => ~match xs with
               | ~inl _ => Nil
@@ -74,7 +74,7 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
   \pxs f1 f2 =>
     match pxs with
     #(k, xs) =>
-      (if k == 0
+      (if k = 0
        then \_ => f1 ()
        else \xs =>
          ~match xs with
@@ -88,10 +88,10 @@ fn ~list#view : list -> int = length
 fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
 
 fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
-  if k' == 0
+  if k' = 0
   then \_ => ()
   else
-    if k == 0
+    if k = 0
     then \_ => ~inl ()
     else \xs =>
       ~match xs with
@@ -103,19 +103,19 @@ fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
 // Oblivious functions by hand
 
 fn ~elem' : (k : int) -> ~int -> ~list k -> ~bool = \k ~y =>
-  if k == 0
+  if k = 0
   then \_ => ~bool#s false
   else \~xs =>
     ~match ~xs with
     | ~inl _ => ~bool#s false
     | ~inr ~(~x, ~xs') =>
-      ~if ~x ~== ~y
+      ~if ~x ~= ~y
       then ~bool#s true
       else ~elem' (k-1) ~y ~xs'
     end
 
 fn ~insert' : (k : int) -> ~int -> ~list k -> ~list (k+1) = \k y =>
-  if k == 0
+  if k = 0
   then \_ => ((~inr ~(y, ()) : unit ~+ ~int ~* unit) :: ~list (k+1))
   else \xs =>
     ~match xs with
@@ -130,7 +130,7 @@ fn ~insert' : (k : int) -> ~int -> ~list k -> ~list (k+1) = \k y =>
     end
 
 fn ~filter' : (k : int) -> (~int -> ~bool) -> ~list k -> ~list k = \k f =>
-  if k == 0
+  if k = 0
   then \_ => ()
   else \xs =>
     ~match xs with
@@ -146,7 +146,7 @@ fn ~test_filter' : (k : int) -> ~list k -> ~int -> ~list k = \k xs y =>
   ~filter' k (\x => x ~<= y) xs
 
 fn ~map' : (k : int) -> (~int -> ~int) -> ~list k -> ~list k = \k f =>
-  if k == 0
+  if k = 0
   then \_ => ()
   else \xs =>
     ~match xs with
@@ -168,7 +168,7 @@ fn ~elem_lifted : ~int -> #~list -> ~bool = \y xs =>
     (\p =>
       match p with
       (x, xs') =>
-        %if ~bool ~bool (%== (~int -> ~int -> ~bool) x y)
+        %if ~bool ~bool (%= (~int -> ~int -> ~bool) x y)
           (\_ => %coerce bool ~bool true)
           (\_ => ~elem_lifted y xs')
       end)
@@ -226,12 +226,12 @@ fn ~test_filter : #~list -> ~int -> #~list = \xs y =>
 // Oblivious list with extact length and its instances
 
 obliv ~list_eq (k : int) =
-  if k == 0
+  if k = 0
   then unit
   else ~int ~* ~list_eq (k-1)
 
 fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
-  if k == 0
+  if k = 0
   then ()
   else match xs with
        | Nil => ~~
@@ -239,7 +239,7 @@ fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
        end
 
 fn' ~list_eq#r : (k : int) -> ~list_eq k -> list = \k =>
-  if k == 0
+  if k = 0
   then \_ => Nil
   else \xs => ~match xs with
               ~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
@@ -261,7 +261,7 @@ fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a 
   \pxs f1 f2 =>
     match pxs with
     #(k, xs) =>
-      (if k == 0
+      (if k = 0
        then \_ => f1 ()
        else \xs =>
          ~match xs with
@@ -283,17 +283,17 @@ fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
 // Oblivious list with maximum length and element indicator
 
 // obliv ~list_filter (k : int) =
-//   if k == 0
+//   if k = 0
 //   then unit
 //   else ~bool ~* ~int ~* ~list_filter (k-1)
 
 // fn ~list_filter_pad : (k : int) -> ~list_filter k = \k =>
-//   if k == 0
+//   if k = 0
 //   then ()
 //   else ~(~bool#s false, ~~, ~list_filter_pad (k-1))
 
 // fn ~list_filter#s : (k : int) -> list -> ~list_filter k = \k xs =>
-//   if k == 0
+//   if k = 0
 //   then ()
 //   else match xs with
 //        | Nil =>
@@ -303,7 +303,7 @@ fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
 //        end
 
 // fn' ~list_filter#r : (k : int) -> ~list_filter k -> list = \k =>
-//   if k == 0
+//   if k = 0
 //   then \_ => Nil
 //   else \xs =>
 //     ~match xs with
@@ -329,7 +329,7 @@ fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
 //   \pxs f1 f2 =>
 //     match pxs with
 //     #(k, xs) =>
-//       (if k == 0
+//       (if k = 0
 //        then \_ => f1 ()
 //        else \xs =>
 //          ~match xs with
@@ -346,7 +346,7 @@ fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
 // fn ~list_filter_app :
 //   (k : int) -> (k' : int) -> ~list_filter k -> ~list_filter k' ->
 //   ~list_filter (k + k') = \k k' =>
-//   if k == 0
+//   if k = 0
 //   then \_ ys => (ys :: ~list_filter (k + k'))
 //   else \xs ys =>
 //     ~match xs with

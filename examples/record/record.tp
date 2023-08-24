@@ -32,7 +32,7 @@ fn is_obese_by_id : db -> int -> bool = \ps id =>
   | Db_More p ps' =>
     match p with
     | Patient id' _ _ _ =>
-      if id' == id
+      if id' = id
       then is_obese p
       else is_obese_by_id ps' id
     end
@@ -56,7 +56,7 @@ fn count_healthy_age_group : db -> int -> int -> int * int = \ps b e =>
 fn healthy_rate_of_age_group : db -> int -> int -> int = \ps b e =>
   match count_healthy_age_group ps b e with
   | (n, total) =>
-    if total == 0
+    if total = 0
     then 0
     else n * 100 / total
   end
@@ -117,7 +117,7 @@ fn age_sum : db -> int = \ps =>
 fn age_mean : db -> int = \ps =>
   let n = db_length ps in
   let s = age_sum ps in
-  if n == 0 then (-1) else s / n
+  if n = 0 then (-1) else s / n
 
 fn age_sdm : db -> int -> int = \ps m =>
   match ps with
@@ -133,7 +133,7 @@ fn age_variance : db -> int = \ps =>
   let n = db_length ps in
   let m = age_mean ps in
   let sdm = age_sdm ps m in
-  if n == 0 then (-1) else sdm / n
+  if n = 0 then (-1) else sdm / n
 
 data int_option = None | Some int
 
@@ -143,7 +143,7 @@ fn bmi_db_lookup : bmi_db -> int -> int_option = \bmis id =>
   match bmis with
   | Nil => None
   | Cons id' bmi bmis' =>
-    if id == id' then Some bmi else bmi_db_lookup bmis' id
+    if id = id' then Some bmi else bmi_db_lookup bmis' id
   end
 
 fn bmi_sse : db -> bmi_db -> int * int = \ps bmis =>
@@ -168,7 +168,7 @@ fn bmi_sse : db -> bmi_db -> int * int = \ps bmis =>
 fn bmi_mse : db -> bmi_db -> int = \ps bmis =>
   match bmi_sse ps bmis with
   (se, total) =>
-    if total == 0 then (-1) else se / total
+    if total = 0 then (-1) else se / total
   end
 
 data feature = Age | Height | Weight
@@ -303,12 +303,12 @@ fn ~db#match : #~db -> (unit -> 'a) -> (#~patient * #~db -> 'a) -> 'a =
     end
 
 obliv ~bmi_db (k : int) =
-  if k == 0
+  if k = 0
   then unit
   else ~int ~* ~int ~* ~bmi_db (k-1)
 
 fn ~bmi_db#s : (k : int) -> bmi_db -> ~bmi_db k = \k bmis =>
-  if k == 0
+  if k = 0
   then ()
   else match bmis with
        | Nil => ~~
@@ -317,7 +317,7 @@ fn ~bmi_db#s : (k : int) -> bmi_db -> ~bmi_db k = \k bmis =>
        end
 
 fn' ~bmi_db#r : (k : int) -> ~bmi_db k -> bmi_db = \k =>
-  if k == 0
+  if k = 0
   then \_ => Nil
   else \bmis =>
     ~match bmis with
@@ -332,7 +332,7 @@ fn ~bmi_db#match :
   \db f1 f2 =>
     match db with
     #(k, db) =>
-      (if k == 0 then \_ => f1 ()
+      (if k = 0 then \_ => f1 ()
        else \db =>
          ~match db with
          ~(id, bmi, db') => f2 (id, bmi, #(k-1, db'))

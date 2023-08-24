@@ -4,12 +4,12 @@
 data list = Nil | Cons int list
 
 obliv ~list (k : int) =
-  if k == 0
+  if k = 0
   then unit
   else unit ~+ ~int ~* ~list (k-1)
 
 fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
-  if k == 0
+  if k = 0
   then ()
   else match xs with
        | Nil => ~inl ()
@@ -17,7 +17,7 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
        end
 
 fn' ~list#r : (k : int) -> ~list k -> list = \k =>
-  if k == 0
+  if k = 0
   then \_ => Nil
   else \xs => ~match xs with
               | ~inl _ => Nil
@@ -40,7 +40,7 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
   \pxs f1 f2 =>
     match pxs with
     #(k, xs) =>
-      (if k == 0
+      (if k = 0
        then \_ => f1 ()
        else \xs =>
          ~match xs with
@@ -60,10 +60,10 @@ fn ~list#view : list -> int = length
 fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
 
 fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
-  if k' == 0
+  if k' = 0
   then \_ => ()
   else
-    if k == 0
+    if k = 0
     then \_ => ~inl ()
     else \xs =>
       ~match xs with
@@ -72,12 +72,12 @@ fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
       end
 
 obliv ~list_eq (k : int) =
-  if k == 0
+  if k = 0
   then unit
   else ~int ~* ~list_eq (k-1)
 
 fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
-  if k == 0
+  if k = 0
   then ()
   else match xs with
        | Nil => ~~
@@ -85,7 +85,7 @@ fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
        end
 
 fn' ~list_eq#r : (k : int) -> ~list_eq k -> list = \k =>
-  if k == 0
+  if k = 0
   then \_ => Nil
   else \xs => ~match xs with
               ~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
@@ -107,7 +107,7 @@ fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a 
   \pxs f1 f2 =>
     match pxs with
     #(k, xs) =>
-      (if k == 0
+      (if k = 0
        then \_ => f1 ()
        else \xs =>
          ~match xs with
@@ -132,12 +132,12 @@ data dtree = Leaf int | Node int int dtree dtree
 
 // This public view is the maximum height of the tree.
 obliv ~dtree_max (k : int) =
-  if k == 0
+  if k = 0
   then ~int
   else ~int ~+ ~int ~* ~int ~* ~dtree_max (k-1) ~* ~dtree_max (k-1)
 
 fn ~dtree_max#s : (k : int) -> dtree -> ~dtree_max k = \k t =>
-  if k == 0
+  if k = 0
   then
     match t with
     | Leaf x => ~int#s x
@@ -152,7 +152,7 @@ fn ~dtree_max#s : (k : int) -> dtree -> ~dtree_max k = \k t =>
     end
 
 fn' ~dtree_max#r : (k : int) -> ~dtree_max k -> dtree = \k =>
-  if k == 0
+  if k = 0
   then \x => Leaf (~int#r x)
   else \t =>
     ~match t with
@@ -192,7 +192,7 @@ fn ~dtree_max#match :
   'a = \pt f1 f2 =>
   match pt with
   #(k, t) =>
-    (if k == 0
+    (if k = 0
      then \x => f1 x
      else \n =>
        ~match n with
@@ -206,13 +206,13 @@ fn ~dtree_max#join : int -> int -> int = \x y => if x <= y then y else x
 
 fn ~dtree_max#reshape :
   (k : int) -> (k' : int) -> ~dtree_max k -> ~dtree_max k' = \k k' =>
-  if k' == 0
+  if k' = 0
   then
-    if k == 0
+    if k = 0
     then \x => x
     else \_ => ~~
   else
-    if k == 0
+    if k = 0
     then \x => ~inl x
     else \n =>
       ~match n with
@@ -229,7 +229,7 @@ fn ~dtree_max#reshape :
 fn elem : int -> list -> bool = \y xs =>
   match xs with
   | Nil => false
-  | Cons x xs' => if x == y then true else elem y xs'
+  | Cons x xs' => if x = y then true else elem y xs'
   end
 
 fn map : (int -> int) -> list -> list = \f xs =>
@@ -250,7 +250,7 @@ fn lookup : list -> int -> int = \xs i =>
   match xs with
   | Nil => 0
   | Cons x xs' =>
-    if 0 == i then x else lookup xs' (i-1)
+    if 0 = i then x else lookup xs' (i-1)
   end
 
 // Technically this is not an association list. Encoding a proper association
@@ -263,7 +263,7 @@ fn assoc_lookup : list -> list -> int -> int = \keys values key =>
     match values with
     | Nil => 0
     | Cons v values' =>
-      if key == k then v else assoc_lookup keys' values' key
+      if key = k then v else assoc_lookup keys' values' key
     end
   end
 
@@ -272,7 +272,7 @@ fn log_lookup : list -> int -> int = \xs i =>
   log_lookup_ xs 0 (length xs) i
 
 fn log_lookup_ : list -> int -> int -> int -> int = \xs s e i =>
-  if s == e - 1 then lookup xs s
+  if s = e - 1 then lookup xs s
   else
     let mid = s + half (e - s) in
     if mid <= i

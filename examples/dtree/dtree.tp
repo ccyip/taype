@@ -20,12 +20,12 @@ fn lookup : features -> int -> int = \xs idx =>
 // Oblivious types
 
 obliv ~features (k : int) =
-  if k == 0
+  if k = 0
   then unit
   else ~int ~* ~features (k-1)
 
 fn ~features#s : (k : int) -> features -> ~features k = \k xs =>
-  if k == 0
+  if k = 0
   then ()
   else
     match xs with
@@ -34,7 +34,7 @@ fn ~features#s : (k : int) -> features -> ~features k = \k xs =>
     end
 
 fn' ~features#r : (k : int) -> ~features k -> features = \k =>
-  if k == 0
+  if k = 0
   then \_ => Nil
   else \xs =>
     ~match xs with
@@ -57,7 +57,7 @@ fn ~features#match : #~features -> (unit -> 'a) -> (~int * #~features -> 'a) -> 
   \pxs f1 f2 =>
     match pxs with
     #(k, xs) =>
-      (if k == 0
+      (if k = 0
        then \_ => f1 ()
        else \xs =>
          ~match xs with
@@ -202,12 +202,12 @@ fn ~dtree_spine#match :
 
 // This public view is the maximum height of the tree.
 obliv ~dtree_max (k : int) =
-  if k == 0
+  if k = 0
   then ~int
   else ~int ~+ ~int ~* ~int ~* ~dtree_max (k-1) ~* ~dtree_max (k-1)
 
 fn ~dtree_max#s : (k : int) -> dtree -> ~dtree_max k = \k t =>
-  if k == 0
+  if k = 0
   then
     match t with
     | Leaf x => ~int#s x
@@ -222,7 +222,7 @@ fn ~dtree_max#s : (k : int) -> dtree -> ~dtree_max k = \k t =>
     end
 
 fn' ~dtree_max#r : (k : int) -> ~dtree_max k -> dtree = \k =>
-  if k == 0
+  if k = 0
   then \x => Leaf (~int#r x)
   else \t =>
     ~match t with
@@ -262,7 +262,7 @@ fn ~dtree_max#match :
   'a = \pt f1 f2 =>
   match pt with
   #(k, t) =>
-    (if k == 0
+    (if k = 0
      then \x => f1 x
      else \n =>
        ~match n with
@@ -276,13 +276,13 @@ fn ~dtree_max#join : int -> int -> int = \x y => if x <= y then y else x
 
 fn ~dtree_max#reshape :
   (k : int) -> (k' : int) -> ~dtree_max k -> ~dtree_max k' = \k k' =>
-  if k' == 0
+  if k' = 0
   then
-    if k == 0
+    if k = 0
     then \x => x
     else \_ => ~~
   else
-    if k == 0
+    if k = 0
     then \x => ~inl x
     else \n =>
       ~match n with

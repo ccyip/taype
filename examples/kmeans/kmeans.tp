@@ -32,7 +32,7 @@ fn dist : vec -> vec -> int = \xs ys =>
 
 // Return a zero vector of given dimension.
 fn zero : int -> vec = \dim =>
-  if dim == 0
+  if dim = 0
   then Nil
   else Cons 0 (zero (dim-1))
 
@@ -63,8 +63,8 @@ fn init_centroids : int -> int -> int -> vlist -> vlist =
     match centroids with
     | VNil => VNil
     | VCons v vs =>
-      if n_clusters == 0 then VNil
-      else if n == 0
+      if n_clusters = 0 then VNil
+      else if n = 0
       then VCons v (init_centroids (n_clusters-1) stride (stride-1) vs)
       else init_centroids n_clusters stride (n-1) vs
     end
@@ -108,7 +108,7 @@ fn sum_clusters : int -> int -> vlist -> vec -> vec * int =
       | Cons c cs' =>
         match sum_clusters dim idx xs' cs' with
         | (sum, n) =>
-          if c == idx
+          if c = idx
           then (add x sum, n+1)
           else (sum, n)
         end
@@ -121,7 +121,7 @@ fn update' : int -> int -> vlist -> vec -> vlist -> vlist =
     | VNil => VNil
     | VCons v vs =>
       let v' = match sum_clusters dim idx xs clus with
-               (sum, n) => if n == 0 then v else div sum n
+               (sum, n) => if n = 0 then v else div sum n
                end
       in
       let vs' = update' dim (idx+1) xs clus vs in
@@ -136,7 +136,7 @@ fn update : int -> vlist -> vec -> vlist -> vlist =
 // number of iteration.
 fn kmeans_loop : int -> int -> vlist -> vlist -> vec -> vlist * vec =
   \n dim xs centroids clus =>
-    if n == 0
+    if n = 0
     then (centroids, clus)
     else let centroids' = update dim xs clus centroids in
          let clus' = assign centroids xs in
@@ -162,12 +162,12 @@ fn test_kmeans : int -> int -> int -> vlist -> vlist -> vec =
 
 // We know the exact dimension of a vector.
 obliv ~vec (k : int) =
-  if k == 0
+  if k = 0
   then unit
   else ~int ~* ~vec (k-1)
 
 fn ~vec#s : (k : int) -> vec -> ~vec k = \k xs =>
-  if k == 0
+  if k = 0
   then ()
   else match xs with
        | Nil => ~~
@@ -176,7 +176,7 @@ fn ~vec#s : (k : int) -> vec -> ~vec k = \k xs =>
        end
 
 fn' ~vec#r : (k : int) -> ~vec k -> vec = \k =>
-  if k == 0
+  if k = 0
   then \_ => Nil
   else \xs => ~match xs with
               ~(x, xs') => Cons (~int#r x) (~vec#r (k-1) xs')
@@ -196,7 +196,7 @@ fn ~vec#match : #~vec -> (unit -> 'a) -> (~int * #~vec -> 'a) -> 'a =
   \pxs f1 f2 =>
     match pxs with
     #(k, xs) =>
-      (if k == 0
+      (if k = 0
        then \_ => f1 ()
        else \xs =>
          ~match xs with
@@ -215,7 +215,7 @@ fn ~vec#view : vec -> int = \v =>
 obliv ~vlist (p : int * int) =
   match p with
   (dim, k) =>
-    if k == 0
+    if k = 0
     then unit
     else ~vec dim ~* ~vlist (dim, k-1)
   end
@@ -223,7 +223,7 @@ obliv ~vlist (p : int * int) =
 fn ~vlist#s : (p : int * int) -> vlist -> ~vlist p = \p xs =>
   match p with
   (dim, k) =>
-    if k == 0
+    if k = 0
     then ()
     else match xs with
          | VNil => ~~
@@ -234,7 +234,7 @@ fn ~vlist#s : (p : int * int) -> vlist -> ~vlist p = \p xs =>
 fn' ~vlist#r : (p : int * int) -> ~vlist p -> vlist = \p =>
   match p with
   (dim, k) =>
-    if k == 0
+    if k = 0
     then \_ => VNil
     else \xs => ~match xs with
                 ~(x, xs') => VCons (~vec#r dim x) (~vlist#r (dim, k-1) xs')
@@ -262,7 +262,7 @@ fn ~vlist#match : #~vlist -> (unit -> 'a) -> (#~vec * #~vlist -> 'a) -> 'a =
     #(k', vs) =>
       (match k' with
        (dim, k) =>
-         if k == 0 then \_ => f1 ()
+         if k = 0 then \_ => f1 ()
          else \vs =>
            ~match vs with
            ~(v, vs') => f2 (#(dim, v), #((dim, k-1), vs'))
@@ -283,10 +283,10 @@ fn ~vlist#view : vlist -> int * int = \vs =>
 // incorrect implementation if we ever need to merge two [#~vec] with different
 // dimensions.
 fn ~vec#join : int -> int -> int = \k k' =>
-  if k == k' then k else (-1)
+  if k = k' then k else (-1)
 fn ~vec#reshape : (k : int) -> (k' : int) -> ~vec k -> ~vec k' =
   \k k' v =>
-    if k == k' then (v :: ~vec k')
+    if k = k' then (v :: ~vec k')
     else ~~
 
 // --------------------------------------------------------------

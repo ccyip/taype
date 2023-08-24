@@ -32,7 +32,7 @@ fn eval : vars -> expr -> int = \xs e =>
 
 // k is the maximum depth of the expression.
 obliv ~expr (k : int) =
-  if k == 0
+  if k = 0
   then
     // Either Const or Var
     ~int ~+ ~int
@@ -51,7 +51,7 @@ obliv ~expr (k : int) =
     ~expr (k-1) ~* ~expr (k-1)
 
 fn ~expr#s : (k : int) -> expr -> ~expr k = \k e =>
-  if k == 0
+  if k = 0
   then
     match e with
     | Const x => ~inl (~int#s x)
@@ -77,7 +77,7 @@ fn ~expr#s : (k : int) -> expr -> ~expr k = \k e =>
     end
 
 fn' ~expr#r : (k : int) -> ~expr k -> expr = \k =>
-  if k == 0
+  if k = 0
   then \e =>
     ~match e with
     | ~inl x => Const (~int#r x)
@@ -116,7 +116,7 @@ fn ~expr#match :
   'a = \e fc fv fa fs fm fd =>
   match e with
   #(k, e) =>
-    (if k == 0
+    (if k = 0
      then \e =>
        ~match e with
        | ~inl x => fc x
@@ -147,12 +147,12 @@ fn ~expr#match :
 
 // k is the exact length of the variable list.
 obliv ~vars (k : int) =
-  if k == 0
+  if k = 0
   then unit
   else ~int ~* ~vars (k-1)
 
 fn ~vars#s : (k : int) -> vars -> ~vars k = \k xs =>
-  if k == 0
+  if k = 0
   then ()
   else
     match xs with
@@ -161,7 +161,7 @@ fn ~vars#s : (k : int) -> vars -> ~vars k = \k xs =>
     end
 
 fn' ~vars#r : (k : int) -> ~vars k -> vars = \k =>
-  if k == 0
+  if k = 0
   then \_ => Nil
   else \xs =>
     ~match xs with
@@ -172,7 +172,7 @@ fn ~vars#match : #~vars -> (unit -> 'a) -> (~int * #~vars -> 'a) -> 'a =
   \pxs f1 f2 =>
     match pxs with
     #(k, xs) =>
-      (if k == 0
+      (if k = 0
        then \_ => f1 ()
        else \xs =>
          ~match xs with

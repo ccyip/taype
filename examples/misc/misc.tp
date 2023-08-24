@@ -91,7 +91,7 @@ fn count_votes : list -> int -> int = \xs i =>
   match xs with
   | Nil => 0
   | Cons x xs' =>
-    if x == i
+    if x = i
     then 1 + count_votes xs' i
     else count_votes xs' i
   end
@@ -110,12 +110,12 @@ fn test_elect2 : int -> list -> list -> int = \n xs ys =>
 
 // Exact length as the public view.
 obliv ~list (k : int) =
-  if k == 0
+  if k = 0
   then unit
   else ~int ~* ~list (k-1)
 
 fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
-  if k == 0
+  if k = 0
   then ()
   else match xs with
        | Nil => ~~
@@ -123,7 +123,7 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
        end
 
 fn' ~list#r : (k : int) -> ~list k -> list = \k =>
-  if k == 0
+  if k = 0
   then \_ => Nil
   else \xs => ~match xs with
               ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
@@ -145,7 +145,7 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
   \pxs f1 f2 =>
     match pxs with
     #(k, xs) =>
-      (if k == 0
+      (if k = 0
        then \_ => f1 ()
        else \xs =>
          ~match xs with

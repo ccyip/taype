@@ -2,9 +2,9 @@ data tree = Leaf int | Node int tree tree
 
 fn lookup : tree -> int -> bool = \t x =>
   match t with
-  | Leaf y => x == y
+  | Leaf y => x = y
   | Node y l r =>
-    x == y || lookup l x || lookup r x
+    x = y || lookup l x || lookup r x
   end
 
 fn map : (int -> int) -> tree -> tree = \f t =>
@@ -15,7 +15,7 @@ fn map : (int -> int) -> tree -> tree = \f t =>
 
 fn prob : tree -> int -> int = \t x =>
   match t with
-  | Leaf y => if x == y then 100 else 0
+  | Leaf y => if x = y then 100 else 0
   | Node p l r =>
     (p * (prob l x) + (100 - p) * (prob r x)) / 100
   end
@@ -25,12 +25,12 @@ fn prob : tree -> int -> int = \t x =>
 // Oblivious types
 
 obliv ~tree (k : int) =
-  if k == 0
+  if k = 0
   then ~int
   else ~int ~+ ~int ~* ~tree (k-1) ~* ~tree (k-1)
 
 fn ~tree#s : (k : int) -> tree -> ~tree k = \k t =>
-  if k == 0
+  if k = 0
   then match t with
        | Leaf x => ~int#s x
        | Node _ _ _ => ~~
@@ -42,7 +42,7 @@ fn ~tree#s : (k : int) -> tree -> ~tree k = \k t =>
        end
 
 fn' ~tree#r : (k : int) -> ~tree k -> tree = \k =>
-  if k == 0
+  if k = 0
   then \t => Leaf (~int#r t)
   else \t =>
     ~match t with
@@ -76,7 +76,7 @@ fn ~tree#match :
   'a = \t f1 f2 =>
   match t with
   #(k, t) =>
-    (if k == 0 then \x => f1 x
+    (if k = 0 then \x => f1 x
      else \n =>
        ~match n with
        | ~inl x => f1 x
@@ -87,10 +87,10 @@ fn ~tree#match :
 fn ~tree#join : int -> int -> int = \x y => if x <= y then y else x
 
 fn ~tree#reshape : (k : int) -> (k' : int) -> ~tree k -> ~tree k' = \k k' =>
-  if k' == 0
-  then if k == 0 then \x => x
+  if k' = 0
+  then if k = 0 then \x => x
        else \_ => ~~
-  else if k == 0 then \x => ~inl x
+  else if k = 0 then \x => ~inl x
        else \n =>
          ~match n with
          | ~inl x => ~inl x

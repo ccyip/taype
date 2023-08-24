@@ -16,7 +16,7 @@ data list = Nil | Cons int list
 fn elem : int -> list -> bool = \y xs =>
   match xs with
   | Nil => false
-  | Cons x xs' => if x == y then true else elem y xs'
+  | Cons x xs' => if x = y then true else elem y xs'
   end
 
 // Here is an insertion function that inserts a new element to the right place
@@ -32,7 +32,7 @@ fn insert : int -> list -> list = \x xs =>
 // lower-case letter. All builtin oblivious operations are also prefixed by "~".
 // Here the public view [k] is the maximum length of the list.
 obliv ~list (k : int) =
-  if k == 0
+  if k = 0
   // If the maximum length is 0, the list can only be a Nil (with no
   // information attached to it), so we return a [unit] type.
   then unit
@@ -48,7 +48,7 @@ obliv ~list (k : int) =
 // section instance of the oblivious type [~list]. We will use the builtin
 // section and retraction functions for integers, [~int#s] and [~int#r].
 fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
-  if k == 0
+  if k = 0
   // In this case, the oblivious list is simply a unit type, with the only
   // inhabitant [()].
   then ()
@@ -69,11 +69,11 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
   // function inside, instead of pattern matching in a lambda abstraction. This
   // is a well-known trick we apply to please the dependent type checker (and
   // the only trick we need in all our examples), so that the type of the
-  // function argument [~list k] can take the condition [k == 0] into account.
+  // function argument [~list k] can take the condition [k = 0] into account.
   // For example, the type of argument [xs] in the second branch is equivalent
-  // to [unit ~+ ~int ~* ~list (k-1)], only under the assumption that [k == 0]
+  // to [unit ~+ ~int ~* ~list (k-1)], only under the assumption that [k = 0]
   // is [false].
-  if k == 0
+  if k = 0
   // In this case, the list can only be a [Nil].
   then \_ => Nil
   // In this case, we return [Nil] or [Cons] depending on if the oblivious sum
@@ -104,12 +104,12 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
 fn ~list#Nil : unit -> #~list = \_ =>
   // A [Nil] may have public view [0]. Apparently, [~list 0] is equivalent to
   // the unit value [()], but the current type checker is not smart enough to
-  // know [0 == 0] is [true]. We provide a "cheating" operator, [::], which is
+  // know [0 = 0] is [true]. We provide a "cheating" operator, [::], which is
   // similar to the ascription operator [:], and it asks the type checker to
   // "trust me". In this case, we ask the type checker to trust that [unit] and
   // [~list 0] are equivalent. The compiler will generate a warning, and we
   // should use this operator with caution. Alternatively, we can define the
-  // second component of this Psi type as [if 0 == 0 then () else ~~], where
+  // second component of this Psi type as [if 0 = 0 then () else ~~], where
   // [~~] is the arbitrary operator that we can use in the dead branch. As we
   // improve the type checker, e.g., adding a decision procedure to check
   // equivalence involving integers for presburger arithmetics, this may not be
@@ -149,7 +149,7 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
     #(k, xs) =>
       // Again, we use this trick of returning functions inside pattern matching
       // (or conditional) to make dependent type checker happy.
-      (if k == 0
+      (if k = 0
        then \_ => f1 ()
        else \xs =>
          // Implicitly, the type variable ['a] needs to be *mergeable*, if we
@@ -189,10 +189,10 @@ fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
 
 // A reshape instance converts an OADT to one with a "bigger" public view.
 fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
-  if k' == 0
+  if k' = 0
   then \_ => ()
   else
-    if k == 0
+    if k = 0
     then \_ => ~inl ()
     else \xs =>
       ~match xs with
