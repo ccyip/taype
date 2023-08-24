@@ -233,7 +233,7 @@ guardReshape defs = foldMapM go defs
               expr' =
                 lams' [k1, k2, x] $
                   ite_
-                    (GV "==" @@ [V k1, V k2])
+                    (GV "=" @@ [V k1, V k2])
                     (V x)
                     (GV name_ @@ [V k1, V k2, V x])
               newDef = FunDef {attr = ReshapeAttr, expr = expr', ..}

@@ -314,12 +314,7 @@ preludeGCtx =
                 TBool OblivL,
                 SafeL
               ),
-              ( "==",
-                [TInt PublicL, TInt PublicL],
-                TBool PublicL,
-                SafeL
-              ),
-              ( oblivName "==",
+              ( oblivName "=",
                 [TInt OblivL, TInt OblivL],
                 TBool OblivL,
                 SafeL

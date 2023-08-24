@@ -329,9 +329,14 @@ grammar = mdo
     rule $
       choice
         [ pInfixExpr
-            ["==", "<=", oblivName "==", oblivName "<="]
+            ["<=", oblivName "=", oblivName "<="]
             pAddExpr
             pAddExpr,
+          do
+            left <- pAddExpr
+            pToken L.Equals
+            right <- pAddExpr
+            return Loc {expr = PolyEq left right, loc = getLoc left},
           pAddExpr
         ]
 

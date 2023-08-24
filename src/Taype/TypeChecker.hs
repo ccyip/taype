@@ -566,6 +566,15 @@ typing SMatch {olabel = OblivL, ..} mt = do
 typing Arb {oblivTy = Nothing} (Just t) = do
   oblivKinded t
   mkLet' t Arb {oblivTy = Just t}
+typing PolyEq {..} Nothing = do
+  (t, lhs') <- infer lhs
+  void $ checkKind t PublicK
+  rhs' <- check rhs t
+  x <- fresh
+  y <- fresh
+  secondF
+    (lets' [(x, t, lhs'), (y, t, rhs')])
+    $ mkLet' (TBool PublicL) PolyEq {lhs = V x, rhs = V y}
 typing Ppx {ppx = LiftPpx {..}} (Just t) = do
   checkPpxPoly
   let ppx' = LiftPpx {to = Just t, ..}

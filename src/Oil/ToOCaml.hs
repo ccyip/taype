@@ -60,7 +60,7 @@ toOCamlExpr
     { fn = GV (isBuiltinExprName -> Just ref),
       args = [left, right]
     }
-    | isOCamlInfix ref = do
+    | isInfix ref = do
         leftDoc <- cuteSubDoc e left <$> toOCamlExpr left
         rightDoc <- cuteSubDoc e right <$> toOCamlExpr right
         return $ cuteInfixDoc ref leftDoc rightDoc
@@ -159,7 +159,7 @@ toOCamlTy
   t@TApp
     { tctor = isBuiltinTyName -> Just tctor,
       args = [left, right]
-    } | isOCamlInfix tctor = do
+    } | isInfix tctor = do
     leftDoc <- cuteSubDoc t left <$> toOCamlTy left
     rightDoc <- cuteSubDoc t right <$> toOCamlTy right
     return $ cuteInfixDoc tctor leftDoc rightDoc
@@ -370,7 +370,7 @@ builtinExprTable =
     ("inl", "Either.Left"),
     ("inr", "Either.Right"),
     ("<=", "<="),
-    ("==", "="),
+    ("=", "="),
     ("+", "+"),
     ("-", "-"),
     ("*", "*"),
@@ -404,7 +404,7 @@ toValidComp = \case
     go "+" = "int_add"
     go "-" = "int_sub"
     go "/" = "int_div"
-    go "==" = "int_eq"
+    go "=" = "int_eq"
     go "<=" = "int_le"
     go "not" = "bool_not"
     go "&&" = "bool_and"
@@ -415,9 +415,6 @@ toValidComp = \case
 
 toValidName :: Text -> Text
 toValidName x = T.intercalate "_" $ toValidComp <$> T.splitOn instInfix x
-
-isOCamlInfix :: Text -> Bool
-isOCamlInfix x = x == "=" || isInfix x
 
 ----------------------------------------------------------------
 -- Pretty printer helper functions

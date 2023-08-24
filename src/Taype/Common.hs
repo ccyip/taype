@@ -338,18 +338,18 @@ internalName = (internalPrefix <>)
 
 -- | The infix operators
 infixes :: [Text]
-infixes = ["<=", "==", "+", "-", "*", "/", "&&", "||"]
+infixes = ["<=", "+", "-", "*", "/", "&&", "||"]
 
 -- | The oblivious infix operators
 oblivInfixes :: [Text]
-oblivInfixes = oblivName <$> infixes
+oblivInfixes = oblivName <$> ("=" : infixes)
 
 -- | All infix operators
 allInfixes :: [Text]
 allInfixes = infixes <> oblivInfixes
 
 isInfix :: Text -> Bool
-isInfix = (`elem` allInfixes)
+isInfix x = x == "=" || x `elem` allInfixes
 
 accentOfOLabel :: OLabel -> Text
 accentOfOLabel PublicL = ""

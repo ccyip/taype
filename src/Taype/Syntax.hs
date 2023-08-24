@@ -225,6 +225,8 @@ data Expr a
     TV {idx :: Int}
   | -- | Arbitrary oblivious value
     Arb {oblivTy :: Maybe (Ty a)}
+  | -- | Polymorphic equality check
+    PolyEq {lhs :: Expr a, rhs :: Expr a}
   | -- | Preprocessor
     Ppx {ppx :: Ppx a}
   deriving stock (Functor, Foldable, Traversable)
@@ -433,6 +435,7 @@ instance Monad Expr where
   Loc {..} >>= f = Loc {expr = expr >>= f, ..}
   TV {..} >>= _ = TV {..}
   Arb {..} >>= f = Arb {oblivTy = oblivTy <&> (>>= f)}
+  PolyEq {..} >>= f = PolyEq {lhs = lhs >>= f, rhs = rhs >>= f}
   Ppx {..} >>= f = Ppx {ppx = ppx >>>= f}
 
 instance Bound PpxB where
@@ -535,6 +538,8 @@ instance Eq1 Expr where
   liftEq eq Loc {expr} expr' = liftEq eq expr expr'
   liftEq eq expr' Loc {expr} = liftEq eq expr' expr
   liftEq _ TV {idx} TV {idx = idx'} = idx == idx'
+  liftEq eq PolyEq {lhs, rhs} PolyEq {lhs = lhs', rhs = rhs'} =
+    liftEq eq lhs lhs' && liftEq eq rhs rhs'
   liftEq eq Ppx {ppx} Ppx {ppx = ppx'} = liftEq eq ppx ppx'
   liftEq _ _ _ = False
 
@@ -654,6 +659,10 @@ instance PlateM (Expr Name) where
   plateM f Arb {..} = do
     oblivTy' <- mapM f oblivTy
     return Arb {oblivTy = oblivTy'}
+  plateM f PolyEq {..} = do
+    lhs' <- f lhs
+    rhs' <- f rhs
+    return PolyEq {lhs = lhs', rhs = rhs'}
   plateM f Ppx {..} = do
     ppx' <- biplateM f ppx
     return Ppx {ppx = ppx'}
@@ -1084,6 +1093,7 @@ instance Cute (Expr Text) where
     _ -> return arbDoc
     where
       arbDoc = pretty (oblivAccent <> oblivAccent)
+  cute e@PolyEq {..} = cuteInfix e "=" lhs rhs
   cute Ppx {..} = cute ppx
 
 -- | Pretty printer for preprocessors
@@ -1200,5 +1210,6 @@ instance HasPLevel (Expr a) where
     Asc {} -> 0
     Loc {..} -> plevel expr
     Arb {} -> 0
+    PolyEq {} -> 20
     Ppx {} -> 0
     _ -> 90

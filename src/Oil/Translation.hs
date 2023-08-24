@@ -167,6 +167,10 @@ toOilExpr T.Arb {..} = do
   let ty = fromJust oblivTy
   size <- toOilSize ty
   return $ GV aNew @@ [size]
+toOilExpr T.PolyEq {..} = do
+  lhs' <- toOilExpr lhs
+  rhs' <- toOilExpr rhs
+  return $ GV "=" @@ [lhs', rhs']
 toOilExpr _ = oops "Not a term in core taype ANF"
 
 -- | Translate a taype oblivious type to the OIL expression representing its
@@ -269,7 +273,7 @@ boolRetraction = runFreshM $ do
   return $
     lamB a (Just "a") $
       GV "not"
-        @@ [ GV "=="
+        @@ [ GV "="
                @@ [ GV (retractionName (oblivName "int")) @@ [V a],
                     ILit 0
                   ]
