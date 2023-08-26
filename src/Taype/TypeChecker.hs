@@ -1932,6 +1932,19 @@ compatibleClass TInt {} = return $ Just TInt {olabel = PublicL}
 compatibleClass Psi {..} = do
   ref <- pubNameOfOADTName oadtName
   return $ Just GV {..}
+compatibleClass
+  Sum
+    { left = Psi {oadtName = oadtLeft},
+      right = Psi {oadtName = oadtRight}
+    } = ifM (asks (optFlagNoSum . options)) (return Nothing) $ do
+    ref <- pubNameOfOADTName oadtLeft
+    ref' <- pubNameOfOADTName oadtRight
+    joinLeft <- resolveJoin oadtLeft
+    joinRight <- resolveJoin oadtRight
+    coer <- resolveCoerce oadtLeft oadtRight
+    if ref == ref' && isNothing joinLeft && isJust joinRight && isJust coer
+      then return $ Just GV {..}
+      else return Nothing
 compatibleClass Loc {..} = compatibleClass expr
 compatibleClass _ = return Nothing
 

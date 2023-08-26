@@ -2,7 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE ViewPatterns #-}
 
 -- |
 -- Copyright: (c) 2022-2023 Qianchuan Ye
@@ -18,9 +18,11 @@ import Control.Monad.Error.Class
 import Control.Monad.RWS.CPS hiding (pass)
 import Control.Monad.Writer.CPS hiding (pass)
 import Data.Array
+import Data.Char
 import Data.Graph
 import Data.List (lookup, partition)
 import Data.Maybe (fromJust)
+import Data.Text qualified as T
 import Prettyprinter.Render.Text
 import Relude.Extra.Bifunctor (secondF)
 import Relude.Extra.Foldable1 (maximum1)
@@ -32,14 +34,13 @@ import Taype.Environment (GCtx, LCtx, lookupGCtx, makeLCtx)
 import Taype.Error
 import Taype.Lexer qualified as TL
 import Taype.Name
-import Taype.NonEmpty qualified as NE
 import Taype.Plate
 import Taype.Prelude
 import Taype.Syntax
 import Text.Megaparsec hiding (label)
 import Text.Megaparsec.Char qualified as C
 import Text.Megaparsec.Char.Lexer qualified as L
-import Prelude hiding (Constraint, group, many)
+import Prelude hiding (Constraint, Sum (..), group, many)
 
 ----------------------------------------------------------------
 -- Environment for the lifting algorithm
@@ -78,7 +79,8 @@ data Env = Env
     gctx :: GCtx Name,
     defName :: Text,
     defLoc :: Int,
-    cctx :: CCtx Name
+    cctx :: CCtx Name,
+    octx :: OCtx
   }
 
 type LiftM a = FreshT (RWST Env Constraints Int (ExceptT Err IO)) a
@@ -88,7 +90,8 @@ data OADTInfo = OADTInfo
     coerces :: [[STy2]],
     joins :: [STy2],
     ctors :: [(Text, [[STy2]])],
-    matches :: ([[STy2]], [[STy2]])
+    matches :: ([[STy2]], [[STy2]]),
+    sums :: [(Text, Text)]
   }
   deriving stock (Show)
 
@@ -220,15 +223,28 @@ liftExpr Ite {..} t idx = do
       @@ [cond, thunk_ left', thunk_ right']
 liftExpr Match {..} t idx = do
   (condTy, condIdx) <- lookupCCtx $ isV cond
-  lookupGDef (isGV condTy) >>= \case
+  let name = isGV condTy
+  lookupGDef name >>= \case
     ADTDef {..} -> do
-      let tss = snd <$> ctors
-      argss <- mapM freshTVs tss
-      tell1 $ MatchC {cond = condIdx, ret = idx, argss = toList argss}
-      alts' <- NE.zipWith3M go alts tss argss
+      Options {optFlagNoSum} <- asks options
+      octx <- asks octx
+      let OADTInfo {sums} = fromJust $ lookup name octx
+          noSum = optFlagNoSum || null sums
+          tss = snd <$> toList ctors
+      argss1 <- mapM freshTVs tss
+      argss2 <-
+        if noSum
+          then return []
+          else mapM freshTVs tss
+      tell1 $ MatchC {cond = condIdx, ret = idx, argss = argss1 <> argss2}
+      alts1' <- zipWith3M go (toList alts) tss argss1
+      alts2' <-
+        if noSum
+          then return []
+          else zipWith3M go (toList alts) tss argss2
       return $
         Ppx (MatchPpx {condTy = TV condIdx, retTy = TV idx})
-          @@ (cond : toList alts')
+          @@ (cond : alts1' <> alts2')
     _ -> oops "Not an ADT"
   where
     go MatchAlt {..} ts as = do
@@ -267,9 +283,7 @@ liftDefs options@Options {..} gctx defs = do
   writeDocOpt options "lifted.tpc" liftedDoc
   when optPrintConstraints $ printDoc options constraintsDoc
   writeDocOpt options "constraints.sexp" constraintsDoc
-  let octx = buildOCtx defs
-      lctx = makeLCtx defs
-      lifted' =
+  let lifted' =
         [ (name, (def, reduceConstraints gctx octx cs))
           | (name, (def, cs)) <- lifted
         ]
@@ -295,6 +309,8 @@ liftDefs options@Options {..} gctx defs = do
             ]
   return $ defs <> defs'
   where
+    octx = buildOCtx options defs
+    lctx = makeLCtx defs
     goals = collectLifts $ snd <$> defs
     lifting done [] = return done
     lifting done fs = do
@@ -378,13 +394,14 @@ liftDefs options@Options {..} gctx defs = do
                in (name, substSTyToTy gctx (getModel sty ts) sty)
               | (name, ts) <- refused
             ]
-          refusedGoals = [ g | g <- goals, g `elem` allRefused ]
-          goalDocs gs = sepWith
-            hardline
-            [ let t' = Ppx $ LiftPpx {fn = name, to = Just ty}
-               in runCuteM options $ cute (fromClosed t' :: Ty Text)
-              | (name, ty) <- gs
-            ]
+          refusedGoals = [g | g <- goals, g `elem` allRefused]
+          goalDocs gs =
+            sepWith
+              hardline
+              [ let t' = Ppx $ LiftPpx {fn = name, to = Just ty}
+                 in runCuteM options $ cute (fromClosed t' :: Ty Text)
+                | (name, ty) <- gs
+              ]
       err_ (-1) $
         "Cannot solve the lifting constraints;"
           <+> "the following goals were refused"
@@ -579,7 +596,12 @@ parseSolverOutput file content =
     pList :: Parser a -> Parser a
     pList = between (symbol "(") (symbol ")")
     pAtom :: Parser Text
-    pAtom = lexeme TL.pIdentComp
+    pAtom =
+      lexeme
+        ( takeWhile1P
+            Nothing
+            (\c -> not (isSpace c) && c /= '(' && c /= ')')
+        )
     pAssn :: Parser (SName, Text)
     pAssn = pList $ do
       void $ chunk internalPrefix
@@ -640,8 +662,8 @@ collectLifts = runFreshM . foldMapM go
       es <- universeBiM def
       return $ [(fn, ty) | Ppx {ppx = LiftPpx {to = Just ty, ..}} <- es]
 
-buildOCtx :: Defs Name -> OCtx
-buildOCtx defs =
+buildOCtx :: Options -> Defs Name -> OCtx
+buildOCtx Options {..} defs =
   [("bool", builtinInfo "bool"), ("int", builtinInfo "int")]
     <> [(name, go name (toList ctors)) | (name, ctors) <- adts]
   where
@@ -651,7 +673,8 @@ buildOCtx defs =
           coerces = [[SConst name, SConst $ oblivName name]],
           joins = [SConst $ oblivName name],
           ctors = [],
-          matches = ([], [])
+          matches = ([], []),
+          sums = []
         }
     adts = [(name, ctors) | (name, ADTDef {..}) <- defs]
     go adt ctorDefs =
@@ -661,62 +684,114 @@ buildOCtx defs =
               | (_, FunDef {attr = KnownInst (CoerceInst {..})}) <- defs,
                 oadtName `elem` oadtNames
             ]
-          oadts =
-            inferCosts adt oadtNames $
-              [(adt, oadtName) | oadtName <- oadtNames] <> userCoerces
-          coerces =
-            [ [SConst adt, SConst oadtName]
-              | (_, FunDef {attr = KnownInst (ViewInst {..})}) <- defs,
-                oadtName `elem` oadtNames
-            ]
-              <> [[SConst from, SConst to] | (from, to) <- userCoerces]
           reshapes =
             [ oadtName
               | (_, FunDef {attr = KnownInst (ReshapeInst {..})}) <- defs,
                 oadtName `elem` oadtNames
             ]
           joins =
-            [ SConst oadtName
+            [ oadtName
               | (_, FunDef {attr = KnownInst (JoinInst {..})}) <- defs,
                 oadtName `elem` reshapes
             ]
+          sums =
+            if optFlagNoSum
+              then []
+              else
+                [ (from, to)
+                  | (from, to) <- userCoerces,
+                    from `notElem` joins,
+                    to `elem` joins
+                ]
+          oadts =
+            secondF (* 2) $
+              inferCosts adt oadtNames $
+                [(adt, oadtName) | oadtName <- oadtNames] <> userCoerces
+          oadts' =
+            [ ( sumName left right,
+                (fromJust (lookup left oadts) + fromJust (lookup right oadts))
+                  `div` 2
+              )
+              | (left, right) <- sums
+            ]
+          coerces =
+            [ [SConst adt, SConst oadtName]
+              | (_, FunDef {attr = KnownInst (ViewInst {..})}) <- defs,
+                oadtName `elem` oadtNames
+            ]
+              <> [[SConst from, SConst to] | (from, to) <- userCoerces]
+              -- TODO: maybe we need adt to sum?
+              <> concat
+                [ let sname = sumName from to
+                   in [[SConst from, SConst sname], [SConst sname, SConst to]]
+                  | (from, to) <- sums
+                ]
           decomposeCtor ty =
             let (dom, cod) = fromJust (isArrow1 ty)
-             in decompose (tyToSTy cod) <> decompose (tyToSTy dom)
+                ts = decompose (tyToSTy dom)
+                oadt = case cod of
+                  Psi {..} -> oadtName
+                  _ -> oops "Constructor instance does not return a psi type"
+             in [SConst oadt : ts]
+                  <> [ SConst (sumName from to) : ts
+                       | (from, to) <- sums,
+                         to == oadt
+                     ]
           ctor1 ctorName ts =
             (SConst adt : decomposeMany (tyToSTy <$> ts))
-              : [ decomposeCtor ty
+              : concat
+                [ decomposeCtor ty
                   | (_, FunDef {attr = KnownInst (CtorInst {..}), ..}) <- defs,
                     ctor == ctorName
                 ]
           ctors = [(ctorName, ctor1 ctorName ts) | (ctorName, ts) <- ctorDefs]
-          decomposeMatch ty =
-            let dec psi alts =
-                  decomposeMany $
-                    tyToSTy
-                      <$> (psi : [fst $ fromJust (isArrow1 alt) | alt <- alts])
-             in case fromJust (isArrow ty) of
-                  (psi@Psi {} : alts, _) -> dec psi alts
-                  (_ : psi : alts, _) -> dec psi alts
+          argOfAlts alts = [fst $ fromJust (isArrow1 alt) | alt <- alts]
+          lookupMatch name =
+            [ ( case poly of
+                  PolyT MergeableC -> True
+                  _ -> False,
+                case fromJust (isArrow ty) of
+                  (Psi {} : alts, _) -> argOfAlts alts
+                  (_ : _ : alts, _) -> argOfAlts alts
                   _ -> oops "Match instance has the wrong type"
+              )
+              | (_, FunDef {attr = KnownInst (MatchInst {..}), ..}) <- defs,
+                oadtName == name
+            ]
+          decomposeMatch name ty ty' =
+            let ts = decomposeMany (tyToSTy <$> ty)
+                ts' = decomposeMany (tyToSTy <$> ty')
+             in SConst name : ts <> ts'
           (matchesMC, matchesUn) =
             partition
-              ( \case
-                  (PolyT MergeableC, _) -> True
-                  _ -> False
-              )
-              [ (poly, ty)
-                | (_, FunDef {attr = KnownInst (MatchInst {..}), ..}) <- defs,
-                  oadtName `elem` oadtNames
-              ]
+              fst
+              $ [ (mc, (oadt, ty, ty))
+                  | oadt <- oadtNames,
+                    (mc, ty) <- lookupMatch oadt
+                ]
+                <> [ (fromMC || toMC, (sumName from to, fromTy, toTy))
+                     | (from, to) <- sums,
+                       (fromMC, fromTy) <- lookupMatch from,
+                       (toMC, toTy) <- lookupMatch to
+                   ]
           matches =
-            ( ( SConst adt
-                  : foldMap (\(_, ts) -> decomposeMany (tyToSTy <$> ts)) ctorDefs
+            ( ( let ts =
+                      foldMap
+                        (\(_, ty) -> decomposeMany (tyToSTy <$> ty))
+                        ctorDefs
+                 in SConst adt : ts <> ts
               )
-                : [decomposeMatch ty | (_, ty) <- matchesUn],
-              [decomposeMatch ty | (_, ty) <- matchesMC]
+                : [decomposeMatch name ty ty' | (_, (name, ty, ty')) <- matchesUn],
+              [decomposeMatch name ty ty' | (_, (name, ty, ty')) <- matchesMC]
             )
-       in OADTInfo {oadts = oadts, ..}
+       in OADTInfo
+            { oadts = oadts <> oadts',
+              joins = SConst <$> (joins <> (fst <$> oadts')),
+              ..
+            }
+
+sumName :: Text -> Text -> Text
+sumName x y = x <> "+" <> y
 
 inferCosts :: Text -> [Text] -> [(Text, Text)] -> [(Text, Int)]
 inferCosts adt oadts coerces =
@@ -766,6 +841,8 @@ tyToSTyBase :: Ty Name -> Maybe (STy a)
 tyToSTyBase (TBool OblivL) = return $ SConst $ oblivName "bool"
 tyToSTyBase (TInt OblivL) = return $ SConst $ oblivName "int"
 tyToSTyBase Psi {..} = return $ SConst oadtName
+tyToSTyBase Sum {left = Psi {..}, right = Psi {oadtName = oadtName'}} =
+  return $ SConst (sumName oadtName oadtName')
 tyToSTyBase t = pubTyToSTyBase t
 
 tyToSTy :: Ty Name -> STy a
@@ -784,6 +861,8 @@ substSTyToTy gctx model = go
     base x | x == oblivName "bool" = TBool OblivL
     base x | x == "int" = TInt PublicL
     base x | x == oblivName "int" = TInt OblivL
+    base (T.splitOn "+" -> [left, right]) =
+      Sum {olabel = PublicL, left = base left, right = base right}
     base x = case lookupGCtx x gctx of
       Just ADTDef {} -> GV x
       Just OADTDef {viewTy} -> Psi {oadtName = x, viewTy = Just viewTy}
@@ -892,5 +971,6 @@ err errMsg = do
 
 errUnsupported :: LiftM a
 errUnsupported =
-  err "Do not support lifting oblivious constructs, preprocessors, \
-  \or polymorphic equality (except for integer equality)"
+  err
+    "Do not support lifting oblivious constructs, preprocessors, \
+    \or polymorphic equality (except for integer equality)"

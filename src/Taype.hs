@@ -121,6 +121,10 @@ opts = do
     switch $
       long "fno-guard-reshape"
         <> help "Disable guarding reshape instances"
+  optFlagNoSum <-
+    switch $
+      long "fno-sum"
+        <> help "Disable sum optimization"
   optPrintCore <-
     switch $
       long "print-core"
@@ -197,6 +201,7 @@ opts = do
         optFlagNoInline = optFlagNoInline || optFlagNoOptimization,
         optFlagNoMemo = optFlagNoMemo || optFlagNoOptimization,
         optFlagNoGuardReshape = optFlagNoGuardReshape || optFlagNoOptimization,
+        optFlagNoSum = optFlagNoSum || optFlagNoOptimization,
         optNoSolverLog = optNoSolverLog || optNoFiles,
         ..
       }

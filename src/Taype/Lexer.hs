@@ -16,7 +16,6 @@ module Taype.Lexer
     Parser,
     lex,
     printTokens,
-    pIdentComp,
   )
 where
 
@@ -26,7 +25,7 @@ import Data.Text qualified as T
 import Taype.Common
 import Taype.Cute hiding (space)
 import Taype.Error
-import Text.Megaparsec hiding (Token, token, tokens, showErrorItem)
+import Text.Megaparsec hiding (Token, showErrorItem, token, tokens)
 import Text.Megaparsec.Char qualified as C
 import Text.Megaparsec.Char.Lexer qualified as L
 
@@ -198,15 +197,15 @@ pPpx =
       CtorPpx <$> lexeme (try pCtorPpx),
       BuiltinPpx <$> lexeme (try pBuiltinPpx)
     ]
-    where
-      pCtorPpx = do
-        void $ chunk ppxAccent
-        x <- C.upperChar
-        xs <- takeWhileP Nothing isIdent
-        return $ T.cons x xs
-      pBuiltinPpx = do
-        void $ chunk ppxAccent
-        takeWhile1P Nothing (not . isSpace)
+  where
+    pCtorPpx = do
+      void $ chunk ppxAccent
+      x <- C.upperChar
+      xs <- takeWhileP Nothing isIdent
+      return $ T.cons x xs
+    pBuiltinPpx = do
+      void $ chunk ppxAccent
+      takeWhile1P Nothing (not . isSpace)
 
 -- | Reserved tokens that cannot be used for identifier
 reserved :: [Text]
