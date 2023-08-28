@@ -1015,34 +1015,7 @@ processPpx ctx = go
         _ -> errFst "condition" (TBool PublicL) condTy
     go CtorPpx {..} =
       lookupGSig ctor >>= \case
-        Just CtorDef {..} -> case retTy of
-          GV {..} -> do
-            unless (ref == dataType) $
-              err
-                [ [ DC ctor,
-                    DD "is not a constructor of",
-                    DC ref
-                  ]
-                ]
-            let argTy = prod_ paraTypes
-                t' = arrow_ argTy retTy
-            xs <- freshes $ length paraTypes
-            let xts = zipWith (\x t -> (x, Nothing, t)) xs paraTypes
-            e' <- lamP xts $ GV ctor @@ (V <$> xs)
-            return (t', e')
-          Psi {..} ->
-            resolveCtor ctor oadtName >>= \case
-              Just (x, ty) -> return (ty, GV x)
-              _ ->
-                err
-                  [ [ DD "Constructor instance",
-                      DC ctor,
-                      DD "of OADT",
-                      DC oadtName,
-                      DD "is missing"
-                    ]
-                  ]
-          _ -> err [[DD "The type argument is not an ADT or Psi type"]]
+        Just CtorDef {..} -> goCtor ctor paraTypes dataType retTy
         _ -> err [[DC ctor, DD "is not a constructor"]]
     go BuiltinPpx {..} =
       lookupGSig fn >>= \case
@@ -1056,27 +1029,7 @@ processPpx ctx = go
                   return (ty, GV (oblivName fn))
             _ -> err [[DD "Cannot resolve builtin operation"]]
         _ -> err [[DC fn, DD "is not a builtin operation"]]
-    go MatchPpx {..} = case condTy of
-      GV {..} ->
-        lookupGSig ref >>= \case
-          Just ADTDef {..} -> goMatch ref (toList ctors) retTy
-          _ -> oops "Not an ADT"
-      Psi {..} -> do
-        resolveMatch oadtName >>= \case
-          Just (x, t, c) -> goMatchPsi x t c retTy
-          _ ->
-            err
-              [ [ DD "Match instance of OADT",
-                  DC oadtName,
-                  DD "is missing"
-                ]
-              ]
-      _ ->
-        err
-          [ [ DD "The first type argument (discriminee)",
-              DD "is not an ADT or Psi type"
-            ]
-          ]
+    go MatchPpx {..} = goMatch dyn condTy retTy
     go CoercePpx {..} = do
       let t' = arrow_ fromTy toTy
       e' <- goCoerce fromTy toTy
@@ -1154,6 +1107,72 @@ processPpx ctx = go
                         (GV reshapeName @@ [V k1, V k, V x1])
                         (GV reshapeName @@ [V k2, V k, V x2])
                   }
+      t@Sum {left = left@Psi {}, ..} -> do
+        rIte <- goOIte right
+        coer <- goCoerce left right
+        x <- fresh
+        xl <- fresh
+        xr <- fresh
+        y <- fresh
+        yl <- fresh
+        yr <- fresh
+        kx <- fresh
+        vx <- fresh
+        ky <- fresh
+        vy <- fresh
+        return $
+          lets' [(x, t, V f1 @@ [VUnit]), (y, t, V f2 @@ [VUnit])] $
+            smatch'
+              (V x)
+              xl
+              ( smatch'
+                  (V y)
+                  yl
+                  ( pmatch'
+                      PsiP
+                      (V xl)
+                      kx
+                      vx
+                      ( pmatch'
+                          PsiP
+                          (V yl)
+                          ky
+                          vy
+                          ( ite_
+                              (PolyEq (V kx) (V ky))
+                              ( inl_
+                                  Pair
+                                    { pairKind = PsiP,
+                                      left = V kx,
+                                      right =
+                                        mux_
+                                          (V b)
+                                          (V vx)
+                                          (V vy)
+                                    }
+                              )
+                              ( inr_
+                                  ( rIte
+                                      @@ [ V b,
+                                           thunk_ (coer @@ [V xl]),
+                                           thunk_ (coer @@ [V yl])
+                                         ]
+                                  )
+                              )
+                          )
+                      )
+                  )
+                  yr
+                  (inr_ (rIte @@ [V b, thunk_ (coer @@ [V xl]), thunk_ (V yr)]))
+              )
+              xr
+              ( smatch'
+                  (V y)
+                  yl
+                  (inr_ (rIte @@ [V b, thunk_ (V xr), thunk_ (coer @@ [V yl])]))
+                  yr
+                  (inr_ (rIte @@ [V b, thunk_ (V xr), thunk_ (V yr)]))
+              )
       Prod {olabel = PublicL, ..} -> do
         lIte <- goOIte left
         rIte <- goOIte right
@@ -1195,7 +1214,106 @@ processPpx ctx = go
         return $ mux_ (V b) (V f1 @@ [VUnit]) (V f2 @@ [VUnit])
       ty -> errSnd "is not mergeable" ty
 
-    goMatch adtName ctors retTy = do
+    goCtor ctor paraTypes dataType retTy = case retTy of
+      GV {..} -> do
+        unless (ref == dataType) $
+          err
+            [ [ DC ctor,
+                DD "is not a constructor of",
+                DC ref
+              ]
+            ]
+        let argTy = prod_ paraTypes
+            t' = arrow_ argTy retTy
+        xs <- freshes $ length paraTypes
+        let xts = zipWith (\x t -> (x, Nothing, t)) xs paraTypes
+        e' <- lamP xts $ GV ctor @@ (V <$> xs)
+        return (t', e')
+      Psi {..} ->
+        resolveCtor ctor oadtName >>= \case
+          Just (x, ty) -> return (ty, GV x)
+          _ ->
+            err
+              [ [ DD "Constructor instance",
+                  DC ctor,
+                  DD "of OADT",
+                  DC oadtName,
+                  DD "is missing"
+                ]
+              ]
+      Sum {..} -> do
+        (t, f) <- goCtor ctor paraTypes dataType right
+        let (dom, _) = fromJust $ isArrow t
+        xs <- freshes $ length dom
+        let t' = arrows_ dom retTy
+            e' = lams' (zip xs dom) $ inr_ (f @@ (V <$> xs))
+        return (t', e')
+      _ -> err [[DD "The type argument is not an ADT or Psi type"]]
+
+    goMatch dyn condTy retTy = case condTy of
+      GV {..} ->
+        if not dyn
+          then goMatchPad condTy retTy
+          else
+            lookupGSig ref >>= \case
+              Just ADTDef {..} -> goMatchADT ref (toList ctors) retTy
+              _ -> oops "Not an ADT"
+      Psi {..} ->
+        if not dyn
+          then goMatchPad condTy retTy
+          else
+            resolveMatch oadtName >>= \case
+              Just (x, t, c) -> goMatchPsi x t c retTy
+              _ ->
+                err
+                  [ [ DD "Match instance of OADT",
+                      DC oadtName,
+                      DD "is missing"
+                    ]
+                  ]
+      Sum {..} -> do
+        (lt, lMatch) <- goMatch True left retTy
+        (rt, rMatch) <- goMatch True right retTy
+        let (lDom, _) = fromJust $ isArrow lt
+            lAltTs = fromJust $ viaNonEmpty tail lDom
+            (rDom, _) = fromJust $ isArrow rt
+            rAltTs = fromJust $ viaNonEmpty tail rDom
+            argTs = condTy : lAltTs <> rAltTs
+            t = arrows_ argTs retTy
+        x <- fresh
+        lxs <- freshes $ length lAltTs
+        rxs <- freshes $ length rAltTs
+        xl <- fresh
+        xr <- fresh
+        let e =
+              lams' (zip (x : lxs <> rxs) argTs) $
+                smatch'
+                  (V x)
+                  xl
+                  (lMatch @@ (V <$> (xl : lxs)))
+                  xr
+                  (rMatch @@ (V <$> (xr : rxs)))
+        return (t, e)
+      _ ->
+        err
+          [ [ DD "The first type argument (discriminee)",
+              DD "is not an ADT or Psi type"
+            ]
+          ]
+
+    goMatchPad condTy retTy = do
+      (t, e) <- goMatch True condTy retTy
+      let (dom, _) = fromJust $ isArrow t
+          altTs = fromJust $ viaNonEmpty tail dom
+          argTs = condTy : altTs <> altTs
+          t' = arrows_ argTs retTy
+      x <- fresh
+      lxs <- freshes $ length altTs
+      rxs <- freshes $ length altTs
+      let e' = lams' (zip (x : lxs <> rxs) argTs) $ e @@ (V <$> (x : lxs))
+      return (t', e')
+
+    goMatchADT adtName ctors retTy = do
       let altTs = ctors <&> \(_, ts) -> arrow_ (prod_ ts) retTy
           t' = arrows_ (GV adtName : altTs) retTy
       x <- fresh
@@ -1262,6 +1380,21 @@ processPpx ctx = go
                 left = V k,
                 right = GV (sectionName oadtName) @@ [V k, V x]
               }
+    goCoerce from Sum {..} = do
+      coer <- goCoerce from left
+      x <- fresh
+      return $ lam' x from $ inl_ (coer @@ [V x])
+    goCoerce
+      t@Sum
+        { left = from@Psi {},
+          right = to@Psi {oadtName = rightName}
+        }
+      Psi {..} | oadtName == rightName = do
+        coer <- goCoerce from to
+        x <- fresh
+        xl <- fresh
+        xr <- fresh
+        return $ lam' x t $ smatch' (V x) xl (coer @@ [V xl]) xr (V xr)
     goCoerce (TBool PublicL) (TBool OblivL) = do
       x <- fresh
       return $
@@ -1308,7 +1441,14 @@ processPpx ctx = go
                 ]
               ]
       _ -> err [[DD "Type arguments to coercion cannot be dependent types"]]
-    goCoerce _ _ = err [[DD "Cannot resolve coercion"]]
+    goCoerce from to =
+      err
+        [ [ DD "Cannot resolve coercion from",
+            DC from,
+            DD "to",
+            DC to
+          ]
+        ]
 
     errFst :: Doc -> Ty Name -> Ty Name -> TcM a
     errFst what ty ty' =

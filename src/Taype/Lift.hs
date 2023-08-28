@@ -243,7 +243,7 @@ liftExpr Match {..} t idx = do
           then return []
           else zipWith3M go (toList alts) tss argss2
       return $
-        Ppx (MatchPpx {condTy = TV condIdx, retTy = TV idx})
+        Ppx (MatchPpx {condTy = TV condIdx, retTy = TV idx, dyn = noSum})
           @@ (cond : alts1' <> alts2')
     _ -> oops "Not an ADT"
   where
@@ -720,10 +720,12 @@ buildOCtx Options {..} defs =
                 oadtName `elem` oadtNames
             ]
               <> [[SConst from, SConst to] | (from, to) <- userCoerces]
-              -- TODO: maybe we need adt to sum?
               <> concat
                 [ let sname = sumName from to
-                   in [[SConst from, SConst sname], [SConst sname, SConst to]]
+                   in [ [SConst adt, SConst sname],
+                        [SConst from, SConst sname],
+                        [SConst sname, SConst to]
+                      ]
                   | (from, to) <- sums
                 ]
           decomposeCtor ty =

@@ -445,7 +445,7 @@ grammar = mdo
             loc <- pLocatedToken L.MatchPpx
             condTy <- pAtomType
             retTy <- pAtomType
-            return (loc, MatchPpx {..}),
+            return (loc, MatchPpx {dyn = True, ..}),
           do
             ~(loc, fn) <-
               pLocatedTerminal

@@ -40,6 +40,8 @@ module Taype.Syntax
     oite_,
     mux_,
     inj_,
+    inl_,
+    inr_,
     oproj_,
     prod_,
     tuple_,
@@ -55,6 +57,7 @@ module Taype.Syntax
     lets',
     match',
     pmatch',
+    smatch',
     pi',
     lamP,
     arrow_,
@@ -243,7 +246,7 @@ data PpxB f a
   | -- | Constructor
     CtorPpx {ctor :: Text, retTy :: f a}
   | -- | Pattern matching
-    MatchPpx {condTy :: f a, retTy :: f a}
+    MatchPpx {condTy :: f a, retTy :: f a, dyn :: Bool}
   | -- | Builtin operations
     BuiltinPpx {fn :: Text, ty :: f a}
   | -- | Coercion
@@ -441,7 +444,7 @@ instance Monad Expr where
 instance Bound PpxB where
   ItePpx {..} >>>= f = ItePpx {condTy = condTy >>= f, retTy = retTy >>= f}
   CtorPpx {..} >>>= f = CtorPpx {retTy = retTy >>= f, ..}
-  MatchPpx {..} >>>= f = MatchPpx {condTy = condTy >>= f, retTy = retTy >>= f}
+  MatchPpx {..} >>>= f = MatchPpx {condTy = condTy >>= f, retTy = retTy >>= f, ..}
   BuiltinPpx {..} >>>= f = BuiltinPpx {ty = ty >>= f, ..}
   CoercePpx {..} >>>= f = CoercePpx {fromTy = fromTy >>= f, toTy = toTy >>= f}
   LiftPpx {..} >>>= f = LiftPpx {to = to <&> (>>= f), ..}
@@ -679,7 +682,7 @@ instance BiplateM (Ppx Name) (Ty Name) where
   biplateM f MatchPpx {..} = do
     condTy' <- f condTy
     retTy' <- f retTy
-    return MatchPpx {condTy = condTy', retTy = retTy'}
+    return MatchPpx {condTy = condTy', retTy = retTy', ..}
   biplateM f BuiltinPpx {..} = do
     ty' <- f ty
     return BuiltinPpx {ty = ty', ..}
@@ -768,6 +771,12 @@ mux_ cond left right = OIte {label = SafeL, ..}
 
 inj_ :: OLabel -> Bool -> Expr a -> Expr a
 inj_ olabel tag expr = Inj {injTy = Nothing, ..}
+
+inl_ :: Expr a -> Expr a
+inl_ = inj_ PublicL True
+
+inr_ :: Expr a -> Expr a
+inr_ = inj_ PublicL False
 
 oproj_ :: OProjKind -> Expr a -> Expr a
 oproj_ projKind expr = OProj {projTy = Nothing, ..}
@@ -921,6 +930,17 @@ pmatch' pairKind cond xl xr body =
       lBinder = Nothing,
       rBinder = Nothing,
       bnd2 = abstract_ (xl, xr) body,
+      ..
+    }
+
+smatch' :: Expr Name -> Name -> Expr Name -> Name -> Expr Name -> Expr Name
+smatch' cond xl lBody xr rBody =
+  SMatch
+    { olabel = PublicL,
+      lBinder = Nothing,
+      lBnd = abstract_ xl lBody,
+      rBinder = Nothing,
+      rBnd = abstract_ xr rBody,
       ..
     }
 
