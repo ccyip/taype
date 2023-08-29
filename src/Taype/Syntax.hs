@@ -44,6 +44,7 @@ module Taype.Syntax
     inr_,
     oproj_,
     prod_,
+    deprod,
     tuple_,
     thunk_,
     match_,
@@ -784,6 +785,12 @@ oproj_ projKind expr = OProj {projTy = Nothing, ..}
 prod_ :: [Ty a] -> Ty a
 prod_ [] = TUnit
 prod_ ts = foldr1 (Prod PublicL) ts
+
+deprod :: Ty a -> [Ty a]
+deprod TUnit = []
+deprod Prod {olabel = PublicL, ..} = left : deprod right
+deprod Loc {..} = deprod expr
+deprod t = [t]
 
 tuple_ :: [Expr a] -> Expr a
 tuple_ [] = VUnit

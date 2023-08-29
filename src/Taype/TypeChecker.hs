@@ -58,7 +58,12 @@
 --     ANF.
 --
 -- Other invariants for each procedure are documented in that procedure.
-module Taype.TypeChecker (checkDefs, elabPpxDefs) where
+module Taype.TypeChecker
+  ( checkDefs,
+    elabPpxDefs,
+    hasPartialSum,
+  )
+where
 
 import Algebra.Lattice
 import Algebra.PartialOrd
@@ -1032,7 +1037,7 @@ processPpx ctx = go
     go MatchPpx {..} = goMatch dyn condTy retTy
     go CoercePpx {..} = do
       let t' = arrow_ fromTy toTy
-      e' <- goCoerce fromTy toTy
+      e' <- elabCoercePpx fromTy toTy
       return (t', e')
     go LiftPpx {..} = do
       let ty = fromJust to
@@ -1109,7 +1114,7 @@ processPpx ctx = go
                   }
       t@Sum {left = left@Psi {}, ..} -> do
         rIte <- goOIte right
-        coer <- goCoerce left right
+        coer <- elabCoercePpx left right
         x <- fresh
         xl <- fresh
         xr <- fresh
@@ -1242,13 +1247,36 @@ processPpx ctx = go
                 ]
               ]
       Sum {..} -> do
-        (t, f) <- goCtor ctor paraTypes dataType right
-        let (dom, _) = fromJust $ isArrow t
-        xs <- freshes $ length dom
-        let t' = arrows_ dom retTy
-            e' = lams' (zip xs dom) $ inr_ (f @@ (V <$> xs))
+        (leftTy, leftC) <- goCtor ctor paraTypes dataType left
+        (rightTy, rightC) <- goCtor ctor paraTypes dataType right
+        let leftDom = fst $ fromJust $ isArrow1 leftTy
+            rightDom = fst $ fromJust $ isArrow1 rightTy
+        sumTy <- partialSum leftDom rightDom
+        coer <- elabCoercePpx sumTy rightDom
+        let t' = arrow_ sumTy retTy
+            ts = deprod sumTy
+        xs <- freshes $ length ts
+        let xts = zipWith (\x t -> (x, Nothing, t)) xs ts
+            sxs = [x | (x, _, Sum {}) <- xts]
+            mk [] el _ = el
+            mk (y : ys) el er =
+              SMatch
+                { olabel = PublicL,
+                  cond = V y,
+                  lBinder = Nothing,
+                  -- This @y@ shadows the discriminee.
+                  lBnd = abstract_ y $ mk ys el er,
+                  rBinder = Nothing,
+                  rBnd = abstract0 er
+                }
+        e' <-
+          lamP xts $
+            mk
+              sxs
+              (inl_ $ leftC @@ [tuple_ (V <$> xs)])
+              (inr_ $ rightC @@ [coer @@ [tuple_ (V <$> xs)]])
         return (t', e')
-      _ -> err [[DD "The type argument is not an ADT or Psi type"]]
+      _ -> err [[DD "The type argument is not an ADT, Psi type, or sum"]]
 
     goMatch dyn condTy retTy = case condTy of
       GV {..} ->
@@ -1297,7 +1325,7 @@ processPpx ctx = go
       _ ->
         err
           [ [ DD "The first type argument (discriminee)",
-              DD "is not an ADT or Psi type"
+              DD "is not an ADT, Psi type or sum"
             ]
           ]
 
@@ -1342,114 +1370,6 @@ processPpx ctx = go
           TV 0 -> return retTy
           e -> return e
 
-    goCoerce t t' | t == t' = do
-      x <- fresh
-      return $ lam' x t (V x)
-    goCoerce Psi {oadtName} Psi {oadtName = oadtName'} =
-      resolveCoerce oadtName oadtName' >>= \case
-        Just name -> return $ GV name
-        _ ->
-          err
-            [ [ DD "Coerce instance from",
-                DC oadtName,
-                DD "to",
-                DC oadtName',
-                DD "is missing"
-              ]
-            ]
-    goCoerce from@GV {..} Psi {..} = do
-      pubName <- pubNameOfOADTName oadtName
-      unless (pubName == ref) $
-        err
-          [ [ DC pubName,
-              DD "is not the public ADT of OADT",
-              DC oadtName
-            ]
-          ]
-      view <-
-        resolveView oadtName >>= \case
-          Just name -> return $ GV name
-          _ -> err [[DD "View instance of", DC oadtName, DD "is missing"]]
-      x <- fresh
-      k <- fresh
-      return $
-        lam' x from $
-          let' k (fromJust viewTy) (view @@ [V x]) $
-            Pair
-              { pairKind = PsiP,
-                left = V k,
-                right = GV (sectionName oadtName) @@ [V k, V x]
-              }
-    goCoerce from Sum {..} = do
-      coer <- goCoerce from left
-      x <- fresh
-      return $ lam' x from $ inl_ (coer @@ [V x])
-    goCoerce
-      t@Sum
-        { left = from@Psi {},
-          right = to@Psi {oadtName = rightName}
-        }
-      Psi {..} | oadtName == rightName = do
-        coer <- goCoerce from to
-        x <- fresh
-        xl <- fresh
-        xr <- fresh
-        return $ lam' x t $ smatch' (V x) xl (coer @@ [V xl]) xr (V xr)
-    goCoerce (TBool PublicL) (TBool OblivL) = do
-      x <- fresh
-      return $
-        lam' x (TBool PublicL) $
-          GV (sectionName (oblivName "bool")) @@ [V x]
-    goCoerce (TInt PublicL) (TInt OblivL) = do
-      x <- fresh
-      return $
-        lam' x (TInt PublicL) $
-          GV (sectionName (oblivName "int")) @@ [V x]
-    goCoerce
-      from@Prod {olabel = PublicL, left, right}
-      Prod {olabel = PublicL, left = left', right = right'} = do
-        lCoer <- goCoerce left left'
-        rCoer <- goCoerce right right'
-        p <- fresh
-        xl <- fresh
-        xr <- fresh
-        return $
-          lam' p from $
-            pmatch' PublicP (V p) xl xr $
-              Pair
-                { pairKind = PublicP,
-                  left = lCoer @@ [V xl],
-                  right = rCoer @@ [V xr]
-                }
-    goCoerce from@Pi {} to@Pi {} = case (isArrow from, isArrow to) of
-      (Just (argTs, retTy), Just (argTs', retTy')) ->
-        if length argTs == length argTs'
-          then do
-            rCoer <- goCoerce retTy retTy'
-            -- Contravariant
-            aCoer <- zipWithM goCoerce argTs' argTs
-            f <- fresh
-            xs <- freshes $ length argTs
-            return $
-              lams' ((f, from) : zip xs argTs') $
-                rCoer @@ [V f @@ zipWith (\c x -> c @@ [V x]) aCoer xs]
-          else
-            err
-              [ [ DD
-                    "Coercing between functions with \
-                    \different number of arguments"
-                ]
-              ]
-      _ -> err [[DD "Type arguments to coercion cannot be dependent types"]]
-    goCoerce from to =
-      err
-        [ [ DD "Cannot resolve coercion from",
-            DC from,
-            DD "to",
-            DC to
-          ]
-        ]
-
     errFst :: Doc -> Ty Name -> Ty Name -> TcM a
     errFst what ty ty' =
       err
@@ -1469,6 +1389,135 @@ processPpx ctx = go
           ],
           [DH "Got", DC ty']
         ]
+
+elabCoercePpx :: Ty Name -> Ty Name -> TcM (Expr Name)
+elabCoercePpx t t' | t == t' = do
+  x <- fresh
+  return $ lam' x t (V x)
+elabCoercePpx Psi {oadtName} Psi {oadtName = oadtName'} =
+  resolveCoerce oadtName oadtName' >>= \case
+    Just name -> return $ GV name
+    _ ->
+      err
+        [ [ DD "Coerce instance from",
+            DC oadtName,
+            DD "to",
+            DC oadtName',
+            DD "is missing"
+          ]
+        ]
+elabCoercePpx from@GV {..} Psi {..} = do
+  pubName <- pubNameOfOADTName oadtName
+  unless (pubName == ref) $
+    err
+      [ [ DC pubName,
+          DD "is not the public ADT of OADT",
+          DC oadtName
+        ]
+      ]
+  view <-
+    resolveView oadtName >>= \case
+      Just name -> return $ GV name
+      _ -> err [[DD "View instance of", DC oadtName, DD "is missing"]]
+  x <- fresh
+  k <- fresh
+  return $
+    lam' x from $
+      let' k (fromJust viewTy) (view @@ [V x]) $
+        Pair
+          { pairKind = PsiP,
+            left = V k,
+            right = GV (sectionName oadtName) @@ [V k, V x]
+          }
+elabCoercePpx from Sum {..} = do
+  coer <- elabCoercePpx from left
+  x <- fresh
+  return $ lam' x from $ inl_ (coer @@ [V x])
+elabCoercePpx
+  t@Sum
+    { left = from@Psi {},
+      right = to@Psi {oadtName = rightName}
+    }
+  Psi {..} | oadtName == rightName = do
+    coer <- elabCoercePpx from to
+    x <- fresh
+    xl <- fresh
+    xr <- fresh
+    return $ lam' x t $ smatch' (V x) xl (coer @@ [V xl]) xr (V xr)
+elabCoercePpx (TBool PublicL) (TBool OblivL) = do
+  x <- fresh
+  return $
+    lam' x (TBool PublicL) $
+      GV (sectionName (oblivName "bool")) @@ [V x]
+elabCoercePpx (TInt PublicL) (TInt OblivL) = do
+  x <- fresh
+  return $
+    lam' x (TInt PublicL) $
+      GV (sectionName (oblivName "int")) @@ [V x]
+elabCoercePpx
+  from@Prod {olabel = PublicL, left, right}
+  Prod {olabel = PublicL, left = left', right = right'} = do
+    lCoer <- elabCoercePpx left left'
+    rCoer <- elabCoercePpx right right'
+    p <- fresh
+    xl <- fresh
+    xr <- fresh
+    return $
+      lam' p from $
+        pmatch' PublicP (V p) xl xr $
+          Pair
+            { pairKind = PublicP,
+              left = lCoer @@ [V xl],
+              right = rCoer @@ [V xr]
+            }
+elabCoercePpx from@Pi {} to@Pi {} = case (isArrow from, isArrow to) of
+  (Just (argTs, retTy), Just (argTs', retTy')) ->
+    if length argTs == length argTs'
+      then do
+        rCoer <- elabCoercePpx retTy retTy'
+        -- Contravariant
+        aCoer <- zipWithM elabCoercePpx argTs' argTs
+        f <- fresh
+        xs <- freshes $ length argTs
+        return $
+          lams' ((f, from) : zip xs argTs') $
+            rCoer @@ [V f @@ zipWith (\c x -> c @@ [V x]) aCoer xs]
+      else
+        err
+          [ [ DD
+                "Coercing between functions with \
+                \different number of arguments"
+            ]
+          ]
+  _ -> err [[DD "Type arguments to coercion cannot be dependent types"]]
+elabCoercePpx from to =
+  err
+    [ [ DD "Cannot resolve coercion from",
+        DC from,
+        DD "to",
+        DC to
+      ]
+    ]
+
+partialSum :: Ty Name -> Ty Name -> TcM (Ty Name)
+partialSum
+  Prod {olabel = PublicL, left = left1, right = right1}
+  Prod {olabel = PublicL, left = left2, right = right2} = do
+    left' <- partialSum left1 left2
+    right' <- partialSum right1 right2
+    return Prod {olabel = PublicL, left = left', right = right'}
+partialSum t1 t2 = do
+  let t = Sum PublicL t1 t2
+  cls <- compatibleClass t
+  return $ if isJust cls then t else t1
+
+hasPartialSum ::
+  Options -> GCtx Name -> Ty Name -> Ty Name -> ExceptT Err IO (Ty Name)
+hasPartialSum options gctx t1 t2 = runTcM (initEnv options "" gctx gctx) go
+  where
+    go = do
+      t <- partialSum t1 t2
+      elabCoercePpx t t2 $> t
 
 typingPpx :: Ppx Name -> TcM (Ty Name)
 typingPpx ppx = fst <$> processPpx [] ppx
@@ -2045,7 +2094,7 @@ depMatchErr t =
       ]
     ]
 
-pubNameOfOADTName :: Text -> TcM Text
+pubNameOfOADTName :: (MonadReader Env m) => Text -> m Text
 pubNameOfOADTName name =
   lookupGSig name >>= \case
     Just OADTDef {pubName} -> return pubName
