@@ -34,6 +34,14 @@ fn map : (int -> int) -> list -> list = \f xs =>
   | Cons x xs' => Cons (f x) (map f xs')
   end
 
+fn insert_list : list -> list -> list = \xs ys =>
+  match ys with
+  | Nil => xs
+  | Cons y ys' =>
+    // insert_list (insert y xs) ys'
+    insert y (insert_list xs ys')
+  end
+
 // ----------------------------------------------------------------
 // Oblivious list and its instances
 
@@ -100,6 +108,63 @@ fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
       end
 
 // ----------------------------------------------------------------
+// Oblivious list with extact length and its instances
+
+obliv ~list_eq (k : int) =
+  if k = 0
+  then unit
+  else ~int ~* ~list_eq (k-1)
+
+fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
+  if k = 0
+  then ()
+  else match xs with
+       | Nil => ~~
+       | Cons x xs' => ~(~int#s x, ~list_eq#s (k-1) xs')
+       end
+
+fn' ~list_eq#r : (k : int) -> ~list_eq k -> list = \k =>
+  if k = 0
+  then \_ => Nil
+  else \xs => ~match xs with
+              ~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
+              end
+
+fn ~list_eq#Nil : unit -> #~list_eq = \_ =>
+  #(0, (() :: ~list_eq 0))
+
+fn ~list_eq#Cons : ~int * #~list_eq -> #~list_eq = \p =>
+  match p with
+  (x, pxs) =>
+    match pxs with
+    #(k, xs) =>
+      #(k+1, (~(x, xs) :: ~list_eq (k+1)))
+    end
+  end
+
+fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (if k = 0
+       then \_ => f1 ()
+       else \xs =>
+         ~match xs with
+         | ~(x, xs') => f2 (x, #(k-1, xs'))
+         end : ~list_eq k -> 'a) xs
+    end
+
+fn ~list_eq#view : list -> int = length
+
+fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
+  %match #~list_eq #~list pxs
+    (\_ => ~list#Nil ())
+    (\xs =>
+      match xs with
+      (x, xs') => ~list#Cons (x, ~list_eq#~list#coerce xs')
+      end)
+
+// ----------------------------------------------------------------
 // Oblivious functions by hand
 
 fn ~elem' : (k : int) -> ~int -> ~list k -> ~bool = \k ~y =>
@@ -158,61 +223,83 @@ fn ~map' : (k : int) -> (~int -> ~int) -> ~list k -> ~list k = \k f =>
 fn ~test_map' : (k : int) -> ~list k -> ~int -> ~list k = \k xs y =>
   ~map' k (\x => x ~+ y) xs
 
+fn ~insert_eq' : (k : int) -> ~int -> ~list_eq k -> ~list_eq (k+1) = \k y =>
+  if k = 0 then \_ => (~(y, ()) :: ~list_eq (k+1))
+  else \xs =>
+    ~match xs with
+    ~(x, xs') =>
+      ~if y ~<= x then (~(y, xs) :: ~list_eq (k+1))
+      else (~(x, ~insert_eq' (k-1) y xs') :: ~list_eq (k+1))
+    end
+
+fn ~insert_list_eq' :
+  (xk : int) -> (yk : int) -> ~list_eq xk -> ~list_eq yk -> ~list_eq (xk+yk) =
+  \xk yk xs =>
+    if yk = 0 then \_ => (xs :: ~list_eq (xk+yk))
+    else \ys =>
+      ~match ys with
+      ~(y, ys') =>
+        (~insert_list_eq' (xk+1) (yk-1) (~insert_eq' xk y xs) ys'
+          :: ~list_eq (xk+yk))
+        // (~insert_eq' (xk+(yk-1)) y (~insert_list_eq' xk (yk-1) xs ys')
+        //   :: ~list_eq (xk+yk))
+      end
+
 // ----------------------------------------------------------------
 // Oblivious functions by preprocessors
 
-fn ~elem_lifted : ~int -> #~list -> ~bool = \y xs =>
-  %match #~list ~bool
-    xs
-    (\_ => %coerce bool ~bool false)
-    (\p =>
-      match p with
-      (x, xs') =>
-        %if ~bool ~bool (%= (~int -> ~int -> ~bool) x y)
-          (\_ => %coerce bool ~bool true)
-          (\_ => ~elem_lifted y xs')
-      end)
+// fn ~elem_lifted : ~int -> #~list -> ~bool = \y xs =>
+//   %match #~list ~bool
+//     xs
+//     (\_ => %coerce bool ~bool false)
+//     (\p =>
+//       match p with
+//       (x, xs') =>
+//         %if ~bool ~bool (%= (~int -> ~int -> ~bool) x y)
+//           (\_ => %coerce bool ~bool true)
+//           (\_ => ~elem_lifted y xs')
+//       end)
 
-fn ~insert_lifted : ~int -> #~list -> #~list = \y xs =>
-  %match #~list #~list
-    xs
-    (\_ => %Cons #~list (y, %Nil #~list ()))
-    (\p =>
-      match p with
-      (x, xs') =>
-        %if ~bool #~list (%<= (~int -> ~int -> ~bool) y x)
-          (\_ => %Cons #~list (y, xs))
-          (\_ => %Cons #~list (x, ~insert_lifted y xs'))
-      end)
+// fn ~insert_lifted : ~int -> #~list -> #~list = \y xs =>
+//   %match #~list #~list
+//     xs
+//     (\_ => %Cons #~list (y, %Nil #~list ()))
+//     (\p =>
+//       match p with
+//       (x, xs') =>
+//         %if ~bool #~list (%<= (~int -> ~int -> ~bool) y x)
+//           (\_ => %Cons #~list (y, xs))
+//           (\_ => %Cons #~list (x, ~insert_lifted y xs'))
+//       end)
 
-fn ~filter_lifted : (~int -> ~bool) -> #~list -> #~list = \f xs =>
-  %match #~list #~list
-    xs
-    (\_ => %Nil #~list ())
-    (\p =>
-      match p with
-      (x, xs') =>
-        let v = ~filter_lifted f xs' in
-        %if ~bool #~list (f x)
-          (\_ => %Cons #~list (x, v))
-          (\_ => v)
-      end)
+// fn ~filter_lifted : (~int -> ~bool) -> #~list -> #~list = \f xs =>
+//   %match #~list #~list
+//     xs
+//     (\_ => %Nil #~list ())
+//     (\p =>
+//       match p with
+//       (x, xs') =>
+//         let v = ~filter_lifted f xs' in
+//         %if ~bool #~list (f x)
+//           (\_ => %Cons #~list (x, v))
+//           (\_ => v)
+//       end)
 
-fn ~map_lifted : (~int -> ~int) -> #~list -> #~list = \f xs =>
-  %match #~list #~list
-    xs
-    (\_ => %Nil #~list ())
-    (\p =>
-      match p with
-      (x, xs') =>
-        %Cons #~list (f x, ~map_lifted f xs')
-      end)
+// fn ~map_lifted : (~int -> ~int) -> #~list -> #~list = \f xs =>
+//   %match #~list #~list
+//     xs
+//     (\_ => %Nil #~list ())
+//     (\p =>
+//       match p with
+//       (x, xs') =>
+//         %Cons #~list (f x, ~map_lifted f xs')
+//       end)
+
 
 // ----------------------------------------------------------------
 // Oblivious functions by lifting
 
 fn ~elem : ~int -> #~list -> ~bool = %lift elem
-fn ~insert : ~int -> #~list -> #~list = %lift insert
 fn ~map : (~int -> ~int) -> #~list -> #~list = %lift map
 fn ~filter : (~int -> ~bool) -> #~list -> #~list = %lift filter
 
@@ -222,62 +309,13 @@ fn ~test_map : #~list -> ~int -> #~list = \xs y =>
 fn ~test_filter : #~list -> ~int -> #~list = \xs y =>
   ~filter (\x => x ~<= y) xs
 
-// ----------------------------------------------------------------
-// Oblivious list with extact length and its instances
+// fn ~insert : ~int -> #~list_eq -> #~list_eq + #~list = %lift insert
+// fn ~insert : ~int -> #~list_eq + #~list -> #~list_eq + #~list = %lift insert
+fn ~insert : ~int -> #~list_eq -> #~list = %lift insert
 
-obliv ~list_eq (k : int) =
-  if k = 0
-  then unit
-  else ~int ~* ~list_eq (k-1)
-
-fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
-  if k = 0
-  then ()
-  else match xs with
-       | Nil => ~~
-       | Cons x xs' => ~(~int#s x, ~list_eq#s (k-1) xs')
-       end
-
-fn' ~list_eq#r : (k : int) -> ~list_eq k -> list = \k =>
-  if k = 0
-  then \_ => Nil
-  else \xs => ~match xs with
-              ~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
-              end
-
-fn ~list_eq#Nil : unit -> #~list_eq = \_ =>
-  #(0, (() :: ~list_eq 0))
-
-fn ~list_eq#Cons : ~int * #~list_eq -> #~list_eq = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, (~(x, xs) :: ~list_eq (k+1)))
-    end
-  end
-
-fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~list_eq k -> 'a) xs
-    end
-
-fn ~list_eq#view : list -> int = length
-
-fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
-  %match #~list_eq #~list pxs
-    (\_ => ~list#Nil ())
-    (\xs =>
-      match xs with
-      (x, xs') => ~list#Cons (x, ~list_eq#~list#coerce xs')
-      end)
+// fn ~insert_list : #~list -> #~list -> #~list = %lift insert_list
+fn ~insert_list : #~list_eq -> #~list_eq -> #~list = %lift insert_list
+// fn ~insert_list : #~list_eq -> #~list_eq -> #~list_eq + #~list = %lift insert_list
 
 // ----------------------------------------------------------------
 // Oblivious list with maximum length and element indicator

@@ -1,3 +1,3 @@
 (executables
- (names "test_elem" "test_insert" "test_filter" "test_map")
+ (names "test_elem" "test_insert" "test_filter" "test_map" "test_insert_list")
  (libraries common))
