@@ -1430,9 +1430,15 @@ elabCoercePpx from@GV {..} Psi {..} = do
             right = GV (sectionName oadtName) @@ [V k, V x]
           }
 elabCoercePpx from Sum {..} = do
-  coer <- elabCoercePpx from left
+  f <- go
   x <- fresh
-  return $ lam' x from $ inl_ (coer @@ [V x])
+  return $ lam' x from $ f (V x)
+  where
+    go = do
+      (inj, coer) <-
+        ((inl_,) <$> elabCoercePpx from left) `catchError` \_ ->
+          (inr_,) <$> elabCoercePpx from right
+      return $ \e -> inj (coer @@ [e])
 elabCoercePpx
   t@Sum
     { left = from@Psi {},

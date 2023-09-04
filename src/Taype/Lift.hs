@@ -736,6 +736,7 @@ buildOCtx options@Options {..} gctx defs = do
                       [SConst from, SConst sname],
                       [SConst sname, SConst to]
                     ]
+                      <> [[SConst to, SConst sname] | not optFlagStrictCoerce]
                 | (from, to) <- sums
               ]
         lookupCtor ctorName name =

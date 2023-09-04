@@ -92,6 +92,7 @@ data Options = Options
     optFlagNoMemo :: Bool,
     optFlagNoGuardReshape :: Bool,
     optFlagNoSum :: Bool,
+    optFlagStrictCoerce :: Bool,
     optPrintCore :: Bool,
     optStage :: Int,
     optPrintOil :: Bool,

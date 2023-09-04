@@ -125,6 +125,13 @@ opts = do
     switch $
       long "fno-sum"
         <> help "Disable sum optimization"
+  optFlagStrictCoerce <-
+    switch $
+      long "fstrict-coerce"
+        <> help
+          "Do not allow certain coercions in lifting that may negatively \
+          \impact performance or are unnecessary. This option can \
+          \cause certain functions to fail lifting"
   optPrintCore <-
     switch $
       long "print-core"
