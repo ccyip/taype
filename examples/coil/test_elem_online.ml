@@ -1,3 +1,4 @@
+open Containers
 open Sexplib
 open Taype_driver_coil
 open Coil.M (Driver)
@@ -5,9 +6,9 @@ open Coil_helper
 open Coil_helper.M (Driver)
 
 let () =
-  let n = 4 in
+  let n = 8 in
 
-  let xs = mylist_of_list [ 1; 2; 3; 4 ] in
+  let xs = mylist_of_list List.(1 -- n) in
   let y = 2 in
 
   let res =
@@ -17,8 +18,8 @@ let () =
   in
   Conv.sexp_of_bool res |> print_sexp;
 
-  let xs = mylist_of_list [ 1; 2; 3; 4 ] in
-  let y = 5 in
+  let xs = mylist_of_list List.(1 -- n) in
+  let y = n + 1 in
 
   let res =
     run_coil_simple "elem"
