@@ -1257,15 +1257,15 @@ processPpx ctx = go
             ts = deprod sumTy
         xs <- freshes $ length ts
         let xts = zipWith (\x t -> (x, Nothing, t)) xs ts
-            sxs = [x | (x, _, Sum {}) <- xts]
+        sxs <- mapM (\x -> (x,) <$> fresh) [x | (x, _, Sum {}) <- xts]
+        let xs' = [ fromMaybe x $ lookup x sxs | x <- xs ]
             mk [] el _ = el
-            mk (y : ys) el er =
+            mk ((y, y') : ys) el er =
               SMatch
                 { olabel = PublicL,
                   cond = V y,
                   lBinder = Nothing,
-                  -- This @y@ shadows the discriminee.
-                  lBnd = abstract_ y $ mk ys el er,
+                  lBnd = abstract_ y' $ mk ys el er,
                   rBinder = Nothing,
                   rBnd = abstract0 er
                 }
@@ -1273,7 +1273,7 @@ processPpx ctx = go
           lamP xts $
             mk
               sxs
-              (inl_ $ leftC @@ [tuple_ (V <$> xs)])
+              (inl_ $ leftC @@ [tuple_ (V <$> xs')])
               (inr_ $ rightC @@ [coer @@ [tuple_ (V <$> xs)]])
         return (t', e')
       _ -> err [[DD "The type argument is not an ADT, Psi type, or sum"]]
