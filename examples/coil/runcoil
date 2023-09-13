@@ -27,7 +27,7 @@ case "$CMD" in
             [ -f "$SRC_FILE" ] || exit 1
 
             SRC_PATH="$(pwd)"/"$SRC_FILE"
-            (cd "$COIL_DIR"; python main.py "$SRC_PATH")
+            (cd "$COIL_DIR"; time python main.py "$SRC_PATH")
             mkdir -p "$BUILD_DIR"
             cmake -D TARGET="$TGT_FILE" -B "$BUILD_DIR" -S "$COIL_DIR/backends"
             cd "$BUILD_DIR"
