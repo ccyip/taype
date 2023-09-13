@@ -12,12 +12,12 @@ let () =
   let key = 4 in
 
   let res =
-    run_coil_simple "assoc_lookup"
+    run_coil "assoc_lookup"
       [
         Plaintext.obliv_list_eq_s n keys;
         Plaintext.obliv_list_eq_s n values;
         Plaintext.obliv_int_s key;
       ]
-    |> Plaintext.obliv_int_r
+      Deser.int
   in
   Conv.sexp_of_int res |> print_sexp

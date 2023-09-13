@@ -16,13 +16,13 @@ let () =
 
   let res = obliv_decide_max dtree features in
 
-  compile_coil_simple "dtree_max" res;
+  compile_coil "dtree_max" res Ser.int;
 
   let dtree = Sexp.of_string_conv_exn "(0 15 (1 18 1 2) 3)" dtree_of_sexp in
   let features = Conceal.obliv_list_eq_s_for n Party.Trusted in
 
   let res = obliv_decide_all dtree features in
 
-  compile_coil_simple "dtree_all" res;
+  compile_coil "dtree_all" res Ser.int;
 
   finalize_driver ()

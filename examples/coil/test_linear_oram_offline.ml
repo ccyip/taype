@@ -6,13 +6,13 @@ open Coil.M (Driver)
 let () =
   setup_driver "127.0.0.1" 12345 Party.Public;
 
-  let n = 8 in
+  let n = 16 in
 
   let xs = Conceal.obliv_list_eq_s_for n Party.Trusted in
   let i = Conceal.obliv_int_s_for Party.Trusted in
 
   let res = obliv_lookup xs i in
 
-  compile_coil_simple "linear_oram" res;
+  compile_coil "lookup" res Ser.int;
 
   finalize_driver ()

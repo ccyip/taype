@@ -12,9 +12,9 @@ let () =
   let y = 2 in
 
   let res =
-    run_coil_simple "elem"
+    run_coil "elem"
       [ Plaintext.obliv_list_eq_s n xs; Plaintext.obliv_int_s y ]
-    |> Plaintext.obliv_bool_r
+      Deser.bool
   in
   Conv.sexp_of_bool res |> print_sexp;
 
@@ -22,8 +22,8 @@ let () =
   let y = n + 1 in
 
   let res =
-    run_coil_simple "elem"
+    run_coil "elem"
       [ Plaintext.obliv_list_eq_s n xs; Plaintext.obliv_int_s y ]
-    |> Plaintext.obliv_bool_r
+      Deser.bool
   in
   Conv.sexp_of_bool res |> print_sexp

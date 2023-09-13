@@ -1,10 +1,23 @@
 open Sexplib
-
-let output_sexp_conv conv i oc = Sexp.output oc (conv i)
-
-let input_sexp_conv conv ic = conv (Sexp.input_sexp ic)
+open Taype_driver_coil
 
 let print_sexp s = print_endline (Sexp.to_string_hum s)
+
+module Ser = struct
+  open Coil.M (Driver)
+  include Ser
+
+  let list = oadt Conv.sexp_of_int obliv_list
+  let list_eq = oadt Conv.sexp_of_int obliv_list_eq
+end
+
+module Deser = struct
+  open Coil.M (Driver)
+  include Deser
+
+  let list = oadt Conv.int_of_sexp Plaintext.obliv_list_r
+  let list_eq = oadt Conv.int_of_sexp Plaintext.obliv_list_eq_r
+end
 
 module M (Driver : Taype_driver.S) = struct
   open Coil.M (Driver)

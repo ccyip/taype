@@ -14,6 +14,6 @@ let () =
 
   let res = obliv_elem y xs in
 
-  compile_coil_simple "elem" res;
+  compile_coil "elem" res Ser.bool;
 
   finalize_driver ()

@@ -14,6 +14,6 @@ let () =
 
   let res = obliv_assoc_lookup keys values key in
 
-  compile_coil_simple "assoc_lookup" res;
+  compile_coil "assoc_lookup" res Ser.int;
 
   finalize_driver ()
