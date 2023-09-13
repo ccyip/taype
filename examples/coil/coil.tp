@@ -306,6 +306,24 @@ fn decide : dtree -> list -> int = \t xs =>
       if x <= thd then decide lt xs else decide rt xs
   end
 
+// returns the index of the first price, and the first price and second price.
+fn sp_ : int -> list -> int * int * int = \idx xs =>
+  match xs with
+  | Nil => (0, 0, 0)
+  | Cons x xs' =>
+    match sp_ (idx+1) xs' with
+    (idx1, x1, x2) =>
+      if x2 <= x then if x1 <= x then (idx, x, x1) else (idx1, x1, x)
+      else (idx1, x1, x2)
+    end
+  end
+
+// return the index of the first price and the value of second price.
+fn sp : list -> int * int = \xs =>
+  match sp_ 0 xs with
+  (idx1, _, x2) => (idx1, x2)
+  end
+
 // ----------------------------------------------------------------
 // Lifted oblivious functions
 
@@ -316,7 +334,7 @@ fn ~map : (~int -> ~int) -> #~list -> #~list = %lift map
 fn ~elem : ~int -> #~list_eq -> ~bool = %lift elem
 
 fn ~test_filter : #~list -> ~int -> #~list = \xs y =>
-  ~filter (\x => x ~<= y) xs
+  ~filter (\x => y ~<= x) xs
 
 fn ~decide_max : #~dtree_max -> #~list_eq -> ~int = %lift decide
 fn ~decide_all : dtree -> #~list_eq -> ~int = %lift decide
@@ -340,3 +358,6 @@ fn ~log_lookup : #~list_eq -> ~int -> ~int = %lift log_lookup
 
 // merge
 fn ~merge : #~list_eq -> #~list_eq -> #~list = %lift merge
+
+// sp_auction
+fn ~sp : #~list_eq -> ~int * ~int = %lift sp
