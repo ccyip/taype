@@ -204,7 +204,7 @@ memo = foldMapM go
                 GV "memo" @@ [V y, GV name_, V x]
           def' =
             FunDef {expr = expr', ..}
-      return [(name_, FunDef {attr = NoAttr, ..}), (name, def')]
+      return [(name_, FunDef {..}), (name, def')]
     go namedDef = return [namedDef]
 
 -- | Guard reshape instances.
@@ -237,7 +237,7 @@ guardReshape defs = foldMapM go defs
                     (V x)
                     (GV name_ @@ [V k1, V k2, V x])
               newDef = FunDef {attr = ReshapeAttr, expr = expr', ..}
-          return [(name_, FunDef {attr = NoAttr, ..}), (name, newDef)]
+          return [(name_, FunDef {attr = ReshapeAttr, ..}), (name, newDef)]
         _ -> return [(name, def')]
     mkName_ x = x <> "_"
 
