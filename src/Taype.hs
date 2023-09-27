@@ -121,10 +121,10 @@ opts = do
     switch $
       long "fno-guard-reshape"
         <> help "Disable guarding reshape instances"
-  optFlagNoSum <-
+  optFlagSum <-
     switch $
-      long "fno-sum"
-        <> help "Disable sum optimization"
+      long "fsum-opt"
+        <> help "Enable sum optimization"
   optFlagStrictCoerce <-
     switch $
       long "fstrict-coerce"
@@ -208,7 +208,7 @@ opts = do
         optFlagNoInline = optFlagNoInline || optFlagNoOptimization,
         optFlagNoMemo = optFlagNoMemo || optFlagNoOptimization,
         optFlagNoGuardReshape = optFlagNoGuardReshape || optFlagNoOptimization,
-        optFlagNoSum = optFlagNoSum || optFlagNoOptimization,
+        optFlagNoSum = not optFlagSum || optFlagNoOptimization,
         optNoSolverLog = optNoSolverLog || optNoFiles,
         ..
       }
