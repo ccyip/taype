@@ -347,7 +347,7 @@ toOilProgram options@Options {..} defs = do
               T.GV {..} ->
                 if optFlagNoMemo
                   then Nothing
-                  else Just ("embel_" <> ref)
+                  else Just (embelName ref)
               _ -> Nothing,
             ..
           }

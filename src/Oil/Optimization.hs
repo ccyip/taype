@@ -265,14 +265,11 @@ memoADT defs = foldMap go defs <> copiedDefs
         )
       ]
     go def = [def]
-    mkName = (<> "_memo")
-    mkEmbel = ("embel_" <>)
-    mkErase = ("erase_" <>)
     mkSmartCtor x = "mk_" <> x <> "_memo"
-    memoTy = tGV . mkName
+    memoTy = tGV . memoName
     embelTy name = prod_ TInt (memoTy name)
-    genMemoTy t ctors = (mkName t, ADTDef {ctors = genMemoCtor <$> ctors})
-    genMemoCtor (ctor, ts) = (mkName ctor, genCtorArgTs ts)
+    genMemoTy t ctors = (memoName t, ADTDef {ctors = genMemoCtor <$> ctors})
+    genMemoCtor (ctor, ts) = (memoName ctor, genCtorArgTs ts)
     unlessView TApp {args = [], ..} _ f | tctor `member` views = f tctor
     unlessView _ t _ = t
     genCtorArgTy t = unlessView t t embelTy
@@ -280,7 +277,7 @@ memoADT defs = foldMap go defs <> copiedDefs
     genCtorArg mk x t = unlessView t (V x) $ \name -> GV (mk name) @@ [V x]
     genCtorArgs mk = zipWith (genCtorArg mk)
     genEmbel t ctors f =
-      ( mkEmbel t,
+      ( embelName t,
         FunDef
           { attr = NoAttr,
             ty = Arrow (tGV t) (embelTy t),
@@ -294,13 +291,13 @@ memoADT defs = foldMap go defs <> copiedDefs
     genEmbelMemoExpr x ctors =
       let genAlt (ctor, ts) = do
             xs <- freshes $ length ts
-            let args = genCtorArgs mkEmbel xs ts
-            return (ctor, xs, GV (mkName ctor) @@ args)
+            let args = genCtorArgs embelName xs ts
+            return (ctor, xs, GV (memoName ctor) @@ args)
        in do
             alts <- mapM genAlt ctors
             return $ match' (V x) alts
     genErase t ctors =
-      ( mkErase t,
+      ( eraseName t,
         FunDef
           { attr = NoAttr,
             ty = Arrow (embelTy t) (tGV t),
@@ -316,13 +313,13 @@ memoADT defs = foldMap go defs <> copiedDefs
     genEraseMemoExpr x ctors =
       let genAlt (ctor, ts) = do
             xs <- freshes $ length ts
-            let args = genCtorArgs mkErase xs ts
-            return (mkName ctor, xs, GV ctor @@ args)
+            let args = genCtorArgs eraseName xs ts
+            return (memoName ctor, xs, GV ctor @@ args)
        in do
             alts <- mapM genAlt ctors
             return $ match' (V x) alts
     genProj t f =
-      ( mkName f,
+      ( memoName f,
         -- TODO: maybe inline this?
         FunDef
           { attr = OADTAttr (embelTy t),
@@ -346,12 +343,12 @@ memoADT defs = foldMap go defs <> copiedDefs
       )
     genSmartCtorExpr e ctor ts = runFreshM $ do
       xs <- freshes $ length ts
-      let args = genCtorArgs mkErase xs ts
+      let args = genCtorArgs eraseName xs ts
       return $
         lams' xs $
-          pair_ (e @@ [GV ctor @@ args]) (GV (mkName ctor) @@ (V <$> xs))
+          pair_ (e @@ [GV ctor @@ args]) (GV (memoName ctor) @@ (V <$> xs))
 
-    rewriteName x | x `member` keptClos = mkName x
+    rewriteName x | x `member` keptClos = memoName x
     rewriteName x | x `member` viewCtors = mkSmartCtor x
     rewriteName x = x
     rewriteTy = (runFreshM .) $ transformM $ \case
@@ -363,7 +360,7 @@ memoADT defs = foldMap go defs <> copiedDefs
         | ctor' `member` viewCtors -> do
             xl <- fresh
             xr <- fresh
-            let rewriteAlt MatchAlt {..} = MatchAlt {ctor = mkName ctor, ..}
+            let rewriteAlt MatchAlt {..} = MatchAlt {ctor = memoName ctor, ..}
             return $
               match'
                 cond
