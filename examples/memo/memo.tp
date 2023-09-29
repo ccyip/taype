@@ -1,0 +1,112 @@
+data list = Nil | Cons int list
+
+data nat = Zero | Succ nat
+
+fn length : list -> nat = \xs =>
+  match xs with
+  | Nil => Zero
+  | Cons _ xs' => Succ (length xs')
+  end
+
+fn elem : int -> list -> bool = \y xs =>
+  match xs with
+  | Nil => false
+  | Cons x xs' => if x = y then true else elem y xs'
+  end
+
+fn map : (int -> int) -> list -> list = \f xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' => Cons (f x) (map f xs')
+  end
+
+// ----------------------------------------------------------------
+// Oblivious list and its instances
+
+obliv ~list (k : nat) =
+  match k with
+  | Zero => unit
+  | Succ k' => unit ~+ ~int ~* ~list k'
+  end
+
+fn ~list#s : (k : nat) -> list -> ~list k = \k xs =>
+  match k with
+  | Zero => ()
+  | Succ k' =>
+    match xs with
+    | Nil => ~inl ()
+    | Cons x xs' => ~inr ~(~int#s x, ~list#s k' xs')
+    end
+  end
+
+fn' ~list#r : (k : nat) -> ~list k -> list = \k =>
+  match k with
+  | Zero => \_ => Nil
+  | Succ k' => \xs =>
+    ~match xs with
+    | ~inl _ => Nil
+    | ~inr ~(x, xs') => Cons (~int#r x) (~list#r k' xs')
+    end
+  end
+
+fn ~list#Nil : unit -> #~list = \_ =>
+  #(Zero, ())
+
+fn ~list#Cons : ~int * #~list -> #~list = \p =>
+  match p with
+  (x, pxs) =>
+    match pxs with
+    #(k, xs) => #(Succ k, ~inr ~(x, xs))
+    end
+  end
+
+fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (match k with
+       | Zero => \_ => f1 ()
+       | Succ k' => \xs =>
+         ~match xs with
+         | ~inl _ => f1 ()
+         | ~inr ~(x, xs') => f2 (x, #(k', xs'))
+         end
+       end : ~list k -> 'a) xs
+    end
+
+fn ~list#view : list -> nat = length
+
+fn nat_le : nat -> nat -> bool = \x y =>
+  match x with
+  | Zero => true
+  | Succ x' =>
+    match y with
+    | Zero => false
+    | Succ y' => nat_le x' y'
+    end
+  end
+
+fn ~list#join : nat -> nat -> nat = \x y => if nat_le x y then y else x
+
+fn ~list#reshape : (k : nat) -> (k' : nat) -> ~list k -> ~list k' = \k k' =>
+  match k' with
+  | Zero => \_ => ()
+  | Succ k' =>
+    match k with
+    | Zero => \_ => ~inl ()
+    | Succ k => \xs =>
+      ~match xs with
+      | ~inl _ => ~inl ()
+      | ~inr ~(x, xs') => ~inr ~(x, ~list#reshape k k' xs')
+      end
+    end
+  end
+
+// ----------------------------------------------------------------
+// Oblivious functions by lifting
+
+fn ~elem : ~int -> #~list -> ~bool = %lift elem
+fn ~map : (~int -> ~int) -> #~list -> #~list = %lift map
+
+fn ~test_map : #~list -> ~int -> #~list = \xs y =>
+  ~map (\x => x ~+ y) xs

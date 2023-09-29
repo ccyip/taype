@@ -1,0 +1,3 @@
+(executables
+ (names "test_elem" "test_map")
+ (libraries common))
