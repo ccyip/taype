@@ -16,7 +16,7 @@ import Data.HashSet (member)
 import Data.List (partition)
 import Data.Maybe (fromJust)
 import Oil.Optimization
-import Oil.Syntax
+import Oil.Syntax hiding (Env)
 import Relude.Extra.Bifunctor
 import Taype.Common
 import Taype.Name
@@ -359,18 +359,18 @@ toOilDef :: T.Def Name -> TslM (Def Name)
 toOilDef T.FunDef {..} = withRevealing (label == LeakyL) $ do
   let ty' = toOilTy ty
   expr' <- toOilExpr expr
-  return FunDef {ty = ty', expr = expr', attr = attr'}
+  return FunDef {ty = ty', expr = expr', attr = attr', flags = flags'}
   where
     attr' = case label of
       LeakyL -> LeakyAttr
       _ -> case attr of
-        KnownInst inst -> case inst of
-          SectionInst {} -> SectionAttr
-          ReshapeInst {} -> ReshapeAttr
-          CtorInst {} -> InlineAttr
-          MatchInst {} -> InlineAttr
-          _ -> NoAttr
+        KnownInst SectionInst {} -> SectionAttr
+        KnownInst ReshapeInst {} -> ReshapeAttr
         _ -> NoAttr
+    flags' = case attr of
+      KnownInst CtorInst {} -> emptyFlags {inlineFlag = True}
+      KnownInst MatchInst {} -> emptyFlags {inlineFlag = True}
+      _ -> emptyFlags
 toOilDef T.OADTDef {..} = do
   let viewTy' = toOilTy viewTy
   (x, body) <- unbind1 bnd
@@ -379,7 +379,8 @@ toOilDef T.OADTDef {..} = do
     FunDef
       { ty = Arrow viewTy' sizeTy,
         expr = lamB x binder body',
-        attr = OADTAttr viewTy'
+        attr = OADTAttr viewTy',
+        flags = emptyFlags
       }
 toOilDef T.ADTDef {..} = do
   let ctors' = secondF (toOilTy <$>) $ toList ctors

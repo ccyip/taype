@@ -4,7 +4,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE NoFieldSelectors #-}
 
 -- |
 -- Copyright: (c) 2022-2023 Qianchuan Ye
@@ -24,6 +23,8 @@ module Oil.Syntax
     NamedDef,
     Defs,
     Attribute (..),
+    Flags (..),
+    emptyFlags,
     Program (..),
     OADTInfo (..),
 
@@ -45,6 +46,7 @@ module Oil.Syntax
     let',
     lets',
     match',
+    fst',
 
     -- * Array operations
     aName,
@@ -60,6 +62,10 @@ module Oil.Syntax
     DepGraph (..),
     mkDepGraph,
     reachableSet,
+
+    -- * Optimizer monad
+    Env (..),
+    OptM,
   )
 where
 
@@ -145,6 +151,7 @@ data DefB f a
   = -- | Function
     FunDef
       { attr :: Attribute,
+        flags :: Flags,
         ty :: Ty,
         expr :: f a
       }
@@ -163,9 +170,22 @@ data Attribute
   | LeakyAttr
   | OADTAttr Ty
   | ReshapeAttr
-  | InlineAttr
   | NoAttr
   deriving stock (Show, Eq)
+
+data Flags = Flags
+  { inlineFlag :: Bool,
+    simplifiedFlag :: Bool,
+    simplifierFlag :: Maybe (Expr Name -> OptM (Expr Name))
+  }
+
+emptyFlags :: Flags
+emptyFlags =
+  Flags
+    { inlineFlag = False,
+      simplifiedFlag = False,
+      simplifierFlag = Nothing
+    }
 
 -- | OIL program
 data Program = Program
@@ -371,6 +391,13 @@ match' cond alts = Match {alts = go <$> alts, ..}
           ..
         }
 
+fst' :: Expr Name
+fst' = runFreshM $ do
+  x <- fresh
+  xl <- fresh
+  xr <- fresh
+  return $ lam' x $ match' (V x) [("(,)", [xl, xr], V xl)]
+
 ----------------------------------------------------------------
 -- Pretty printer
 
@@ -514,3 +541,21 @@ reachableSet DepGraph {..} =
   fromList . toNames . reachable graph . fromJust . toVertex
   where
     toNames vs = [name | (_, name, _) <- fromVertex <$> vs]
+
+----------------------------------------------------------------
+-- Optimizer monad
+
+data Env = Env
+  { -- | Commandline options
+    options :: Options,
+    -- | Local definition (binding) context
+    --
+    -- All expressions are in ANF and simplified (deep or shallow). If the
+    -- expression is a global variable, it must be in application form (with
+    -- empty arguments).
+    dctx :: [(Name, Expr Name)],
+    -- | Whether to recursively simplify under binders
+    deepSimp :: Bool
+  }
+
+type OptM = FreshT (ReaderT Env IO)

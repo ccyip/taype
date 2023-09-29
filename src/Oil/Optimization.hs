@@ -54,7 +54,10 @@ optimize options@Options {..} defs =
     simplify_ = if optFlagNoSimplify then return else simplify
     inline_ ictx = if optFlagNoInline then return else inline ictx
     inlineCtx defs' = do
-      let inlinables = [def | def@(_, FunDef {attr = InlineAttr}) <- defs']
+      let inlinables =
+            [ def
+              | def@(_, FunDef {flags = Flags {inlineFlag = True}}) <- defs'
+            ]
       inlinables' <- runOpt $ biplateM (simplify_ <=< toANF) inlinables
       let ictx = fromList $ runFreshM $ biplateM stripBinders inlinables'
       return (inlinables', ictx)
@@ -280,6 +283,7 @@ memoADT defs = foldMap go defs <> copiedDefs
       ( embelName t,
         FunDef
           { attr = NoAttr,
+            flags = emptyFlags,
             ty = Arrow (tGV t) (embelTy t),
             expr = genEmbelExpr ctors f
           }
@@ -300,6 +304,7 @@ memoADT defs = foldMap go defs <> copiedDefs
       ( eraseName t,
         FunDef
           { attr = NoAttr,
+            flags = emptyFlags,
             ty = Arrow (embelTy t) (tGV t),
             expr = genEraseExpr ctors
           }
@@ -320,23 +325,19 @@ memoADT defs = foldMap go defs <> copiedDefs
             return $ match' (V x) alts
     genProj t f =
       ( memoName f,
-        -- TODO: maybe inline this?
         FunDef
           { attr = OADTAttr (embelTy t),
+            flags = emptyFlags {inlineFlag = True},
             ty = Arrow (embelTy t) TInt,
-            expr = runFreshM $ do
-              x <- fresh
-              xl <- fresh
-              xr <- fresh
-              -- TODO: proj function
-              return $ lam' x $ match' (V x) [("(,)", [xl, xr], V xl)]
+            expr = fst'
           }
       )
     genSmartCtors t ctors e = genSmartCtor t e <$> ctors
     genSmartCtor t e (ctor, ts) =
       ( mkSmartCtor ctor,
         FunDef
-          { attr = InlineAttr,
+          { attr = NoAttr,
+            flags = emptyFlags {inlineFlag = True},
             ty = arrows_ (genCtorArgTs ts) (embelTy t),
             expr = genSmartCtorExpr e ctor ts
           }
@@ -407,21 +408,6 @@ guardReshape defs = foldMap go defs
 
 ----------------------------------------------------------------
 -- Optimizer monad
-
-data Env = Env
-  { -- | Commandline options
-    options :: Options,
-    -- | Local definition (binding) context
-    --
-    -- All expressions are in ANF and simplified (deep or shallow). If the
-    -- expression is a global variable, it must be in application form (with
-    -- empty arguments).
-    dctx :: [(Name, Expr Name)],
-    -- | Whether to recursively simplify under binders
-    deepSimp :: Bool
-  }
-
-type OptM = FreshT (ReaderT Env IO)
 
 runOptM :: Env -> OptM a -> IO a
 runOptM env m = runReaderT (runFreshT m) env
