@@ -47,10 +47,20 @@ optimize options@Options {..} defs =
       let go opt (name, def) =
             case lookup name inlinables of
               Just def' -> return (name, def')
-              _ -> (name,) <$> opt def
-      runOpt $ mapM (go $ biplateM (simplify_ <=< inline_ ictx <=< toANF)) defs'
+              _ -> (name,) <$> runOpt opt def
+      mapM (go $ simplify_ <=< inline_ ictx <=< toANF) defs'
   where
-    runOpt = runOptM Env {dctx = [], deepSimp = True, ..}
+    runOpt opt def =
+      let simplifier = case def of
+            FunDef {flags = Flags {simplifierFlag = Just f}} -> f
+            _ -> return
+       in runOptM
+            Env
+              { dctx = [],
+                deepSimp = True,
+                ..
+              }
+            $ biplateM opt def
     simplify_ = if optFlagNoSimplify then return else simplify
     inline_ ictx = if optFlagNoInline then return else inline ictx
     inlineCtx defs' = do
@@ -58,7 +68,7 @@ optimize options@Options {..} defs =
             [ def
               | def@(_, FunDef {flags = Flags {inlineFlag = True}}) <- defs'
             ]
-      inlinables' <- runOpt $ biplateM (simplify_ <=< toANF) inlinables
+      inlinables' <- mapM (secondM $ runOpt (simplify_ <=< toANF)) inlinables
       let ictx = fromList $ runFreshM $ biplateM stripBinders inlinables'
       return (inlinables', ictx)
 
@@ -96,11 +106,12 @@ simplify = go <=< simplify1
 -- | Simplify one let binding.
 simplify1 :: Expr Name -> OptM (Expr Name)
 simplify1 Let {..} = do
+  simplifier <- asks simplifier
   -- We try dead code elimination first before simplification to avoid
   -- doing unnecessary work.
   if null (B.bindings bnd)
     then simplify1 $ instantiate_ (oops "Instantiating nothing") bnd
-    else go rhs
+    else simplifier rhs >>= go
   where
     go e@V {} = go $ e @@ []
     go e@GV {} = go $ e @@ []

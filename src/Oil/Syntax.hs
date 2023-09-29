@@ -175,7 +175,6 @@ data Attribute
 
 data Flags = Flags
   { inlineFlag :: Bool,
-    simplifiedFlag :: Bool,
     simplifierFlag :: Maybe (Expr Name -> OptM (Expr Name))
   }
 
@@ -183,7 +182,6 @@ emptyFlags :: Flags
 emptyFlags =
   Flags
     { inlineFlag = False,
-      simplifiedFlag = False,
       simplifierFlag = Nothing
     }
 
@@ -555,7 +553,8 @@ data Env = Env
     -- empty arguments).
     dctx :: [(Name, Expr Name)],
     -- | Whether to recursively simplify under binders
-    deepSimp :: Bool
+    deepSimp :: Bool,
+    simplifier :: Expr Name -> OptM (Expr Name)
   }
 
 type OptM = FreshT (ReaderT Env IO)
