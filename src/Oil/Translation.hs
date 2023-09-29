@@ -343,9 +343,15 @@ toOilProgram options@Options {..} defs = do
       [ OADTInfo
           { section = sectionName oadtName,
             retraction = retractionName oadtName,
+            embelView = case viewTy of
+              T.GV {..} ->
+                if optFlagNoMemo
+                  then Nothing
+                  else Just ("embel_" <> ref)
+              _ -> Nothing,
             ..
           }
-        | (oadtName, T.OADTDef {}) <- defs
+        | (oadtName, T.OADTDef {..}) <- defs
       ]
 
 -- | Translate a taype definition to the corresponding OIL definition.
@@ -406,11 +412,11 @@ unfoldBuiltin = runFreshM . transformBiM go
     go e@GV {..} =
       return
         if
-            | ref == sectionName (oblivName "bool") -> boolSection
-            | ref == retractionName (oblivName "bool") -> boolRetraction
-            | ref == oblivName "inl" -> oblivInjDef True
-            | ref == oblivName "inr" -> oblivInjDef False
-            | otherwise -> e
+          | ref == sectionName (oblivName "bool") -> boolSection
+          | ref == retractionName (oblivName "bool") -> boolRetraction
+          | ref == oblivName "inl" -> oblivInjDef True
+          | ref == oblivName "inr" -> oblivInjDef False
+          | otherwise -> e
     go e = return e
 
 ----------------------------------------------------------------

@@ -17,6 +17,7 @@ import Data.HashMap.Strict ((!?))
 import Data.HashSet (member)
 import Data.List (lookup)
 import Oil.Syntax
+import Relude.Extra.Foldable1
 import Taype.Common
 import Taype.Name
 import Taype.Plate
@@ -33,11 +34,11 @@ optimize options@Options {..} defs =
       let defs1 =
             if optFlagNoMemo
               then defs
-              else runFreshM $ memo defs
+              else memo defs
           defs2 =
             if optFlagNoGuardReshape
               then defs1
-              else runFreshM $ guardReshape defs1
+              else guardReshape defs1
           defs' = defs2
       (inlinables, ictx) <-
         if optFlagNoInline
@@ -189,12 +190,14 @@ inline ctx = transformM go
     go e = return e
 
 -- | Memoize public views.
---
--- Only support integer public views at the moment.
-memo :: Defs Name -> FreshM (Defs Name)
-memo = foldMapM go
+memo :: Defs Name -> Defs Name
+memo = memoInt . memoADT
+
+-- | Memoize integer public views.
+memoInt :: Defs Name -> Defs Name
+memoInt = foldMap go
   where
-    go (name, FunDef {attr = attr@(OADTAttr TInt), ..}) = do
+    go (name, FunDef {attr = attr@(OADTAttr TInt), ..}) = runFreshM $ do
       x <- fresh
       y <- fresh
       let name_ = internalName name
@@ -205,21 +208,185 @@ memo = foldMapM go
           def' =
             FunDef {expr = expr', ..}
       return [(name_, FunDef {..}), (name, def')]
-    go namedDef = return [namedDef]
+    go namedDef = [namedDef]
+
+-- | Memoize ADT public views.
+--
+-- Only support ADT as public view, but not combination of them (e.g., product
+-- of ADTs).
+memoADT :: Defs Name -> Defs Name
+memoADT defs = foldMap go defs <> copiedDefs
+  where
+    graph = mkDepGraph defs
+    (projs, views, viewCtors) =
+      let (projL, viewL, ctorL) =
+            unzip3
+              [ (name, tctor, fst <$> getCtors tctor)
+                | (name, FunDef {attr = OADTAttr (TApp {args = [], ..})}) <- defs
+              ]
+       in ( fromList projL :: HashSet Text,
+            fromList viewL :: HashSet Text,
+            foldMap fromList ctorL :: HashSet Text
+          )
+    -- We keep a copy of the functions whose types contain ADT public views, but do not contain oblivious array.
+    isKept t = 0 == keptN t
+    keptN OArray = -1 :: Int
+    keptN TApp {..} | tctor `member` views = 0
+    keptN TApp {..} = minimum1 (1 :| (keptN <$> args))
+    keptN Arrow {..} = keptN dom `min` keptN cod
+    keptN _ = 1
+    kept = [name | (name, FunDef {..}) <- defs, isKept ty]
+    keptClos = foldMap (reachableSet graph) kept
+    copiedDefs =
+      [ def
+        | def@(name, _) <- defs,
+          name `member` keptClos,
+          not (name `member` projs)
+      ]
+    getCtors name = case lookup name defs of
+      Just ADTDef {..} -> ctors
+      _ -> oops "Not an ADT"
+    go def@(name, FunDef {attr = OADTAttr (TApp {args = [], ..}), ..}) =
+      let ctors = getCtors tctor
+       in [ def,
+            genMemoTy tctor ctors,
+            genEmbel tctor ctors name,
+            genErase tctor ctors,
+            genProj tctor name
+          ]
+            <> genSmartCtors tctor ctors expr
+    go (name, FunDef {..}) =
+      [ ( rewriteName name,
+          FunDef
+            { ty = rewriteTy ty,
+              expr = rewriteExpr expr,
+              ..
+            }
+        )
+      ]
+    go def = [def]
+    mkName = (<> "_memo")
+    mkEmbel = ("embel_" <>)
+    mkErase = ("erase_" <>)
+    mkSmartCtor x = "mk_" <> x <> "_memo"
+    memoTy = tGV . mkName
+    embelTy name = prod_ TInt (memoTy name)
+    genMemoTy t ctors = (mkName t, ADTDef {ctors = genMemoCtor <$> ctors})
+    genMemoCtor (ctor, ts) = (mkName ctor, genCtorArgTs ts)
+    unlessView TApp {args = [], ..} _ f | tctor `member` views = f tctor
+    unlessView _ t _ = t
+    genCtorArgTy t = unlessView t t embelTy
+    genCtorArgTs ts = genCtorArgTy <$> ts
+    genCtorArg mk x t = unlessView t (V x) $ \name -> GV (mk name) @@ [V x]
+    genCtorArgs mk = zipWith (genCtorArg mk)
+    genEmbel t ctors f =
+      ( mkEmbel t,
+        FunDef
+          { attr = NoAttr,
+            ty = Arrow (tGV t) (embelTy t),
+            expr = genEmbelExpr ctors f
+          }
+      )
+    genEmbelExpr ctors f = runFreshM $ do
+      x <- fresh
+      e <- genEmbelMemoExpr x ctors
+      return $ lam' x $ pair_ (GV f @@ [V x]) e
+    genEmbelMemoExpr x ctors =
+      let genAlt (ctor, ts) = do
+            xs <- freshes $ length ts
+            let args = genCtorArgs mkEmbel xs ts
+            return (ctor, xs, GV (mkName ctor) @@ args)
+       in do
+            alts <- mapM genAlt ctors
+            return $ match' (V x) alts
+    genErase t ctors =
+      ( mkErase t,
+        FunDef
+          { attr = NoAttr,
+            ty = Arrow (embelTy t) (tGV t),
+            expr = genEraseExpr ctors
+          }
+      )
+    genEraseExpr ctors = runFreshM $ do
+      x <- fresh
+      xl <- fresh
+      xr <- fresh
+      e <- genEraseMemoExpr xr ctors
+      return $ lam' x $ match' (V x) [("(,)", [xl, xr], e)]
+    genEraseMemoExpr x ctors =
+      let genAlt (ctor, ts) = do
+            xs <- freshes $ length ts
+            let args = genCtorArgs mkErase xs ts
+            return (mkName ctor, xs, GV ctor @@ args)
+       in do
+            alts <- mapM genAlt ctors
+            return $ match' (V x) alts
+    genProj t f =
+      ( mkName f,
+        -- TODO: maybe inline this?
+        FunDef
+          { attr = OADTAttr (embelTy t),
+            ty = Arrow (embelTy t) TInt,
+            expr = runFreshM $ do
+              x <- fresh
+              xl <- fresh
+              xr <- fresh
+              -- TODO: proj function
+              return $ lam' x $ match' (V x) [("(,)", [xl, xr], V xl)]
+          }
+      )
+    genSmartCtors t ctors e = genSmartCtor t e <$> ctors
+    genSmartCtor t e (ctor, ts) =
+      ( mkSmartCtor ctor,
+        FunDef
+          { attr = InlineAttr,
+            ty = arrows_ (genCtorArgTs ts) (embelTy t),
+            expr = genSmartCtorExpr e ctor ts
+          }
+      )
+    genSmartCtorExpr e ctor ts = runFreshM $ do
+      xs <- freshes $ length ts
+      let args = genCtorArgs mkErase xs ts
+      return $
+        lams' xs $
+          pair_ (e @@ [GV ctor @@ args]) (GV (mkName ctor) @@ (V <$> xs))
+
+    rewriteName x | x `member` keptClos = mkName x
+    rewriteName x | x `member` viewCtors = mkSmartCtor x
+    rewriteName x = x
+    rewriteTy = (runFreshM .) $ transformM $ \case
+      TApp {..} | tctor `member` views -> return $ embelTy tctor
+      t -> return t
+    rewriteExpr = (runFreshM .) $ transformM $ \case
+      GV {..} -> return GV {ref = rewriteName ref}
+      Match {alts = alts@(MatchAlt {ctor = ctor'} : _), ..}
+        | ctor' `member` viewCtors -> do
+            xl <- fresh
+            xr <- fresh
+            let rewriteAlt MatchAlt {..} = MatchAlt {ctor = mkName ctor, ..}
+            return $
+              match'
+                cond
+                [ ( "(,)",
+                    [xl, xr],
+                    Match {cond = V xr, alts = rewriteAlt <$> alts}
+                  )
+                ]
+      t -> return t
 
 -- | Guard reshape instances.
 --
 -- Do nothing if reshaping between the same public views. Unfortunately,
 -- equality checks are not necessarily cheap.
-guardReshape :: Defs Name -> FreshM (Defs Name)
-guardReshape defs = foldMapM go defs
+guardReshape :: Defs Name -> Defs Name
+guardReshape defs = foldMap go defs
   where
     graph = mkDepGraph defs
     reshapes =
       [ (name, reachableSet graph name)
         | (name, FunDef {attr = ReshapeAttr}) <- defs
       ]
-    go (name, def) = do
+    go (name, def) = runFreshM $ do
       let reshapeNames = [x | (x, s) <- reshapes, name `member` s]
       def' <- flip transformBiM def $ \case
         GV {..} | ref `elem` reshapeNames -> return GV {ref = mkName_ ref}

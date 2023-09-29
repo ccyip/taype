@@ -31,6 +31,7 @@ module Oil.Syntax
     Apply (..),
     ite_,
     prod_,
+    arrows_,
     sum_,
     pair_,
     tGV,
@@ -43,6 +44,7 @@ module Oil.Syntax
     lams',
     let',
     lets',
+    match',
 
     -- * Array operations
     aName,
@@ -176,7 +178,8 @@ data Program = Program
 data OADTInfo = OADTInfo
   { oadtName :: Text,
     section :: Text,
-    retraction :: Text
+    retraction :: Text,
+    embelView :: Maybe Text
   }
 
 ----------------------------------------------------------------
@@ -306,6 +309,9 @@ ite_ cond left right =
 prod_ :: Ty -> Ty -> Ty
 prod_ a b = "*" @@ [a, b]
 
+arrows_ :: [Ty] -> Ty -> Ty
+arrows_ = flip $ foldr Arrow
+
 sum_ :: Ty -> Ty -> Ty
 sum_ a b = "+" @@ [a, b]
 
@@ -354,6 +360,16 @@ let' x = letB x Nothing
 
 lets' :: [(Name, Expr Name)] -> Expr Name -> Expr Name
 lets' = flip $ foldr $ uncurry let'
+
+match' :: Expr Name -> [(Text, [Name], Expr Name)] -> Expr Name
+match' cond alts = Match {alts = go <$> alts, ..}
+  where
+    go (ctor, xs, body) =
+      MatchAlt
+        { bnd = abstract_ xs body,
+          binders = replicate (length xs) Nothing,
+          ..
+        }
 
 ----------------------------------------------------------------
 -- Pretty printer
@@ -411,15 +427,15 @@ cuteDefDoc options name = \case
     hang $
       "fn"
         <+> pretty name
-          <> sep1_ name (colon <+> align (group $ go (cute ty)))
-        <+> equals
-          <> go (cuteLam True expr)
+        <> sep1_ name (colon <+> align (group $ go (cute ty)))
+          <+> equals
+        <> go (cuteLam True expr)
   ADTDef {..} ->
     hang $
       "data"
         <+> adtName
-          <> sep1
-            (equals <+> sepWith (line <> pipe <> space) (cuteCtor <$> ctors))
+        <> sep1
+          (equals <+> sepWith (line <> pipe <> space) (cuteCtor <$> ctors))
   where
     cuteCtor (ctor, paraTypes) = go $ cuteApp_ (pretty ctor) paraTypes
     adtName = if isInfix name then parens $ pretty name else pretty name

@@ -125,8 +125,8 @@ toOCamlExpr Match {..} = do
         <+> "match"
         <+> condDoc
         <+> "with"
-          <> foldMap (\altDoc -> hardline <> pipe <+> altDoc) altDocs
-        </> "end"
+        <> foldMap (\altDoc -> hardline <> pipe <+> altDoc) altDocs
+          </> "end"
   where
     goAltDoc MatchAlt {..} = do
       let ctorDoc = pretty $ fromMaybe ctor $ isBuiltinExprName ctor
@@ -145,7 +145,8 @@ toOCamlExpr Match {..} = do
                              sepWith (comma <> line) (pretty <$> xs)
                        )
                )
-            <+> "->" <> sep1 bodyDoc
+              <+> "->"
+            <> sep1 bodyDoc
 
 -- | Translate an OIL type to OCaml type.
 toOCamlTy :: Ty -> CuteM Doc
@@ -190,13 +191,20 @@ toOCamlTy TV = return "'a"
 --     include Driver.Plaintext
 --     ... concealOil ...
 --     ... revealOil ...
+--     let s_ = s
+--     let s k x = s_ (embel k) x  (* only when memoization is enabled *)
 --     let r_ = r
 --     let r (k, a) = r_ k a
 --   end
 --   module Conceal = struct
 --     include Driver.Conceal
---     let s k x = (k, obliv_array_conceal_with (Plaintext.s k) x)
---     let s_for k party = (k, obliv_array_new_for party (oadt k))
+--     let s k x =
+--       let k = embel k in  (* Only when memoziation is enabled *)
+--       (k, obliv_array_conceal_with (Plaintext.s_ k) x)
+--     let s_for k party =
+--       let k = embel k in  (* Only when memoziation is enabled *)
+--       (* f is [fst] if memoization is enabled, otherwise [oadt] *)
+--       (k, obliv_array_new_for party (f k))
 --   end
 --   module Reveal = struct
 --     include Driver.Reveal
@@ -226,6 +234,7 @@ toOCaml options Program {..} =
         "include Driver.Plaintext"
           <//> go concealDefs
           <//> go revealDefs
+          <//> sepWith hardline2 (sectionPlaintextDoc <$> oadts)
           <//> sepWith hardline2 (retractionPlaintextDoc <$> oadts)
     concealDoc =
       modDoc "Conceal" $
@@ -246,45 +255,69 @@ toOCaml options Program {..} =
     sectionDoc OADTInfo {..} =
       let s = pretty $ toValidName section
           oadt = pretty $ toValidName oadtName
+          embelDoc = case embelView of
+            Nothing -> ""
+            Just f -> "let k =" <+> pretty f <+> "k" <+> "in" <> space
+          size = if isJust embelView then "fst" else oadt
        in "let"
             <+> s
             <+> "k x ="
-            <+> parens
+            <+> embelDoc
+            <> parens
               ( "k, obliv_array_conceal_with"
-                  <+> parens ("Plaintext." <> s <+> "k")
+                  <+> parens ("Plaintext." <> s <> "_" <+> "k")
                   <+> "x"
               )
-            </> "let"
-            <+> s <> "_for"
-            <+> "k party ="
-            <+> parens
+              </> "let"
+              <+> s
+            <> "_for"
+              <+> "k party ="
+              <+> embelDoc
+            <> parens
               ( "k, obliv_array_new_for"
-                  <+> parens (oadt <+> "k")
+                  <+> parens (size <+> "k")
                   <+> "party"
               )
 
     retractionDoc OADTInfo {..} =
       let r = pretty $ toValidName retraction
        in "let"
-            <+> r <> "_ k a = obliv_array_reveal_with"
-            <+> parens ("Plaintext." <> r <> "_" <+> "k")
-            <+> "a"
-            <//> "let"
             <+> r
-            <+> parens "k, a"
-            <+> "="
-            <+> r <> "_ k a"
+            <> "_ k a = obliv_array_reveal_with"
+              <+> parens ("Plaintext." <> r <> "_" <+> "k")
+              <+> "a"
+              <//> "let"
+              <+> r
+              <+> parens "k, a"
+              <+> "="
+              <+> r
+            <> "_ k a"
+
+    sectionPlaintextDoc OADTInfo {..} =
+      let s = pretty $ toValidName section
+          embelDoc = case embelView of
+            Nothing -> ""
+            Just f ->
+              hardline2
+                <> "let" <+> s <+> "k x" <+> "=" <+> s
+                <> "_" <+> parens (pretty f <+> "k") <+> "x"
+       in "let"
+            <+> s
+            <> "_ =" <+> s
+            <> embelDoc
 
     retractionPlaintextDoc OADTInfo {..} =
       let r = pretty $ toValidName retraction
        in "let"
-            <+> r <> "_ ="
             <+> r
-            <//> "let"
-            <+> r
-            <+> parens "k, a"
-            <+> "="
-            <+> r <> "_ k a"
+            <> "_ ="
+              <+> r
+              <//> "let"
+              <+> r
+              <+> parens "k, a"
+              <+> "="
+              <+> r
+            <> "_ k a"
 
 data OCamlDefKind = NonRecDef | RecDef | AndDef
 
@@ -322,9 +355,9 @@ toOCamlDef k (name, FunDef {..}) = do
     hang $
       kw
         <+> pretty (toValidName name)
-          <> sep1 (colon <+> align (group tyDoc))
-        <+> equals
-          <> doc
+        <> sep1 (colon <+> align (group tyDoc))
+          <+> equals
+        <> doc
   where
     kw = case k of
       NonRecDef -> "let"
@@ -336,7 +369,7 @@ toOCamlDef k (name, ADTDef {..}) = do
     hang $
       kw
         <+> pretty (toValidName name)
-          <> sep1 (equals <+> sepWith (line <> pipe <> space) ctorDocs)
+        <> sep1 (equals <+> sepWith (line <> pipe <> space) ctorDocs)
   where
     kw = case k of
       AndDef -> "and"
@@ -353,7 +386,7 @@ toOCamlDef k (name, ADTDef {..}) = do
             hang $
               ctorDoc
                 <+> "of"
-                  <> sep1 (group $ sepWith (space <> "*" <> line) docs)
+                <> sep1 (group $ sepWith (space <> "*" <> line) docs)
 
 ----------------------------------------------------------------
 -- Naming related functions
