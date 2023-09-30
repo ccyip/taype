@@ -16,6 +16,7 @@ import Bound.Scope qualified as B
 import Data.HashMap.Strict ((!?))
 import Data.HashSet (member)
 import Data.List (lookup)
+import Data.Text qualified as T
 import Oil.Syntax
 import Relude.Extra.Foldable1
 import Taype.Common
@@ -74,7 +75,9 @@ optimize options@Options {..} defs =
 
 -- | Simplifier
 simplify :: Expr Name -> OptM (Expr Name)
-simplify = go <=< simplify1
+simplify t = do
+  simplifier <- asks simplifier
+  simplify1 t >>= simplifier >>= go
   where
     go Let {..} = do
       rhs' <- ifM (asks deepSimp) (deep rhs) (return rhs)
@@ -106,12 +109,11 @@ simplify = go <=< simplify1
 -- | Simplify one let binding.
 simplify1 :: Expr Name -> OptM (Expr Name)
 simplify1 Let {..} = do
-  simplifier <- asks simplifier
   -- We try dead code elimination first before simplification to avoid
   -- doing unnecessary work.
   if null (B.bindings bnd)
     then simplify1 $ instantiate_ (oops "Instantiating nothing") bnd
-    else simplifier rhs >>= go
+    else go rhs
   where
     go e@V {} = go $ e @@ []
     go e@GV {} = go $ e @@ []
@@ -125,7 +127,7 @@ simplify1 Let {..} = do
           x <- fresh
           simplify1 $ let' x (instantiate_ arg bndN) Let {rhs = V x @@ args, ..}
         Just (App {fn = fnN, args = argsN}) ->
-          return Let {rhs = fnN @@ argsN <> (arg : args), ..}
+          simplify1 $ Let {rhs = fnN @@ argsN <> (arg : args), ..}
         _ -> fallback e
     go e@Match {cond = V {..}, ..} =
       lookupDef name >>= \case
@@ -348,7 +350,11 @@ memoADT defs = foldMap go defs <> copiedDefs
       ( mkSmartCtor ctor,
         FunDef
           { attr = NoAttr,
-            flags = emptyFlags {inlineFlag = True},
+            flags =
+              emptyFlags
+                { inlineFlag = True,
+                  simplifierFlag = Just rewriteSmartCtor
+                },
             ty = arrows_ (genCtorArgTs ts) (embelTy t),
             expr = genSmartCtorExpr e ctor ts
           }
@@ -382,6 +388,22 @@ memoADT defs = foldMap go defs <> copiedDefs
                   )
                 ]
       t -> return t
+
+    rewriteSmartCtor :: Expr Name -> OptM (Expr Name)
+    rewriteSmartCtor e@Let {rhs = App {fn = GV pName, args = [V y]}, ..}
+      | pName `member` projs =
+          lookupDef y >>= \case
+            Just App {fn = GV eName, args = [V a]} | isEraseName eName -> do
+              Options {optFlagNoInline} <- asks options
+              let f = if optFlagNoInline then GV (memoName pName) else fst'
+              x <- fresh
+              simplify1 $ let' x f Let {rhs = V x @@ [V a], ..}
+            _ -> return e
+    rewriteSmartCtor e = return e
+    isEraseName name =
+      case T.stripPrefix erasePrefix name of
+        Just t | t `member` views -> True
+        _ -> False
 
 -- | Guard reshape instances.
 --

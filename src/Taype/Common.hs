@@ -55,7 +55,9 @@ module Taype.Common
     internalPrefix,
     internalName,
     embelName,
+    embelPrefix,
     eraseName,
+    erasePrefix,
     memoName,
     infixes,
     oblivInfixes,
@@ -342,12 +344,18 @@ internalName :: Text -> Text
 internalName = (internalPrefix <>)
 
 -- | Embelish name
+embelPrefix :: Text
+embelPrefix = "embel_"
+
 embelName :: Text -> Text
-embelName = ("embel_" <>)
+embelName = (embelPrefix <>)
 
 -- | Erase name
+erasePrefix :: Text
+erasePrefix = "erase_"
+
 eraseName :: Text -> Text
-eraseName = ("erase_" <>)
+eraseName = (erasePrefix <>)
 
 -- | Memoization name
 memoName :: Text -> Text
