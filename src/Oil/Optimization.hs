@@ -231,14 +231,18 @@ memoInt = foldMap go
 -- Only support ADT as public view, but not combination of them (e.g., product
 -- of ADTs).
 memoADT :: Defs Name -> Defs Name
-memoADT defs = foldMap go defs <> copiedDefs
+memoADT defs =
+  if null projs
+    then defs
+    else foldMap go defs <> copiedDefs
   where
     graph = mkDepGraph defs
     (projs, views, viewCtors) =
       let (projL, viewL, ctorL) =
             unzip3
               [ (name, tctor, fst <$> getCtors tctor)
-                | (name, FunDef {attr = OADTAttr (TApp {args = [], ..})}) <- defs
+                | (name, FunDef {attr = OADTAttr (TApp {args = [], ..})}) <- defs,
+                  tctor /= "bool"
               ]
        in ( fromList projL :: HashSet Text,
             fromList viewL :: HashSet Text,
@@ -262,15 +266,16 @@ memoADT defs = foldMap go defs <> copiedDefs
     getCtors name = case lookup name defs of
       Just ADTDef {..} -> ctors
       _ -> oops "Not an ADT"
-    go def@(name, FunDef {attr = OADTAttr (TApp {args = [], ..}), ..}) =
-      let ctors = getCtors tctor
-       in [ def,
-            genMemoTy tctor ctors,
-            genEmbel tctor ctors name,
-            genErase tctor ctors,
-            genProj tctor name
-          ]
-            <> genSmartCtors tctor ctors expr
+    go def@(name, FunDef {attr = OADTAttr (TApp {args = [], ..}), ..})
+      | tctor /= "bool" =
+          let ctors = getCtors tctor
+           in [ def,
+                genMemoTy tctor ctors,
+                genEmbel tctor ctors name,
+                genErase tctor ctors,
+                genProj tctor name
+              ]
+                <> genSmartCtors tctor ctors expr
     go (name, FunDef {..}) =
       [ ( rewriteName name,
           FunDef
