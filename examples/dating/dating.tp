@@ -1,0 +1,272 @@
+// A personal profile
+//
+// We do not have fancy record syntax yet, so it's defined as an ADT with a
+// single constructor. The fields of this record are gender, age, height,
+// income. A real world profile of course has a lot more fields and more
+// complicated fields such as a list of hobbies. But let's keep it simple here
+// for demonstration purposes (and I have never used a dating app before so no
+// way I know what those fields should be).
+data profile = Profile int int int int
+
+data feature = Gender | Age | Height | Income
+
+// Predicate over profiles
+data exp
+  = Const int
+  // The boolean argument indicates whether this is about my profile or the
+  // peer's profile.
+  | Var bool feature
+  | Add exp exp
+  // We can add more operations if we want.
+
+data pred
+  = Le exp exp
+  | And pred pred
+  | Or pred pred
+  | Not pred
+  // We can add more comparison or boolean operations if we want.
+
+fn eval_var : feature -> profile -> int = \feat prof =>
+  match prof with
+  | Profile gender age height income =>
+    match feat with
+    | Gender => gender
+    | Age => age
+    | Height => height
+    | Income => income
+    end
+  end
+
+fn eval_exp : exp -> profile -> profile -> int = \e my_prof your_prof =>
+  match e with
+  | Const x => x
+  | Var is_my_prof feat =>
+    if is_my_prof then eval_var feat my_prof
+    else eval_var feat your_prof
+  | Add e1 e2 => 
+    (eval_exp e1 my_prof your_prof) + (eval_exp e2 my_prof your_prof)
+  end
+
+// The first profile belongs to the owner of the predicate, while the second one
+// belongs to the other party.
+fn eval_pred : pred -> profile -> profile -> bool = \p prof1 prof2 =>
+  match p with
+  | Le e1 e2 => (eval_exp e1 prof1 prof2) <= (eval_exp e2 prof1 prof2)
+  | And p1 p2 => (eval_pred p1 prof1 prof2) && (eval_pred p2 prof1 prof2)
+  | Or p1 p2 => (eval_pred p1 prof1 prof2) || (eval_pred p2 prof1 prof2)
+  | Not p1 => not (eval_pred p1 prof1 prof2)
+  end
+
+// This function takes a profile and a predicate from one party, and those from
+// their potential partner, and decides whether or not they are a good match.
+fn good_match : profile -> pred -> profile -> pred -> bool =
+  \prof1 p1 prof2 p2 =>
+    let b1 = eval_pred p1 prof1 prof2 in
+    let b2 = eval_pred p2 prof2 prof1 in
+    b1 && b2
+
+// ----------------------------------------------------------------
+// Oblivious types
+
+// Due to the way unit is translated, we cannot use unit as public view. This
+// need to be fixed in the future.
+obliv ~profile (_ : bool) = ~int ~* ~int ~* ~int ~* ~int
+
+fn ~profile#s : (k : bool) -> profile -> ~profile k = \k p =>
+  match p with
+  | Profile g a h i => ~(~int#s g, ~int#s a, ~int#s h, ~int#s i)
+  end
+
+fn' ~profile#r : (k : bool) -> ~profile k -> profile = \k p =>
+  ~match p with
+  ~(g, a, h, i) => Profile (~int#r g) (~int#r a) (~int#r h) (~int#r i)
+  end
+
+fn ~profile#match : #~profile -> (~int * ~int * ~int * ~int -> 'a) -> 'a =
+  \p f =>
+    match p with
+    #(_, p) =>
+      ~match p with
+      ~(g, a, h, i) => f (g, a, h, i)
+      end
+    end
+
+// We can also use [unit ~+ unit ~+ unit ~+ unit].
+obliv ~feature (_ : bool) = ~bool ~* ~bool
+
+fn ~feature#s : (k : bool) -> feature -> ~feature k = \k f =>
+  match f with
+  | Gender => ~(~bool#s false, ~bool#s false)
+  | Age => ~(~bool#s false, ~bool#s true)
+  | Height => ~(~bool#s true, ~bool#s false)
+  | Income => ~(~bool#s true, ~bool#s true)
+  end
+
+fn' ~feature#r : (k : bool) -> ~feature k -> feature = \k f =>
+  ~match f with
+  ~(b1, b2) =>
+    ~if b1 then ~if b2 then Income else Height
+    else ~if b2 then Age else Gender
+  end
+
+fn ~feature#match :
+  #~feature ->
+  (unit -> 'a) ->
+  (unit -> 'a) ->
+  (unit -> 'a) ->
+  (unit -> 'a) ->
+  'a = \f fg fa fh fi =>
+    match f with
+    #(_, f) =>
+      ~match f with
+      ~(b1, b2) =>
+        ~if b1 then ~if b2 then fi () else fh ()
+        else ~if b2 then fa () else fg ()
+      end
+    end
+
+// Public view is maximum depth.
+obliv ~exp (k : int) =
+  if k = 0 then ~int ~+ ~bool ~* ~feature true
+  else
+    ~int ~+ 
+    ~bool ~* ~feature true ~+ 
+    ~exp (k-1) ~* ~exp (k-1)
+
+fn ~exp#s : (k : int) -> exp -> ~exp k = \k e =>
+  if k = 0
+  then
+    match e with
+    | Const x => ~inl (~int#s x)
+    | Var b f => ~inr ~(~bool#s b, ~feature#s true f)
+    // Bogus
+    | Add _ _ => ~~
+    end
+  else
+    match e with
+    | Const x => ~inl (~int#s x)
+    | Var b f => ~inr (~inl ~(~bool#s b, ~feature#s true f))
+    | Add e1 e2 => ~inr (~inr ~(~exp#s (k-1) e1, ~exp#s (k-1) e2))
+    end
+
+fn' ~exp#r : (k : int) -> ~exp k -> exp = \k =>
+  if k = 0
+  then \e =>
+    ~match e with
+    | ~inl x => Const (~int#r x)
+    | ~inr ~(b, f) => Var (~bool#r b) (~feature#r true f)
+    end
+  else \e =>
+    ~match e with
+    | ~inl x => Const (~int#r x)
+    | ~inr e =>
+      ~match e with
+      | ~inl ~(b, f) => Var (~bool#r b) (~feature#r true f)
+      | ~inr ~(e1, e2) => Add (~exp#r (k-1) e1) (~exp#r (k-1) e2)
+      end
+    end
+  
+fn ~exp#match :
+  #~exp ->
+  (~int -> 'a) ->
+  (~bool * #~feature -> 'a) ->
+  (#~exp * #~exp -> 'a) ->
+  'a = \e fc fv fa =>
+    match e with
+    #(k, e) =>
+      (if k = 0
+       then \e =>
+         ~match e with
+         | ~inl x => fc x
+         | ~inr ~(b, f) => fv (b, #(true, f))
+         end
+       else \e =>
+         ~match e with
+         | ~inl x => fc x
+         | ~inr e =>
+           ~match e with
+           | ~inl ~(b, f) => fv (b, #(true, f))
+           | ~inr ~(e1, e2) => fa (#(k-1, e1), #(k-1, e2))
+           end
+         end : ~exp k -> 'a) e
+    end
+
+// Public view is the maximum depth, including [exp].
+obliv ~pred (k : int) =
+  if k = 0 then ~exp 0 ~* ~exp 0
+  else
+    ~exp k ~* ~exp k ~+
+    ~pred (k-1) ~* ~pred (k-1) ~+
+    ~pred (k-1) ~* ~pred (k-1) ~+
+    ~pred (k-1)
+
+fn ~pred#s : (k : int) -> pred -> ~pred k = \k p =>
+  if k = 0
+  then
+    match p with
+    | Le e1 e2 => ~(~exp#s 0 e1, ~exp#s 0 e2)
+    | And _ _ => ~~
+    | Or _ _ => ~~
+    | Not _ => ~~
+    end
+  else
+    match p with
+    | Le e1 e2 => ~inl ~(~exp#s k e1, ~exp#s k e2)
+    | And p1 p2 => ~inr (~inl ~(~pred#s (k-1) p1, ~pred#s (k-1) p2))
+    | Or p1 p2 => ~inr (~inr (~inl ~(~pred#s (k-1) p1, ~pred#s (k-1) p2)))
+    | Not p1 => ~inr (~inr (~inr (~pred#s (k-1) p1)))
+    end
+
+fn' ~pred#r : (k : int) -> ~pred k -> pred = \k =>
+  if k = 0
+  then \p =>
+    ~match p with
+    ~(e1, e2) => Le (~exp#r 0 e1) (~exp#r 0 e2)
+    end
+  else \p =>
+    ~match p with
+    | ~inl ~(e1, e2) => Le (~exp#r k e1) (~exp#r k e2)
+    | ~inr p =>
+      ~match p with
+      | ~inl ~(p1, p2) => And (~pred#r (k-1) p1) (~pred#r (k-1) p2)
+      | ~inr p =>
+        ~match p with
+        | ~inl ~(p1, p2) => Or (~pred#r (k-1) p1) (~pred#r (k-1) p2)
+        | ~inr p1 => Not (~pred#r (k-1) p1)
+        end
+      end
+    end
+
+fn ~pred#match :
+  #~pred ->
+  (#~exp * #~exp -> 'a) ->
+  (#~pred * #~pred -> 'a) ->
+  (#~pred * #~pred -> 'a) ->
+  (#~pred -> 'a) ->
+  'a = \p fle fa fo fnot =>
+    match p with
+    #(k, p) =>
+      (if k = 0
+       then \p =>
+         ~match p with
+         ~(e1, e2) => fle (#(0, e1), #(0, e2))
+         end
+       else \p =>
+         ~match p with
+         | ~inl ~(e1, e2) => fle (#(k, e1), #(k, e2))
+         | ~inr p =>
+           ~match p with
+           | ~inl ~(p1, p2) => fa (#(k-1, p1), #(k-1, p2))
+           | ~inr p =>
+             ~match p with
+             | ~inl ~(p1, p2) => fo (#(k-1, p1), #(k-1, p2))
+             | ~inr p1 => fnot #(k-1, p1)
+             end
+           end
+         end : ~pred k -> 'a) p
+    end
+
+// ----------------------------------------------------------------
+// Oblivious functionality
+
+fn ~good_match : #~profile -> #~pred -> #~profile -> #~pred -> ~bool = %lift good_match

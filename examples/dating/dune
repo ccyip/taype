@@ -1,0 +1,4 @@
+(executables
+ (names "test_dating")
+ (libraries common))
+
