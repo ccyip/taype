@@ -90,7 +90,11 @@ let sexp_of_output = function
       Sexp.of_variant "solved" @@ List.map to_sexp solved
   | Error refused -> Sexp.of_variant "failed" @@ List.map Goal.to_sexp refused
 
-let main input_file output_file =
+let json_of_stat stat_tbl : Yojson.Basic.t =
+  let go k v = (k, `List (List.map (fun x -> `Float x) v)) in
+  `Assoc (Hashtbl.map_list go stat_tbl)
+
+let main input_file output_file stat_file =
   let input =
     match input_file with
     | "-in" -> Sexp.parse_chan_list stdin
@@ -99,10 +103,17 @@ let main input_file output_file =
   let goals, classes, axioms, defs =
     parse_input (Result.get_or_failwith input)
   in
-  let output = solve goals classes axioms defs |> sexp_of_output in
-  match output_file with
+  let output, stat_tbl = solve goals classes axioms defs in
+  let output = sexp_of_output output in
+  (match output_file with
   | "-out" -> Sexp.to_chan stdout output
-  | _ -> Sexp.to_file output_file output
+  | _ -> Sexp.to_file output_file output);
+  match stat_file with
+  | Some file ->
+      IO.with_out_a file (fun oc ->
+          Yojson.Basic.to_channel oc @@ json_of_stat stat_tbl;
+          output_char oc '\n')
+  | None -> ()
 
 let () =
   if Array.length Sys.argv < 3 then invalid_arg "not enough"
@@ -112,10 +123,12 @@ let () =
     let log_file =
       if Array.length Sys.argv > 3 then Some Sys.argv.(3) else None
     in
+    let stat_file =
+      if Array.length Sys.argv > 4 then Some Sys.argv.(4) else None
+    in
     match log_file with
     | Some file ->
-        IO.with_out ~flags:[ Open_wronly; Open_creat; Open_text; Open_trunc ]
-          file (fun oc ->
+        IO.with_out file (fun oc ->
             Logs.set_channel oc;
-            main input_file output_file)
-    | None -> main input_file output_file
+            main input_file output_file stat_file)
+    | None -> main input_file output_file stat_file

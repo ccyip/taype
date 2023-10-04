@@ -82,6 +82,7 @@ module SolverCtx = struct
   let sort_tbl : (string, Z3.Sort.sort) Hashtbl.t = Hashtbl.create 1024
   let ty_tbl : (string, Z3.Expr.expr) Hashtbl.t = Hashtbl.create 1024
   let cls_tbl : (string, (string * int) list) Hashtbl.t = Hashtbl.create 1024
+  let stat_tbl : (string, float list) Hashtbl.t = Hashtbl.create 1024
 
   let init_class cls =
     let names = List.map fst cls in
@@ -162,6 +163,7 @@ module SolverCtx = struct
 
   let mk_ty_eq = List.map2 (fun x y -> Eq (x, y))
   let get_subgoals goal = (Hashtbl.find solver_ctx goal.name).subgoals
+  let add_stat goal time = Hashtbl.add_list stat_tbl goal.name time
 
   let check (goal : goal) =
     let solver = Hashtbl.find solver_ctx goal.name in
@@ -169,8 +171,12 @@ module SolverCtx = struct
     let fs = mk_ty_eq solver.ty goal.ty in
     Z3.Optimize.push svr;
     add_formulas solver fs;
+    let stamp = Unix.gettimeofday () in
+    let status = Z3.Optimize.check svr in
+    let now = Unix.gettimeofday () in
+    add_stat goal (now -. stamp);
     let result =
-      match Z3.Optimize.check svr with
+      match status with
       | SATISFIABLE -> (
           match Z3.Optimize.get_model svr with
           | Some model -> Some (convert_model model solver.tbl)
@@ -324,5 +330,12 @@ let solve goals classes axioms defs =
   let results = List.map solve_goal goals in
   Logs.info (fun log ->
       log.printf "Final goal context@.%a" GoalCtx.pp GoalCtx.goal_ctx);
-  if List.mem Refused results then Error (GoalCtx.get_refused ())
-  else Ok (GoalCtx.get_solved ())
+  Logs.info (fun log ->
+      log.printf "Statistics@.%a"
+        (Hashtbl.pp String.pp (List.pp Float.pp))
+        SolverCtx.stat_tbl);
+  let output =
+    if List.mem Refused results then Error (GoalCtx.get_refused ())
+    else Ok (GoalCtx.get_solved ())
+  in
+  (output, SolverCtx.stat_tbl)

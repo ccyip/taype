@@ -1,4 +1,4 @@
 (executable
  (name solver)
- (libraries lib)
+ (libraries lib yojson)
  (preprocess (pps ppx_deriving.show)))

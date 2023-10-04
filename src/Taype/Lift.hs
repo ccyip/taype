@@ -356,7 +356,8 @@ liftDefs options@Options {..} gctx defs = do
       let inFile = fileNameOpt options "solver.input.sexp"
           outFile = fileNameOpt options "solver.output.sexp"
           logFile = fileNameOpt options "solver.log"
-          logArg = [logFile | not optNoSolverLog]
+          statFile = fileNameOpt options "solver.stat"
+          logArg = if optNoSolverLog then [] else [logFile, statFile]
       (ec, content) <-
         if optNoFiles
           then do
