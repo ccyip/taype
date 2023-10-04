@@ -27,7 +27,7 @@ main = shakeArgsWith shakeOptions {shakeColor = True} flags $
           ""
           ["round"]
           ( ReqArg
-              (\s -> R.readEither s <&> \v opts -> opts {optRound = v})
+              (fmap (\ v opts -> opts {optRound = v}) . R.readEither)
               "ROUND"
           )
           "How many rounds each test case is evaluated for",
@@ -44,7 +44,7 @@ main = shakeArgsWith shakeOptions {shakeColor = True} flags $
       let Options {optRound = rnd, optOutputDir = outDir} =
             flipfoldl' ($) defaultOptions args
       examples <- getExamples
-      mls <- foldMapM rulesForExample examples
+      mls <- foldMapM (rulesForExample outDir) examples
       want ["build"]
 
       "build" ~> do
@@ -97,7 +97,7 @@ mlCmd :: [String] -> Action ()
 mlCmd = command_ [Traced "DUNE", Cwd exampleDir] "dune"
 
 garbages :: [FilePattern]
-garbages = ["*.tpc", "*.oil"]
+garbages = ["*.tpc", "*.oil", "*.sexp", "*.log", "*.stat"]
 
 getExamples :: (MonadIO m) => m [FilePath]
 getExamples = do
@@ -115,11 +115,11 @@ getTestSrcIn example =
 getBinPath :: FilePath -> FilePath -> FilePath
 getBinPath example name = "_build" </> "default" </> example </> name <.> "exe"
 
-rulesForExample :: FilePath -> Rules [FilePath]
-rulesForExample example = do
+rulesForExample :: FilePath -> FilePath -> Rules [FilePath]
+rulesForExample outRoot example = do
   let dir = exampleDir </> example
   tpNames <- getTaypeFilesIn example
-  mls <- mapM rulesFromTaypeFile $ (dir </>) <$> tpNames
+  mls <- mapM (rulesFromTaypeFile outRoot example) $ (dir </>) <$> tpNames
   srcNames <- getTestSrcIn example
   forM_ srcNames $ \srcName -> do
     let name = dropExtensions srcName
@@ -137,13 +137,15 @@ rulesForExample example = do
     removeFilesAfter dir garbages
   return mls
 
-rulesFromTaypeFile :: FilePath -> Rules FilePath
-rulesFromTaypeFile tp = do
+rulesFromTaypeFile :: FilePath -> FilePath -> FilePath -> Rules FilePath
+rulesFromTaypeFile outRoot example tp = do
   let ml = tp -<.> "ml"
+      stat = tp -<.> ".solver.stat"
   ml %> \_ -> do
     alwaysRerun
     need [tp]
     taypeCmd [tp]
+    copyFile' stat (outRoot </> example </> takeFileName stat)
   return ml
 
 getInputCsvIn :: (MonadIO m) => FilePath -> m [FilePath]
