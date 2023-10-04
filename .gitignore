@@ -103,3 +103,4 @@ examples/coil/helib.log
 *.oil
 *.sexp
 *.log
+*.stat
