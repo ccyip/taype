@@ -31,6 +31,11 @@ let () =
   record_stat ();
 
   let res = Reveal.obliv_vec_r res in
+  (* let res =
+    match res with
+    | Either.Left res -> Reveal.obliv_vec_r res
+    | Either.Right _ -> assert false
+  in *)
 
   finalize_driver ();
 
