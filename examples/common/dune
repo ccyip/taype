@@ -1,12 +1,12 @@
 (library
  (name common)
  (modules common)
- (libraries taype-driver-plaintext prelude sexplib))
+ (libraries taype-driver-plaintext-legacy prelude sexplib))
 
 (library
  (name prelude)
  (modules prelude)
- (libraries taype-driver-plaintext))
+ (libraries taype-driver-plaintext-legacy))
 
 (executable
  (name test)

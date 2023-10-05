@@ -56,6 +56,12 @@ fn min_euclidean_distance : list -> int -> int = \xs y ->
      in min_euclidean_distance_with xs' y cur
   end
 
+fn nth : int -> list -> int = \i xs ->
+  case xs of
+  | Nil -> 0
+  | Cons x xs -> if i == 0 then x else nth (i-1) xs
+  end
+
 fn map : (int -> int) -> list -> list = \f xs ->
   case xs of
   | Nil -> Nil
@@ -121,6 +127,10 @@ fn `dot_prod : (k : int) -> `list k -> `list k -> `int = \k xs ys ->
 #[safe]
 fn `min_euclidean_distance : (k : int) -> `list k -> `int -> `int = \k xs y ->
   tape (s_int (min_euclidean_distance (r_list k xs) (r_int y)))
+
+#[safe]
+fn `nth : (k : int) -> `int -> `list k -> `int = \ k x xs ->
+  tape (s_int (nth (r_int x) (r_list k xs)))
 
 #[safe]
 fn `test_map : (k : int) -> `list k -> `int -> `list k = \k xs y ->

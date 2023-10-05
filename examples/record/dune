@@ -7,4 +7,4 @@
         "test_bmi_mse"
         "test_dtree")
  (flags (:standard -w -27-33))
- (libraries taype-driver-plaintext common prelude sexplib))
+ (libraries taype-driver-plaintext-legacy common prelude sexplib))

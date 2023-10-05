@@ -5,7 +5,8 @@
    "test_hamming_distance"
    "test_dot_prod"
    "test_min_euclidean_distance"
+   "test_nth"
    "test_map"
    "test_filter")
  (flags (:standard -w -27-33))
- (libraries taype-driver-plaintext common prelude sexplib))
+ (libraries taype-driver-plaintext-legacy common prelude sexplib))
