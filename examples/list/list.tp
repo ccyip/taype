@@ -62,6 +62,12 @@ fn nth : int -> list -> int = \i xs ->
   | Cons x xs -> if i == 0 then x else nth (i-1) xs
   end
 
+fn insert_list : list -> list -> list = \xs ys ->
+  case ys of
+  | Nil -> xs
+  | Cons y ys' -> insert_list (insert y xs) ys'
+  end
+
 fn map : (int -> int) -> list -> list = \f xs ->
   case xs of
   | Nil -> Nil
@@ -75,6 +81,45 @@ fn filter : (int -> bool) -> list -> list = \f xs ->
     if f x
     then Cons x (filter f xs')
     else filter f xs'
+  end
+
+fn append : list -> list -> list = \xs ys ->
+  case xs of
+  | Nil -> ys
+  | Cons x xs -> Cons x (append xs ys)
+  end
+
+fn take : int -> list -> list = \n xs ->
+  case xs of
+  | Nil -> Nil
+  | Cons x xs ->
+    if n == 0 then Nil else Cons x (take (n-1) xs)
+  end
+
+fn concat_map : (int -> list) -> list -> list = \f xs ->
+  case xs of
+  | Nil -> Nil
+  | Cons x xs -> append (f x) (concat_map f xs)
+  end
+
+fn partition : (int -> bool) -> list -> list * list = \f xs ->
+  case xs of
+  | Nil -> (Nil, Nil)
+  | Cons x xs' ->
+    case partition f xs' of
+    (ts, fs) -> if f x then (Cons x ts, fs) else (ts, Cons x fs)
+    end
+  end
+
+fn span : (int -> bool) -> list -> list * list = \f xs ->
+  case xs of
+  | Nil -> (Nil, Nil)
+  | Cons x xs' ->
+    if f x
+    then case span f xs' of
+         (l, r) -> (Cons x l, r)
+         end
+    else (Nil, xs)
   end
 
 ----------------------------------------------------------------
@@ -133,9 +178,46 @@ fn `nth : (k : int) -> `int -> `list k -> `int = \ k x xs ->
   tape (s_int (nth (r_int x) (r_list k xs)))
 
 #[safe]
+fn `insert_list : (k : int) -> `list k -> `list k -> `list (k+k) =
+  \ k xs ys ->
+    s_list (k+k) (insert_list (r_list k xs) (r_list k ys))
+
+#[safe]
 fn `test_map : (k : int) -> `list k -> `int -> `list k = \k xs y ->
   s_list k (map (\x -> x + r_int y) (r_list k xs))
 
 #[safe]
 fn `test_filter : (k : int) -> `list k -> `int -> `list k = \k xs y ->
   s_list k (filter (\x -> x <= r_int y) (r_list k xs))
+
+#[safe]
+fn `append : (k : int) -> `list k -> `list k -> `list (k+k) =
+  \ k xs ys ->
+    s_list (k+k) (append (r_list k xs) (r_list k ys))
+
+#[safe]
+fn `take : (k : int) -> `int -> `list k -> `list k =
+  \ k n xs ->
+    s_list k (take (r_int n) (r_list k xs))
+
+#[safe]
+fn `test_concat_map : (k : int) -> `list k -> `int -> `list k =
+ \ k xs y ->
+  s_list k
+   (concat_map 
+     (\x -> if x <= r_int y then Cons x Nil else Cons (r_int y) Nil)
+     (r_list k xs))
+
+#[safe]
+fn `test_parition : (k : int) -> `list k -> `int -> `list k * `list k = \k xs y ->
+  let r = tape (case partition (\x -> x <= r_int y) (r_list k xs) of
+                 (ys1, ys2) -> `(s_list k ys1, s_list k ys2)
+                end)
+  in `case r of `(r1, r2) -> (r1, r2) end
+
+#[safe]
+fn `test_span : (k : int) -> `list k -> `int -> `list k * `list k = \k xs y ->
+  let r = tape (case span (\x -> x <= r_int y) (r_list k xs) of
+                 (ys1, ys2) -> `(s_list k ys1, s_list k ys2)
+                end)
+  in `case r of `(r1, r2) -> (r1, r2) end

@@ -7,6 +7,10 @@
    "test_min_euclidean_distance"
    "test_nth"
    "test_map"
-   "test_filter")
+   "test_filter"
+   "test_append"
+   "test_take"
+   "test_concat_map"
+   "test_partition")
  (flags (:standard -w -27-33))
  (libraries taype-driver-plaintext-legacy common prelude sexplib))
