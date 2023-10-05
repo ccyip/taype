@@ -1,10 +1,17 @@
 (executables
  (names
    "test_elem"
-   "test_insert"
    "test_hamming_distance"
-   "test_dot_prod"
    "test_min_euclidean_distance"
+   "test_dot_prod"
+   "test_nth"
+   "test_insert"
+   "test_insert_list"
    "test_map"
-   "test_filter")
+   "test_filter"
+   "test_append"
+   "test_take"
+   "test_concat_map"
+   "test_partition"
+   "test_span")
  (libraries common))
