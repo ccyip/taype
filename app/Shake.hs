@@ -153,7 +153,7 @@ rulesForExample example = do
             "-package",
             "sexplib",
             "-package",
-            "taype-driver-" <> driver,
+            "taype-driver-" <> driver <> "-legacy",
             "-I",
             commonDir,
             "-I",
@@ -190,7 +190,7 @@ rulesForCommon = do
         out,
         "-linkpkg",
         "-package",
-        "taype-driver-plaintext"
+        "taype-driver-plaintext-legacy"
       ]
         <> mls
 
