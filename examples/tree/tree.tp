@@ -1,57 +1,131 @@
-data tree = Leaf int | Node int tree tree
+data tree = Leaf | Node int tree tree
+data list = Nil | Cons int list
 
-fn lookup : tree -> int -> bool = \t x =>
+fn elem : tree -> int -> bool = \t x =>
   match t with
-  | Leaf y => x = y
+  | Leaf => false
   | Node y l r =>
-    x = y || lookup l x || lookup r x
+    x = y || elem l x || elem r x
   end
 
 fn map : (int -> int) -> tree -> tree = \f t =>
   match t with
-  | Leaf x => Leaf (f x)
+  | Leaf => Leaf
   | Node x l r => Node (f x) (map f l) (map f r)
+  end
+
+fn test_map : tree -> int -> tree = \t y =>
+  map (\x => x + y) t
+
+fn is_leaf : tree -> bool = \t =>
+  match t with
+  | Leaf => true
+  | Node _ _ _ => false
   end
 
 fn prob : tree -> int -> int = \t x =>
   match t with
-  | Leaf y => if x = y then 100 else 0
+  | Leaf => 0
   | Node p l r =>
-    (p * (prob l x) + (100 - p) * (prob r x)) / 100
+    if is_leaf l && is_leaf r then if p = x then 100 else 0
+    else (p * (prob l x) + (100 - p) * (prob r x)) / 100
   end
 
+fn insert : tree -> int -> tree = \t y =>
+  match t with
+  | Leaf => Node y Leaf Leaf
+  | Node x l r =>
+    // if y <= x then Node x (insert l y) r else Node x l (insert r y)
+    let b = y <= x in
+    let t = if b then l else r in
+    let t = insert t y in
+    if b then Node x t r else Node x l t
+  end
+
+fn bind : tree -> tree -> tree = \t c =>
+  match t with
+  | Leaf => c
+  | Node x l r => Node x (bind l c) (bind r c)
+  end
+
+fn filter : (int -> bool) -> tree -> tree = \f t =>
+  match t with
+  | Leaf => Leaf
+  | Node x l r =>
+    if f x then Node x (filter f l) (filter f r)
+    else Leaf
+  end
+
+fn test_filter : tree -> int -> tree = \t y =>
+  filter (\x => x <= y) t
+
+fn swap : tree -> int -> tree = \t y =>
+  match t with
+  | Leaf => Leaf
+  | Node x l r =>
+    if x <= y then Node x (swap r y) (swap l y)
+    else Node x (swap l y) (swap r y)
+  end
+
+fn path : tree -> list -> tree = \t xs =>
+  match t with
+  | Leaf => Leaf
+  | Node x l r =>
+    match xs with
+    | Nil => t
+    | Cons s xs =>
+      // if s = 0 then path l xs
+      // else path r xs
+      path (if s = 0 then l else r) xs
+    end
+  end
+
+fn append : list -> list -> list = \xs ys =>
+  match xs with
+  | Nil => ys
+  | Cons x xs => Cons x (append xs ys)
+  end
+
+fn collect : (int -> bool) -> tree -> list = \f t =>
+  match t with
+  | Leaf => Nil
+  | Node x l r =>
+    let rest = append (collect f l) (collect f r) in
+    if f x then Cons x rest
+    else rest
+  end
+
+fn test_collect : tree -> int -> list = \t y =>
+  collect (\x => x <= y) t
 
 // ----------------------------------------------------------------
 // Oblivious types
 
 obliv ~tree (k : int) =
   if k = 0
-  then ~int
-  else ~int ~+ ~int ~* ~tree (k-1) ~* ~tree (k-1)
+  then unit
+  else unit ~+ ~int ~* ~tree (k-1) ~* ~tree (k-1)
 
 fn ~tree#s : (k : int) -> tree -> ~tree k = \k t =>
   if k = 0
-  then match t with
-       | Leaf x => ~int#s x
-       | Node _ _ _ => ~~
-       end
+  then ()
   else match t with
-       | Leaf x => ~inl (~int#s x)
+       | Leaf => ~inl ()
        | Node x l r =>
            ~inr ~(~int#s x, ~tree#s (k-1) l, ~tree#s (k-1) r)
        end
 
 fn' ~tree#r : (k : int) -> ~tree k -> tree = \k =>
   if k = 0
-  then \t => Leaf (~int#r t)
+  then \_ => Leaf
   else \t =>
     ~match t with
-    | ~inl x => Leaf (~int#r x)
+    | ~inl _ => Leaf
     | ~inr ~(x, l, r) => Node (~int#r x) (~tree#r (k-1) l) (~tree#r (k-1) r)
     end
 
-fn ~tree#Leaf : ~int -> #~tree = \x =>
-  #(0, (x :: ~tree 0))
+fn ~tree#Leaf : unit -> #~tree = \_ =>
+  #(0, (() :: ~tree 0))
 
 fn ~tree#Node : ~int * #~tree * #~tree -> #~tree = \p =>
   match p with
@@ -71,15 +145,15 @@ fn ~tree#Node : ~int * #~tree * #~tree -> #~tree = \p =>
 
 fn ~tree#match :
   #~tree ->
-  (~int -> 'a) ->
+  (unit -> 'a) ->
   (~int * #~tree * #~tree -> 'a) ->
   'a = \t f1 f2 =>
   match t with
   #(k, t) =>
-    (if k = 0 then \x => f1 x
+    (if k = 0 then \_ => f1 ()
      else \n =>
        ~match n with
-       | ~inl x => f1 x
+       | ~inl _ => f1 ()
        | ~inr ~(x, lt, rt) => f2 (x, #(k-1, lt), #(k-1, rt))
        end : ~tree k -> 'a) t
   end
@@ -88,28 +162,96 @@ fn ~tree#join : int -> int -> int = \x y => if x <= y then y else x
 
 fn ~tree#reshape : (k : int) -> (k' : int) -> ~tree k -> ~tree k' = \k k' =>
   if k' = 0
-  then if k = 0 then \x => x
-       else \_ => ~~
-  else if k = 0 then \x => ~inl x
+  then \_ => ()
+  else if k = 0 then \_ => ~inl ()
        else \n =>
          ~match n with
-         | ~inl x => ~inl x
+         | ~inl _ => ~inl ()
          | ~inr ~(x, lt, rt) =>
              ~inr ~(x, ~tree#reshape (k-1) (k'-1) lt,
                        ~tree#reshape (k-1) (k'-1) rt)
          end
 
 // ----------------------------------------------------------------
+// Oblivious list and its instances (copied from [list.tp])
+
+obliv ~list (k : int) =
+  if k = 0
+  then unit
+  else unit ~+ ~int ~* ~list (k-1)
+
+fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
+  if k = 0
+  then ()
+  else match xs with
+       | Nil => ~inl ()
+       | Cons x xs' => ~inr ~(~int#s x, ~list#s (k-1) xs')
+       end
+
+fn' ~list#r : (k : int) -> ~list k -> list = \k =>
+  if k = 0
+  then \_ => Nil
+  else \xs => ~match xs with
+              | ~inl _ => Nil
+              | ~inr ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
+              end
+
+fn ~list#Nil : unit -> #~list = \_ =>
+  #(0, (() :: ~list 0))
+
+fn ~list#Cons : ~int * #~list -> #~list = \p =>
+  match p with
+  (x, pxs) =>
+    match pxs with
+    #(k, xs) =>
+      #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
+    end
+  end
+
+fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (if k = 0
+       then \_ => f1 ()
+       else \xs =>
+         ~match xs with
+         | ~inl _ => f1 ()
+         | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
+         end : ~list k -> 'a) xs
+    end
+
+fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
+
+fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
+  if k' = 0
+  then \_ => ()
+  else
+    if k = 0
+    then \_ => ~inl ()
+    else \xs =>
+      ~match xs with
+      | ~inl _ => ~inl ()
+      | ~inr ~(x, xs') => ~inr ~(x, ~list#reshape (k-1) (k'-1) xs')
+      end
+
+// ----------------------------------------------------------------
 // Lifted functions
 
-fn ~lookup : #~tree -> ~int -> ~bool = %lift lookup
+fn ~elem : #~tree -> ~int -> ~bool = %lift elem
 
-fn ~test_map : #~tree -> ~int -> #~tree = \t y =>
-  let ~map : (~int -> ~int) -> #~tree -> #~tree = %lift map in
-  ~map (\x => x ~+ y) t
-
-fn ~node :
-  #~tree -> #~tree -> ~int -> #~tree =
-  \t1 t2 x => ~tree#Node (x, t1, t2)
+fn ~test_map : #~tree -> ~int -> #~tree = %lift test_map
 
 fn ~prob : #~tree -> ~int -> ~int = %lift prob
+
+fn ~insert : #~tree -> ~int -> #~tree = %lift insert
+
+fn ~bind : #~tree -> #~tree -> #~tree = %lift bind
+
+fn ~test_filter : #~tree -> ~int -> #~tree = %lift test_filter
+
+fn ~swap : #~tree -> ~int -> #~tree = %lift swap
+
+fn ~path : #~tree -> #~list -> #~tree = %lift path
+
+fn ~test_collect : #~tree -> ~int -> #~list = %lift test_collect

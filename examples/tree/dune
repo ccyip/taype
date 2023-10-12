@@ -1,7 +1,12 @@
 (executables
  (names
-   "test_lookup"
+   "test_elem"
    "test_map"
-   "test_node"
-   "test_prob")
+   "test_prob"
+   "test_insert"
+   "test_bind"
+   "test_filter"
+   "test_swap"
+   "test_path"
+   "test_collect")
  (libraries common))

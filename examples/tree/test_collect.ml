@@ -14,15 +14,15 @@ let () =
       (Conceal.obliv_tree_s_for k)
   in
   let y = get_private_int () in
-  let expected = get_expected_bool () in
+  let expected = get_expected mylist_of_sexp in
 
   collect_stat ();
 
-  let res = obliv_lookup t y in
+  let res = obliv_test_collect t y in
 
   record_stat ();
 
-  let res = Reveal.obliv_bool_r res in
+  let res = Reveal.obliv_list_r res in
 
   finalize_driver ();
 
