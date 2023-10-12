@@ -1,8 +1,12 @@
 (executables
  (names
-   "test_lookup"
+   "test_elem"
    "test_map"
-   "test_node"
-   "test_prob")
+   "test_prob"
+   "test_insert"
+   "test_bind"
+   "test_filter"
+   "test_swap"
+   "test_path")
  (flags (:standard -w -27-33))
  (libraries taype-driver-plaintext-legacy common prelude sexplib))

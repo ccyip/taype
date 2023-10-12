@@ -12,17 +12,20 @@ let _ =
   setup_driver_simple ();
 
   let n = get_public_int () in
-  let t = get_private (tree_of_sexp_check n) (private_s_tree n) (obliv_tree n) in
-  let x = get_private_int () in
-  let expected = get_expected Conv.bool_of_sexp in
+  let t = get_private
+      (tree_of_sexp_check n)
+      (private_s_tree n)
+      (obliv_tree n) in
+  let y = get_private_int () in
+  let expected = get_expected tree_of_sexp in
 
   collect_stat ();
 
-  let obliv_res = obliv_lookup n t x in
+  let obliv_res = obliv_swap n t y in
 
   record_stat ();
 
-  let res = unsafe_r_bool obliv_res in
+  let res = unsafe_r_tree n obliv_res in
 
   finalize_driver ();
 

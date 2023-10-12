@@ -1,49 +1,111 @@
-data tree = Leaf int | Node int tree tree
+data tree = Leaf | Node int tree tree
+data list = Nil | Cons int list
 
-fn lookup : tree -> int -> bool = \t x ->
+fn elem : tree -> int -> bool = \t x ->
   case t of
-  | Leaf y -> x == y
+  | Leaf -> False
   | Node y l r ->
-    x == y || lookup l x || lookup r x
+    x == y || elem l x || elem r x
   end
 
 fn map : (int -> int) -> tree -> tree = \f t ->
   case t of
-  | Leaf x -> Leaf (f x)
+  | Leaf -> Leaf
   | Node x l r -> Node (f x) (map f l) (map f r)
+  end
+
+fn is_leaf : tree -> bool = \t ->
+  case t of
+  | Leaf -> True
+  | Node _ _ _ -> False
   end
 
 fn prob : tree -> int -> int = \t x ->
   case t of
-  | Leaf y -> if x == y then 100 else 0
+  | Leaf -> 0
   | Node p l r ->
-    (p * (prob l x) + (100 - p) * (prob r x)) / 100
+    if is_leaf l && is_leaf r then if p == x then 100 else 0
+    else (p * (prob l x) + (100 - p) * (prob r x)) / 100
   end
 
+fn insert : tree -> int -> tree = \t y ->
+  case t of
+  | Leaf -> Node y Leaf Leaf
+  | Node x l r ->
+    -- This is actually faster in tape semantics.
+    if y <= x then Node x (insert l y) r else Node x l (insert r y)
+    -- let b = y <= x in
+    -- let t = if b then l else r in
+    -- let t = insert t y in
+    -- if b then Node x t r else Node x l t
+  end
+
+fn bind : tree -> tree -> tree = \t c ->
+  case t of
+  | Leaf -> c
+  | Node x l r -> Node x (bind l c) (bind r c)
+  end
+
+fn filter : (int -> bool) -> tree -> tree = \f t ->
+  case t of
+  | Leaf -> Leaf
+  | Node x l r ->
+    if f x then Node x (filter f l) (filter f r)
+    else Leaf
+  end
+
+fn swap : tree -> int -> tree = \t y ->
+  case t of
+  | Leaf -> Leaf
+  | Node x l r ->
+    if x <= y then Node x (swap r y) (swap l y)
+    else Node x (swap l y) (swap r y)
+  end
+
+fn path : tree -> list -> tree = \t xs ->
+  case t of
+  | Leaf -> Leaf
+  | Node x l r ->
+    case xs of
+    | Nil -> t
+    | Cons s xs ->
+      if s == 0 then path l xs
+      else path r xs
+      -- path (if s == 0 then l else r) xs
+    end
+  end
+
+fn append : list -> list -> list = \xs ys ->
+  case xs of
+  | Nil -> ys
+  | Cons x xs -> Cons x (append xs ys)
+  end
+
+fn collect : (int -> bool) -> tree -> list = \f t ->
+  case t of
+  | Leaf -> Nil
+  | Node x l r ->
+    let rest = append (collect f l) (collect f r) in
+    if f x then Cons x rest
+    else rest
+  end
 
 ----------------------------------------------------------------
 -- Oblivious types
 
 obliv `tree (k : int) =
   if k == 0
-  then `int
-  else `int `+ `int `* `tree (k-1) `* `tree (k-1)
+  then unit
+  else unit `+ `int `* `tree (k-1) `* `tree (k-1)
 
 #[section]
 fn s_tree : (k : int) -> tree -> `tree k = \k t ->
   if k == 0
-  then
-    tape
-      (case t of
-       | Leaf x -> tape (s_int x)
-       | Node x l r ->
-         -- Bogus
-         s_int 0
-       end)
+  then ()
   else
     tape
       (case t of
-       | Leaf x -> `inl (tape (s_int x))
+       | Leaf -> `inl ()
        | Node x l r ->
          `inr `(tape (s_int x), s_tree (k-1) l, s_tree (k-1) r)
        end)
@@ -51,34 +113,79 @@ fn s_tree : (k : int) -> tree -> `tree k = \k t ->
 #[retraction]
 fn r_tree : (k : int) -> `tree k -> tree = \k ->
   if k == 0
-  then \t -> Leaf (r_int t)
+  then \_ -> Leaf
   else \t ->
     `case t of
-    | `inl x -> Leaf (r_int x)
+    | `inl _ -> Leaf
     | `inr `(x, l, r) -> Node (r_int x) (r_tree (k-1) l) (r_tree (k-1) r)
     end
+
+obliv `list (k : int) =
+  if k == 0
+  then unit
+  else unit `+ `int `* `list (k-1)
+
+#[section]
+fn s_list : (k : int) -> list -> `list k = \ k xs ->
+  if k == 0
+  then ()
+  else tape (case xs of
+             | Nil -> `inl ()
+             | Cons x xs' -> `inr `(tape (s_int x), s_list (k-1) xs')
+             end)
+
+#[retraction]
+fn r_list : (k : int) -> `list k -> list = \ k ->
+  if k == 0
+  then \ _ -> Nil
+  else \ xs -> `case xs of
+               | `inl _ -> Nil
+               | `inr p -> `case p of
+                           `(x, xs') -> Cons (r_int x) (r_list (k-1) xs')
+                           end
+               end
 
 ----------------------------------------------------------------
 -- Lifted functions
 
 #[safe]
-fn `lookup : (k : int) -> `tree k -> `int -> `bool = \k t x ->
-  tape (s_bool (lookup (r_tree k t) (r_int x)))
+fn `elem : (k : int) -> `tree k -> `int -> `bool = \k t x ->
+  tape (s_bool (elem (r_tree k t) (r_int x)))
 
 #[safe]
 fn `test_map : (k : int) -> `tree k -> `int -> `tree k = \k t y ->
   s_tree k (map (\x -> x + r_int y) (r_tree k t))
 
 #[safe]
-fn max : int -> int -> int = \x y -> if x <= y then y else x
-
-#[safe]
-fn `node :
-  (k1 : int) -> (k2 : int) -> `tree k1 -> `tree k2 -> `int ->
-  `tree (1 + max k1 k2) =
-  \k1 k2 t1 t2 x ->
-    s_tree (1 + max k1 k2) (Node (r_int x) (r_tree k1 t1) (r_tree k2 t2))
-
-#[safe]
 fn `prob : (k : int) -> `tree k -> `int -> `int = \k t x ->
   tape (s_int (prob (r_tree k t) (r_int x)))
+
+#[safe]
+fn `insert : (k : int) -> `tree k -> `int -> `tree (k+1) = \k t y ->
+  s_tree (k+1) (insert (r_tree k t) (r_int y))
+
+#[safe]
+fn `bind : (k : int) -> `tree k -> `tree k -> `tree (k+k) = \k t c ->
+  s_tree (k+k) (bind (r_tree k t) (r_tree k c))
+
+#[safe]
+fn `test_filter : (k : int) -> `tree k -> `int -> `tree k = \k t y ->
+  s_tree k (filter (\x -> x <= r_int y) (r_tree k t))
+
+#[safe]
+fn `swap : (k : int) -> `tree k -> `int -> `tree k = \k t y ->
+  s_tree k (swap (r_tree k t) (r_int y))
+
+#[safe]
+fn `path : (k : int) -> `tree k -> `list k -> `tree k = \k t xs ->
+  s_tree k (path (r_tree k t) (r_list k xs))
+
+-- Not so fast exponential computation
+#[safe]
+fn power2 : int -> int = \k ->
+  if k == 0 then 1
+  else 2 * power2 (k-1)
+
+#[safe]
+fn `test_collect : (k : int) -> `tree k -> `int -> `list (power2 k - 1) = \k t y ->
+  s_list (power2 k - 1) (collect (\x -> x <= r_int y) (r_tree k t))
