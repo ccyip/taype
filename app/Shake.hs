@@ -27,7 +27,7 @@ main = shakeArgsWith shakeOptions {shakeColor = True} flags $
           ""
           ["round"]
           ( ReqArg
-              (fmap (\ v opts -> opts {optRound = v}) . R.readEither)
+              (fmap (\v opts -> opts {optRound = v}) . R.readEither)
               "ROUND"
           )
           "How many rounds each test case is evaluated for",
@@ -83,10 +83,10 @@ drivers = ["plaintext", "emp"]
 exampleDir :: FilePath
 exampleDir = "examples"
 
-taypeCmd :: [String] -> Action ()
+taypeCmd :: [String] -> Action CmdTime
 taypeCmd args = do
   flags <- getEnv "TAYPE_FLAGS"
-  command_ [Traced "TAYPE"] "cabal" $
+  command [Traced "TAYPE"] "cabal" $
     ["run", "taype", "--"] <> maybe [] S.words flags <> args
 
 runnerCmd :: [String] -> Action ()
@@ -140,12 +140,15 @@ rulesForExample outRoot example = do
 rulesFromTaypeFile :: FilePath -> FilePath -> FilePath -> Rules FilePath
 rulesFromTaypeFile outRoot example tp = do
   let ml = tp -<.> "ml"
-      stat = tp -<.> ".solver.stat"
+      solverStat = tp -<.> ".solver.stat"
+      solverStatFile = outRoot </> example </> takeFileName solverStat
+      compileStatFile = outRoot </> example </> takeFileName tp -<.> ".compile.stat"
   ml %> \_ -> do
     alwaysRerun
     need [tp]
-    taypeCmd [tp]
-    copyFile' stat (outRoot </> example </> takeFileName stat)
+    CmdTime t <- taypeCmd [tp]
+    copyFile' solverStat solverStatFile
+    appendFile compileStatFile $ show t ++ "\n"
   return ml
 
 getInputCsvIn :: (MonadIO m) => FilePath -> m [FilePath]
