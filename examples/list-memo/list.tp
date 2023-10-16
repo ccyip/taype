@@ -1,0 +1,256 @@
+data list = Nil | Cons int list
+data nat = Zero | Succ nat
+
+fn length : list -> nat = \xs =>
+  match xs with
+  | Nil => Zero
+  | Cons _ xs' => Succ (length xs')
+  end
+
+fn elem : int -> list -> bool = \y xs =>
+  match xs with
+  | Nil => false
+  | Cons x xs' => x = y || elem y xs'
+  end
+
+// The two lists are of the same length.
+fn hamming_distance : list -> list -> int = \xs ys =>
+  match xs with
+  | Nil => 0
+  | Cons x xs' =>
+    match ys with
+    | Nil => 0
+    | Cons y ys' =>
+      let d = hamming_distance xs' ys' in
+      if x = y then d else d + 1
+    end
+  end
+
+// The two lists have the same length.
+fn dot_prod : list -> list -> int = \xs ys =>
+  match xs with
+  | Nil => 0
+  | Cons x xs' =>
+    match ys with
+    | Nil => 0
+    | Cons y ys' =>
+      x * y + dot_prod xs' ys'
+    end
+  end
+
+fn min_euclidean_distance_with : list -> int -> int -> int = \xs y min =>
+  match xs with
+  | Nil => min
+  | Cons x xs' =>
+
+    let min' = min_euclidean_distance_with xs' y min in
+    let d = x - y in
+    let cur = d * d in
+    if cur <= min' then cur else min'
+
+    // let d = x - y in
+    // let cur = d * d in
+    // let min' = if cur <= min then cur else min in
+    // min_euclidean_distance_with xs' y min'
+
+    // let d = x - y in
+    // let cur = d * d in
+    // if cur <= min then min_euclidean_distance_with xs' y cur
+    // else min_euclidean_distance_with xs' y min
+
+  end
+
+fn min_euclidean_distance : list -> int -> int = \xs y =>
+  match xs with
+  | Nil => (-1)
+  | Cons x xs' =>
+    let d = x - y in
+    let cur = d * d in
+    min_euclidean_distance_with xs' y cur
+  end
+
+fn nth : int -> list -> int = \i xs =>
+  match xs with
+  | Nil => 0
+  | Cons x xs => if i = 0 then x else nth (i-1) xs
+  end
+
+fn insert : int -> list -> list = \y xs =>
+  match xs with
+  | Nil => Cons y Nil
+  | Cons x xs' => if y <= x then Cons y xs else Cons x (insert y xs')
+  end
+
+fn insert_list : list -> list -> list = \xs ys =>
+  match ys with
+  | Nil => xs
+  | Cons y ys' => insert_list (insert y xs) ys'
+  end
+
+fn map : (int -> int) -> list -> list = \f xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' => Cons (f x) (map f xs')
+  end
+
+fn filter : (int -> bool) -> list -> list = \f xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs' =>
+    let v = filter f xs' in
+    if f x then Cons x v else v
+  end
+
+fn test_map : list -> int -> list = \xs y =>
+  map (\x => x + y) xs
+
+fn test_filter : list -> int -> list = \xs y =>
+  filter (\x => x <= y) xs
+
+fn append : list -> list -> list = \xs ys =>
+  match xs with
+  | Nil => ys
+  | Cons x xs => Cons x (append xs ys)
+  end
+
+fn take : int -> list -> list = \n xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs =>
+    if n = 0 then Nil else Cons x (take (n-1) xs)
+  end
+
+fn concat_map : (int -> list) -> list -> list = \f xs =>
+  match xs with
+  | Nil => Nil
+  | Cons x xs => append (f x) (concat_map f xs)
+  end
+
+fn test_concat_map : list -> int -> list = \xs y =>
+  concat_map (\x => if x <= y then Cons x Nil else Cons y Nil) xs
+
+fn partition : (int -> bool) -> list -> list * list = \f xs =>
+  match xs with
+  | Nil => (Nil, Nil)
+  | Cons x xs' =>
+    match partition f xs' with
+    (ts, fs) => if f x then (Cons x ts, fs) else (ts, Cons x fs)
+    end
+  end
+
+fn test_partition : list -> int -> list * list = \xs y =>
+  partition (\x => x <= y) xs
+
+fn span : (int -> bool) -> list -> list * list = \f xs =>
+  match xs with
+  | Nil => (Nil, Nil)
+  | Cons x xs' =>
+    if f x
+    then match span f xs' with
+         (l, r) => (Cons x l, r)
+         end
+    else (Nil, xs)
+  end
+
+fn test_span : list -> int -> list * list = \xs y =>
+  span (\x => x <= y) xs
+
+// ----------------------------------------------------------------
+// Oblivious list and its instances
+
+obliv ~list (k : nat) =
+  match k with
+  | Zero => unit
+  | Succ k' => unit ~+ ~int ~* ~list k'
+  end
+
+fn ~list#s : (k : nat) -> list -> ~list k = \k xs =>
+  match k with
+  | Zero => ()
+  | Succ k' =>
+    match xs with
+    | Nil => ~inl ()
+    | Cons x xs' => ~inr ~(~int#s x, ~list#s k' xs')
+    end
+  end
+
+fn' ~list#r : (k : nat) -> ~list k -> list = \k =>
+  match k with
+  | Zero => \_ => Nil
+  | Succ k' => \xs =>
+    ~match xs with
+    | ~inl _ => Nil
+    | ~inr ~(x, xs') => Cons (~int#r x) (~list#r k' xs')
+    end
+  end
+
+fn ~list#Nil : unit -> #~list = \_ =>
+  #(Zero, ())
+
+fn ~list#Cons : ~int * #~list -> #~list = \p =>
+  match p with
+  (x, pxs) =>
+    match pxs with
+    #(k, xs) => #(Succ k, ~inr ~(x, xs))
+    end
+  end
+
+fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (match k with
+       | Zero => \_ => f1 ()
+       | Succ k' => \xs =>
+         ~match xs with
+         | ~inl _ => f1 ()
+         | ~inr ~(x, xs') => f2 (x, #(k', xs'))
+         end
+       end : ~list k -> 'a) xs
+    end
+
+fn ~list#view : list -> nat = length
+
+fn nat_le : nat -> nat -> bool = \x y =>
+  match x with
+  | Zero => true
+  | Succ x' =>
+    match y with
+    | Zero => false
+    | Succ y' => nat_le x' y'
+    end
+  end
+
+fn ~list#join : nat -> nat -> nat = \x y => if nat_le x y then y else x
+
+fn ~list#reshape : (k : nat) -> (k' : nat) -> ~list k -> ~list k' = \k k' =>
+  match k' with
+  | Zero => \_ => ()
+  | Succ k' =>
+    match k with
+    | Zero => \_ => ~inl ()
+    | Succ k => \xs =>
+      ~match xs with
+      | ~inl _ => ~inl ()
+      | ~inr ~(x, xs') => ~inr ~(x, ~list#reshape k k' xs')
+      end
+    end
+  end
+
+// ----------------------------------------------------------------
+// Lifted functions
+
+fn ~elem : ~int -> #~list -> ~bool = %lift elem
+fn ~hamming_distance : #~list -> #~list -> ~int = %lift hamming_distance
+fn ~dot_prod : #~list -> #~list -> ~int = %lift dot_prod
+fn ~min_euclidean_distance : #~list -> ~int -> ~int = %lift min_euclidean_distance
+fn ~nth : ~int -> #~list -> ~int = %lift nth
+fn ~insert : ~int -> #~list -> #~list = %lift insert
+fn ~insert_list : #~list -> #~list -> #~list = %lift insert_list
+fn ~test_map : #~list -> ~int -> #~list = %lift test_map
+fn ~test_filter : #~list -> ~int -> #~list = %lift test_filter
+fn ~append : #~list -> #~list -> #~list = %lift append
+fn ~take : ~int -> #~list -> #~list = %lift take
+fn ~test_concat_map : #~list -> ~int -> #~list = %lift test_concat_map
+fn ~test_partition : #~list -> ~int -> #~list * #~list = %lift test_partition
+fn ~test_span : #~list -> ~int -> #~list * #~list = %lift test_span
