@@ -323,6 +323,18 @@ and solve_goal goal =
       GoalCtx.set goal In_progress;
       solve_ goal
 
+let json_of_stat () : Yojson.Basic.t =
+  let atoms k = List.length (Hashtbl.find SolverCtx.solver_ctx k).ty in
+  let queries v = List.map (fun x -> `Float x) v in
+  let go k v =
+    (k, `Assoc [ ("#atoms", `Int (atoms k)); ("queries", `List (queries v)) ])
+  in
+  let stat = Hashtbl.map_list go SolverCtx.stat_tbl in
+  let atoms =
+    Hashtbl.fold (fun _ v n -> List.length v + n) SolverCtx.cls_tbl 0
+  in
+  `Assoc [ ("statistics", `Assoc stat); ("#atoms", `Int atoms) ]
+
 let solve goals classes axioms defs =
   GoalCtx.init axioms;
   SolverCtx.init classes defs;
@@ -338,4 +350,4 @@ let solve goals classes axioms defs =
     if List.mem Refused results then Error (GoalCtx.get_refused ())
     else Ok (GoalCtx.get_solved ())
   in
-  (output, SolverCtx.stat_tbl)
+  (output, json_of_stat ())

@@ -90,10 +90,6 @@ let sexp_of_output = function
       Sexp.of_variant "solved" @@ List.map to_sexp solved
   | Error refused -> Sexp.of_variant "failed" @@ List.map Goal.to_sexp refused
 
-let json_of_stat stat_tbl : Yojson.Basic.t =
-  let go k v = (k, `List (List.map (fun x -> `Float x) v)) in
-  `Assoc (Hashtbl.map_list go stat_tbl)
-
 let main input_file output_file stat_file =
   let input =
     match input_file with
@@ -103,7 +99,7 @@ let main input_file output_file stat_file =
   let goals, classes, axioms, defs =
     parse_input (Result.get_or_failwith input)
   in
-  let output, stat_tbl = solve goals classes axioms defs in
+  let output, stat = solve goals classes axioms defs in
   let output = sexp_of_output output in
   (match output_file with
   | "-out" -> Sexp.to_chan stdout output
@@ -111,7 +107,7 @@ let main input_file output_file stat_file =
   match stat_file with
   | Some file ->
       IO.with_out_a file (fun oc ->
-          Yojson.Basic.to_channel oc @@ json_of_stat stat_tbl;
+          Yojson.Basic.to_channel oc stat;
           output_char oc '\n')
   | None -> ()
 
