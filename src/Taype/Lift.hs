@@ -716,7 +716,7 @@ buildOCtx options@Options {..} gctx defs = do
               ]
         oadts =
           secondF (* 2) $
-            inferCosts adt oadtNames $
+            inferCosts optReverseCost adt oadtNames $
               [(adt, oadtName) | oadtName <- oadtNames] <> userCoerces
         oadts' =
           [ ( sumName left right,
@@ -812,8 +812,11 @@ buildOCtx options@Options {..} gctx defs = do
 sumName :: Text -> Text -> Text
 sumName x y = x <> "+" <> y
 
-inferCosts :: Text -> [Text] -> [(Text, Text)] -> [(Text, Int)]
-inferCosts adt oadts coerces =
+-- The first argument allows the costs to be reversed, so we can see how the
+-- cost assignment may affect the performance. It is a placeholder for now, not
+-- implemented yet.
+inferCosts :: Bool -> Text -> [Text] -> [(Text, Text)] -> [(Text, Int)]
+inferCosts _ adt oadts coerces =
   let costs = go sorted $ graph $> 0
    in fmapToSnd (\k -> costs ! fromJust (toVertex k)) oadts
   where

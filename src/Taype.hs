@@ -132,6 +132,10 @@ opts = do
           "Do not allow certain coercions in lifting that may negatively \
           \impact performance or are unnecessary. This option can \
           \cause certain functions to fail lifting"
+  optReverseCost <-
+    switch $
+      long "reverse-cost"
+        <> help "Reverse costs assigned to each atomic type"
   optPrintCore <-
     switch $
       long "print-core"
