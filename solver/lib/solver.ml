@@ -1,4 +1,5 @@
 open Containers
+module Graph = CCGraph
 module HashSet = CCHashSet
 
 module Logs = struct
@@ -54,6 +55,7 @@ type formulas = formula list
 
 type def = {
   vars : (string * string) list;
+  signs : bool list;
   ty : ty;
   formulas : formulas;
   subgoals : goal list;
@@ -70,10 +72,12 @@ let pp_model =
 module SolverCtx = struct
   type solver = {
     svr : Z3.Optimize.optimize;
+    signs : bool list;
     ty : ty;
     subgoals : goal list;
     tbl : (string, Z3.Expr.expr) Hashtbl.t;
     mutable stats : float list;
+    mutable refused : ty list;
   }
 
   type t = (string, solver) Hashtbl.t
@@ -83,6 +87,9 @@ module SolverCtx = struct
   let sort_tbl : (string, Z3.Sort.sort) Hashtbl.t = Hashtbl.create 1024
   let ty_tbl : (string, Z3.Expr.expr) Hashtbl.t = Hashtbl.create 1024
   let cls_tbl : (string, (string * int) list) Hashtbl.t = Hashtbl.create 1024
+
+  let coer_tbl : (string, string list * string list) Hashtbl.t =
+    Hashtbl.create 1024
 
   let init_class cls =
     let names = List.map fst cls in
@@ -102,6 +109,21 @@ module SolverCtx = struct
     Hashtbl.add sort_tbl repr sort;
     Hashtbl.add cls_tbl repr cls;
     Hashtbl.add_iter ty_tbl (List.to_iter (List.combine names exprs))
+
+  let init_coers coers =
+    let graph = Graph.of_list ~eq:Equal.string coers in
+    let decendants v =
+      Graph.Traverse.dfs
+        ~tbl:(Graph.mk_table ~eq:Equal.string ~hash:Hash.string 1024)
+        ~graph (Graph.Iter.return v)
+      |> Graph.Iter.to_list
+    in
+    let tbl = Hashtbl.map_list (fun k _ -> (k, decendants k)) ty_tbl in
+    let ancestors v =
+      List.filter_map (fun (k, ds) -> Option.return_if (List.mem v ds) k) tbl
+    in
+    let tbl = List.map (fun (k, ds) -> (k, (ds, ancestors k))) tbl in
+    Hashtbl.add_iter coer_tbl (List.to_iter tbl)
 
   let find_expr tbl x =
     match Hashtbl.get tbl x with Some e -> e | None -> Hashtbl.find ty_tbl x
@@ -137,10 +159,18 @@ module SolverCtx = struct
     in
     List.iter add_cost cls
 
-  let init_def (name, { vars; ty; formulas; subgoals }) =
+  let init_def (name, { vars; signs; ty; formulas; subgoals }) =
     let tbl = Hashtbl.create 1024 in
     let solver =
-      { svr = Z3.Optimize.mk_opt ctx; ty; subgoals; tbl; stats = [] }
+      {
+        svr = Z3.Optimize.mk_opt ctx;
+        signs;
+        ty;
+        subgoals;
+        tbl;
+        stats = [];
+        refused = [];
+      }
     in
     List.iter (init_var solver) vars;
     add_formulas solver formulas;
@@ -149,8 +179,9 @@ module SolverCtx = struct
           (Z3.Optimize.to_string solver.svr));
     Hashtbl.add solver_ctx name solver
 
-  let init classes defs =
+  let init classes coers defs =
     List.iter init_class classes;
+    init_coers coers;
     List.iter init_def defs
 
   let convert_model model =
@@ -190,19 +221,63 @@ module SolverCtx = struct
     Z3.Optimize.pop svr;
     result
 
+  let rec has_coer signs t1 t2 =
+    match (signs, t1, t2) with
+    | [], [], [] -> true
+    | s :: signs, a1 :: t1, a2 :: t2 ->
+        let decendants, ancestors = Hashtbl.find coer_tbl a1 in
+        List.mem a2 (if s then decendants else ancestors)
+        && has_coer signs t1 t2
+    | _, _, _ -> raise (Invalid_argument "arguments have different lengths")
+
+  let goal_has_coer goal1 goal2 =
+    if String.(goal1.name = goal2.name) then
+      let solver = Hashtbl.find solver_ctx goal1.name in
+      has_coer solver.signs goal1.ty goal2.ty
+    else false
+
+  let is_refused goal =
+    let solver = Hashtbl.find solver_ctx goal.name in
+    List.exists (fun ty -> has_coer solver.signs goal.ty ty) solver.refused
+
+  let get_refused () =
+    let get_refused1 (name, solver) =
+      List.map (fun ty -> { name; ty }) solver.refused
+    in
+    Hashtbl.to_list solver_ctx |> List.concat_map get_refused1
+
+  let add_refused solver ty =
+    let refused =
+      List.filter (fun ty' -> not (has_coer solver.signs ty' ty)) solver.refused
+    in
+    solver.refused <- ty :: refused
+
+  let mk_ty_in x set = Or (List.map (fun y -> Eq (x, y)) set)
+
+  let rec mk_ty_coer signs xs ty =
+    match (signs, xs, ty) with
+    | [], [], [] -> []
+    | s :: signs, x :: xs, a :: ty ->
+        let decendants, ancestors = Hashtbl.find coer_tbl a in
+        let f = mk_ty_in x (if s then ancestors else decendants) in
+        f :: mk_ty_coer signs xs ty
+    | _, _, _ -> raise (Invalid_argument "arguments have different lengths")
+
+  let add_refutation name solver signs xs ty =
+    let e = expr_of_formula solver.tbl @@ Not (And (mk_ty_coer signs xs ty)) in
+    Z3.Optimize.add solver.svr [ e ];
+    Logs.info (fun log ->
+        log.printf "Added refutation to %s@.%s" name (Z3.Expr.to_string e))
+
   let refuse goal =
+    let solver_refused = Hashtbl.find solver_ctx goal.name in
+    add_refused solver_refused goal.ty;
     let refuse1 name solver =
-      let add subgoal =
-        if String.(goal.name = subgoal.name) then (
-          let e =
-            expr_of_formula solver.tbl
-            @@ Not (And (mk_ty_eq goal.ty subgoal.ty))
-          in
-          Z3.Optimize.add solver.svr [ e ];
-          Logs.info (fun log ->
-              log.printf "Added refutation to %s@.%s" name (Z3.Expr.to_string e)))
+      let may_add_refutation subgoal =
+        if String.(goal.name = subgoal.name) then
+          add_refutation name solver solver_refused.signs subgoal.ty goal.ty
       in
-      List.iter add solver.subgoals
+      List.iter may_add_refutation solver.subgoals
     in
     Hashtbl.iter refuse1 solver_ctx
 end
@@ -213,6 +288,9 @@ module GoalSet = struct
   let pp = pp Goal.pp
 end
 
+(* [Refused] does not appear in the goal context, and it is only used as one of
+   the solver results. Refused goals are managed by the solver context
+   [SolverCtx.solver.refused]. *)
 type goal_state = Given | Refused | In_progress | Solved of model * GoalSet.t
 [@@deriving show { with_path = false }]
 
@@ -246,9 +324,10 @@ module GoalCtx = struct
     Hashtbl.iter replace_deps goal_ctx
 
   let invalidate goal =
-    SolverCtx.refuse goal;
     let remove goal' = function
-      | Solved (_, deps) when GoalSet.mem deps goal ->
+      | Solved (_, deps)
+        when GoalSet.exists (fun dep -> SolverCtx.goal_has_coer dep goal) deps
+        ->
           Logs.info (fun log ->
               log.printf "Reset %a@ which depends on %a" Goal.pp goal' Goal.pp
                 goal);
@@ -256,10 +335,6 @@ module GoalCtx = struct
       | st -> Some st
     in
     Hashtbl.filter_map_inplace remove goal_ctx
-
-  let get_refused () =
-    let refused (goal, st) = match st with Refused -> Some goal | _ -> None in
-    Hashtbl.to_list goal_ctx |> List.filter_map refused
 
   let get_solved () =
     let solved (goal, st) =
@@ -312,14 +387,15 @@ let rec solve_ goal =
         st
   | None ->
       Logs.info (fun log -> log.printf "Refused %a" Goal.pp goal);
+      SolverCtx.refuse goal;
       GoalCtx.invalidate goal;
-      let st = Refused in
-      GoalCtx.set goal st;
-      st
+      GoalCtx.unset goal;
+      Refused
 
 and solve_goal goal =
   match GoalCtx.get goal with
   | Some st -> st
+  | None when SolverCtx.is_refused goal -> Refused
   | None ->
       GoalCtx.set goal In_progress;
       solve_ goal
@@ -341,9 +417,9 @@ let json_of_stat () : Yojson.Basic.t =
   in
   `Assoc [ ("statistics", `Assoc stat); ("#atoms", `Int atoms) ]
 
-let solve goals classes axioms defs =
+let solve goals classes axioms coers defs =
   GoalCtx.init axioms;
-  SolverCtx.init classes defs;
+  SolverCtx.init classes coers defs;
 
   let results = List.map solve_goal goals in
   Logs.info (fun log ->
@@ -354,7 +430,7 @@ let solve goals classes axioms defs =
              List.pp Float.pp fmt SolverCtx.(solver.stats)))
         SolverCtx.solver_ctx);
   let output =
-    if List.mem Refused results then Error (GoalCtx.get_refused ())
+    if List.mem Refused results then Error (SolverCtx.get_refused ())
     else Ok (GoalCtx.get_solved ())
   in
   (output, json_of_stat ())

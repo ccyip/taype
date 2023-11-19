@@ -519,7 +519,7 @@ makeSolverInput ::
   [(Text, Ty Name)] ->
   Doc
 makeSolverInput octx lctx lifted goals =
-  goalsDoc </> clsDoc </> axDoc </> defDoc <> hardline2
+  goalsDoc </> clsDoc </> axDoc </> coerDoc </> defDoc <> hardline2
   where
     goalsDoc = clause "goals" $ goalDoc1 <$> goals
     clsDoc = clause "classes" $ clsDoc1 <$> octx
@@ -527,6 +527,11 @@ makeSolverInput octx lctx lifted goals =
       clause
         "axioms"
         $ axDoc1 <$> filter (isJust . flip lookup lifted . fst) lctx
+    coerDoc =
+      clause "coerces" $
+        coerDoc1
+          <$> concat [coerces | (_, OADTInfo {..}) <- octx]
+    coerDoc1 ts = parens $ hsep (styDoc <$> ts)
     defDoc = clause "definitions" $ defDoc1 <$> lifted
     clause name xs = parens $ hang $ sep $ name : xs
     goalDoc1 (x, t) =
@@ -534,25 +539,32 @@ makeSolverInput octx lctx lifted goals =
        in parens $ hang $ fillSep $ pretty x : (styDoc <$> ts)
     clsDoc1 (x, OADTInfo {oadts}) =
       parens $ align $ fillSep $ pairDoc <$> ((x, 0) : oadts)
-    pairDoc (x, y) = parens $ align $ fillSep [pretty x, pretty y]
+    pairDoc (x, y) = parens $ hsep [pretty x, pretty y]
     axDoc1 (x, ts) =
       let tss = decompose . tyToSTy . fst <$> ts
        in clause (pretty x) $ tss <&> parens . align . fillSep . fmap styDoc
     defDoc1 (x, ((idx, _), (actx, cctx, cs))) =
-      clause
-        (pretty x)
-        [ compatCtxDoc cctx,
-          argsDoc idx actx,
-          csDoc cs
-        ]
+      let t = fromJust $ lookup idx actx
+       in clause
+            (pretty x)
+            [ compatCtxDoc cctx,
+              signDoc t,
+              argsDoc t,
+              csDoc cs
+            ]
     compatCtxDoc cctx =
       parens $
         align $
           fillSep $
             cctx <&> \(x, cls) ->
               parens $ styDoc (SV x) <+> pretty cls
-    argsDoc idx actx =
-      let ts = decompose $ fromJust $ lookup idx actx
+    signDoc t =
+      parens $
+        align $
+          fillSep
+            [if s then "+" else "-" | s <- decomposeSign True t]
+    argsDoc t =
+      let ts = decompose t
        in parens $ align $ fillSep $ styDoc <$> ts
     csDoc cs =
       let (liftCs', cs') =
@@ -564,7 +576,7 @@ makeSolverInput octx lctx lifted goals =
               cs
        in scDocs cs' <> line <> scDocs liftCs'
 
-    styDoc :: STy SName -> Doc
+    styDoc :: STy2 -> Doc
     styDoc (SConst x) = pretty x
     styDoc (SV (x, y)) = pretty $ internalName $ show x <> "_" <> show y
     styDoc _ = oops "Not a base type"
@@ -899,6 +911,14 @@ decompose (SArrow dom cod) = decompose dom <> decompose cod
 
 decomposeMany :: [STy a] -> [STy a]
 decomposeMany = foldMap decompose
+
+decomposeSign :: Bool -> STy a -> [Bool]
+decomposeSign s = \case
+  SUnit -> []
+  SConst _ -> [s]
+  SV _ -> [s]
+  SProd l r -> decomposeSign s l <> decomposeSign s r
+  SArrow dom cod -> decomposeSign (not s) dom <> decomposeSign s cod
 
 sarrows_ :: [STy a] -> STy a -> STy a
 sarrows_ = flip $ foldr SArrow

@@ -42,6 +42,15 @@ let parse_axioms = function
       List.map parse_axiom axioms
   | _ -> raise Ill_formed_input
 
+let parse_coers = function
+  | `List (`Atom "coerces" :: coers) ->
+      let parse_coer = function
+        | `List [ `Atom orig; `Atom dest ] -> (orig, dest)
+        | _ -> raise Ill_formed_input
+      in
+      List.map parse_coer coers
+  | _ -> raise Ill_formed_input
+
 let rec parse_formula = function
   | `List [ `Atom "="; `Atom lhs; `Atom rhs ] -> Eq (lhs, rhs)
   | `List (`Atom "or" :: disj) ->
@@ -52,13 +61,19 @@ let rec parse_formula = function
       Or (List.map parse_conj disj)
   | _ -> raise Ill_formed_input
 
-let parse_def vars ty formulas subgoals =
+let parse_def vars signs ty formulas subgoals =
   let parse_var = function
     | `List [ `Atom name; `Atom cls ] -> (name, cls)
     | _ -> raise Ill_formed_input
   in
+  let parse_sign = function
+    | `Atom "+" -> true
+    | `Atom "-" -> false
+    | _ -> raise Ill_formed_input
+  in
   {
     vars = List.map parse_var vars;
+    signs = List.map parse_sign signs;
     ty = parse_atoms ty;
     formulas = List.map parse_formula formulas;
     subgoals = List.map parse_goal subgoals;
@@ -67,18 +82,27 @@ let parse_def vars ty formulas subgoals =
 let parse_defs = function
   | `List (`Atom "definitions" :: defs) ->
       let parse1 = function
-        | `List [ `Atom name; `List vars; `List ty; `List fs; `List gs ] ->
-            (name, parse_def vars ty fs gs)
+        | `List
+            [
+              `Atom name;
+              `List vars;
+              `List signs;
+              `List ty;
+              `List formulas;
+              `List subgoals;
+            ] ->
+            (name, parse_def vars signs ty formulas subgoals)
         | _ -> raise Ill_formed_input
       in
       List.map parse1 defs
   | _ -> raise Ill_formed_input
 
 let parse_input = function
-  | [ goals; classes; axioms; defs ] ->
+  | [ goals; classes; axioms; coers; defs ] ->
       ( parse_goals goals,
         parse_classes classes,
         parse_axioms axioms,
+        parse_coers coers,
         parse_defs defs )
   | _ -> raise Ill_formed_input
 
@@ -96,10 +120,10 @@ let main input_file output_file stat_file =
     | "-in" -> Sexp.parse_chan_list stdin
     | _ -> Sexp.parse_file_list input_file
   in
-  let goals, classes, axioms, defs =
+  let goals, classes, axioms, coers, defs =
     parse_input (Result.get_or_failwith input)
   in
-  let output, stat = solve goals classes axioms defs in
+  let output, stat = solve goals classes axioms coers defs in
   let output = sexp_of_output output in
   (match output_file with
   | "-out" -> Sexp.to_chan stdout output
