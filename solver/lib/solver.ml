@@ -73,6 +73,7 @@ module SolverCtx = struct
     ty : ty;
     subgoals : goal list;
     tbl : (string, Z3.Expr.expr) Hashtbl.t;
+    mutable stats : float list;
   }
 
   type t = (string, solver) Hashtbl.t
@@ -82,7 +83,6 @@ module SolverCtx = struct
   let sort_tbl : (string, Z3.Sort.sort) Hashtbl.t = Hashtbl.create 1024
   let ty_tbl : (string, Z3.Expr.expr) Hashtbl.t = Hashtbl.create 1024
   let cls_tbl : (string, (string * int) list) Hashtbl.t = Hashtbl.create 1024
-  let stat_tbl : (string, float list) Hashtbl.t = Hashtbl.create 1024
 
   let init_class cls =
     let names = List.map fst cls in
@@ -139,7 +139,9 @@ module SolverCtx = struct
 
   let init_def (name, { vars; ty; formulas; subgoals }) =
     let tbl = Hashtbl.create 1024 in
-    let solver = { svr = Z3.Optimize.mk_opt ctx; ty; subgoals; tbl } in
+    let solver =
+      { svr = Z3.Optimize.mk_opt ctx; ty; subgoals; tbl; stats = [] }
+    in
     List.iter (init_var solver) vars;
     add_formulas solver formulas;
     Logs.info (fun log ->
@@ -163,7 +165,6 @@ module SolverCtx = struct
 
   let mk_ty_eq = List.map2 (fun x y -> Eq (x, y))
   let get_subgoals goal = (Hashtbl.find solver_ctx goal.name).subgoals
-  let add_stat goal time = Hashtbl.add_list stat_tbl goal.name time
 
   let check (goal : goal) =
     let solver = Hashtbl.find solver_ctx goal.name in
@@ -174,7 +175,7 @@ module SolverCtx = struct
     let stamp = Unix.gettimeofday () in
     let status = Z3.Optimize.check svr in
     let now = Unix.gettimeofday () in
-    add_stat goal (now -. stamp);
+    solver.stats <- (now -. stamp) :: solver.stats;
     let result =
       match status with
       | SATISFIABLE -> (
@@ -326,10 +327,15 @@ and solve_goal goal =
 let json_of_stat () : Yojson.Basic.t =
   let atoms k = List.length (Hashtbl.find SolverCtx.solver_ctx k).ty in
   let queries v = List.map (fun x -> `Float x) v in
-  let go k v =
-    (k, `Assoc [ ("#atoms", `Int (atoms k)); ("queries", `List (queries v)) ])
+  let go k solver =
+    ( k,
+      `Assoc
+        [
+          ("#atoms", `Int (atoms k));
+          ("queries", `List (queries SolverCtx.(solver.stats)));
+        ] )
   in
-  let stat = Hashtbl.map_list go SolverCtx.stat_tbl in
+  let stat = Hashtbl.map_list go SolverCtx.solver_ctx in
   let atoms =
     Hashtbl.fold (fun _ v n -> List.length v + n) SolverCtx.cls_tbl 0
   in
@@ -344,8 +350,9 @@ let solve goals classes axioms defs =
       log.printf "Final goal context@.%a" GoalCtx.pp GoalCtx.goal_ctx);
   Logs.info (fun log ->
       log.printf "Statistics@.%a"
-        (Hashtbl.pp String.pp (List.pp Float.pp))
-        SolverCtx.stat_tbl);
+        (Hashtbl.pp String.pp (fun fmt solver ->
+             List.pp Float.pp fmt SolverCtx.(solver.stats)))
+        SolverCtx.solver_ctx);
   let output =
     if List.mem Refused results then Error (GoalCtx.get_refused ())
     else Ok (GoalCtx.get_solved ())
