@@ -1,204 +1,8 @@
 data dtree = Leaf int | Node int int dtree dtree
-
 data features = Nil | Cons int features
 
-fn decide : dtree -> features -> int = \t xs =>
-  match t with
-  | Leaf x => x
-  | Node idx thd lt rt =>
-      let x = lookup xs idx in
-      if x <= thd then decide lt xs else decide rt xs
-  end
-
-fn lookup : features -> int -> int = \xs idx =>
-  match xs with
-  | Nil => 0
-  | Cons x xs' => if idx <= 0 then x else lookup xs' (idx-1)
-  end
-
 // ----------------------------------------------------------------
-// Oblivious types
-
-obliv ~features (k : int) =
-  if k = 0
-  then unit
-  else ~int ~* ~features (k-1)
-
-fn ~features#s : (k : int) -> features -> ~features k = \k xs =>
-  if k = 0
-  then ()
-  else
-    match xs with
-    | Nil => ~~
-    | Cons x xs' => ~(~int#s x, ~features#s (k-1) xs')
-    end
-
-fn' ~features#r : (k : int) -> ~features k -> features = \k =>
-  if k = 0
-  then \_ => Nil
-  else \xs =>
-    ~match xs with
-    ~(x, xs') => Cons (~int#r x) (~features#r (k-1) xs')
-    end
-
-fn ~features#Nil : unit -> #~features = \_ =>
-  #(0, (() :: ~features 0))
-
-fn ~features#Cons : ~int * #~features -> #~features = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, (~(x, xs) :: ~features (k+1)))
-    end
-  end
-
-fn ~features#match : #~features -> (unit -> 'a) -> (~int * #~features -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~features k -> 'a) xs
-    end
-
-// The public view is the tree spine, knowing the feature index of each node but
-// not the threshold.
-data spineF = SFLeaf | SFNode int spineF spineF
-obliv ~dtree_spineF (s : spineF) =
-  match s with
-  | SFLeaf => ~int
-  | SFNode _ l r => ~int ~* ~dtree_spineF l ~* ~dtree_spineF r
-  end
-
-fn ~dtree_spineF#s : (s : spineF) -> dtree -> ~dtree_spineF s = \s t =>
-  match s with
-  | SFLeaf =>
-      match t with
-      | Leaf x => ~int#s x
-      | Node _ _ _ _ => ~~
-      end
-  | SFNode _ l r =>
-      match t with
-      | Leaf _ => ~~
-      | Node _ thd lt rt =>
-          ~(~int#s thd, ~dtree_spineF#s l lt, ~dtree_spineF#s r rt)
-      end
-  end
-
-fn' ~dtree_spineF#r : (s : spineF) -> ~dtree_spineF s -> dtree = \s =>
-  match s with
-  | SFLeaf => \x => Leaf (~int#r x)
-  | SFNode idx l r => \t =>
-    ~match t with
-    ~(thd, lt, rt) =>
-      Node idx (~int#r thd) (~dtree_spineF#r l lt) (~dtree_spineF#r r rt)
-    end
-  end
-
-fn ~dtree_spineF#Leaf : ~int -> #~dtree_spineF = \x =>
-  #(SFLeaf, x)
-
-fn ~dtree_spineF#Node :
-  (int * ~int * #~dtree_spineF * #~dtree_spineF) -> #~dtree_spineF =
-  \x =>
-    match x with
-    (idx, thd, lt, rt) =>
-      match lt with
-      #(l, lt') =>
-        match rt with
-        #(r, rt') =>
-          #(SFNode idx l r, ~(thd, lt', rt'))
-        end
-      end
-    end
-
-fn ~dtree_spineF#match :
-  #~dtree_spineF ->
-  (~int -> 'a) ->
-  (int * ~int * #~dtree_spineF * #~dtree_spineF -> 'a) ->
-  'a = \pt f1 f2 =>
-  match pt with
-  #(s, t) =>
-    (match s with
-     | SFLeaf => \x => f1 x
-     | SFNode idx l r => \n =>
-         ~match n with
-         ~(thd, lt, rt) => f2 (idx, thd, #(l, lt), #(r, rt))
-         end
-     end : ~dtree_spineF s -> 'a) t
-  end
-
-// This public view is the spine, without knowing the feature index or the
-// threshold.
-data spine = SLeaf | SNode spine spine
-obliv ~dtree_spine (s : spine) =
-  match s with
-  | SLeaf => ~int
-  | SNode l r => ~int ~* ~int ~* ~dtree_spine l ~* ~dtree_spine r
-  end
-
-fn ~dtree_spine#s : (s : spine) -> dtree -> ~dtree_spine s = \s t =>
-  match s with
-  | SLeaf =>
-      match t with
-      | Leaf x => ~int#s x
-      | Node _ _ _ _ => ~~
-      end
-  | SNode l r =>
-      match t with
-      | Leaf _ => ~~
-      | Node idx thd lt rt =>
-          ~(~int#s idx, ~int#s thd,
-            ~dtree_spine#s l lt, ~dtree_spine#s r rt)
-      end
-  end
-
-fn' ~dtree_spine#r : (s : spine) -> ~dtree_spine s -> dtree = \s =>
-  match s with
-  | SLeaf => \x => Leaf (~int#r x)
-  | SNode l r => \t =>
-      ~match t with
-      ~(idx, thd, lt, rt) =>
-        Node (~int#r idx) (~int#r thd) (~dtree_spine#r l lt) (~dtree_spine#r r rt)
-      end
-  end
-
-fn ~dtree_spine#Leaf : ~int -> #~dtree_spine = \x =>
-  #(SLeaf, x)
-
-fn ~dtree_spine#Node :
-  (~int * ~int * #~dtree_spine * #~dtree_spine) -> #~dtree_spine =
-  \x =>
-    match x with
-    (idx, thd, lt, rt) =>
-      match lt with
-      #(l, lt') =>
-        match rt with
-        #(r, rt') =>
-          #(SNode l r, ~(idx, thd, lt', rt'))
-        end
-      end
-    end
-
-fn ~dtree_spine#match :
-  #~dtree_spine ->
-  (~int -> 'a) ->
-  (~int * ~int * #~dtree_spine * #~dtree_spine -> 'a) ->
-  'a = \pt f1 f2 =>
-  match pt with
-  #(s, t) =>
-    (match s with
-     | SLeaf => \x => f1 x
-     | SNode l r => \n =>
-         ~match n with
-         ~(idx, thd, lt, rt) => f2 (idx, thd, #(l, lt), #(r, rt))
-         end
-     end : ~dtree_spine s -> 'a) t
-  end
+// Oblivious types (policies) for [dtree]
 
 // This public view is the maximum height of the tree.
 obliv ~dtree_max (k : int) =
@@ -206,6 +10,7 @@ obliv ~dtree_max (k : int) =
   then ~int
   else ~int ~+ ~int ~* ~int ~* ~dtree_max (k-1) ~* ~dtree_max (k-1)
 
+// Methods for [~dtree_max]
 fn ~dtree_max#s : (k : int) -> dtree -> ~dtree_max k = \k t =>
   if k = 0
   then
@@ -293,13 +98,215 @@ fn ~dtree_max#reshape :
                 ~dtree_max#reshape (k-1) (k'-1) rt)
       end
 
-// ----------------------------------------------------------------
-// Lifted functions
 
-fn ~decide_all : dtree -> #~features -> ~int = %lift decide
+// This public view is the spine of the tree.
+data spine = SLeaf | SNode spine spine
+obliv ~dtree_spine (s : spine) =
+  match s with
+  | SLeaf => ~int
+  | SNode l r => ~int ~* ~int ~* ~dtree_spine l ~* ~dtree_spine r
+  end
+
+// Methods for [~dtree_spine]
+fn ~dtree_spine#s : (s : spine) -> dtree -> ~dtree_spine s = \s t =>
+  match s with
+  | SLeaf =>
+      match t with
+      | Leaf x => ~int#s x
+      | Node _ _ _ _ => ~~
+      end
+  | SNode l r =>
+      match t with
+      | Leaf _ => ~~
+      | Node idx thd lt rt =>
+          ~(~int#s idx, ~int#s thd,
+            ~dtree_spine#s l lt, ~dtree_spine#s r rt)
+      end
+  end
+
+fn' ~dtree_spine#r : (s : spine) -> ~dtree_spine s -> dtree = \s =>
+  match s with
+  | SLeaf => \x => Leaf (~int#r x)
+  | SNode l r => \t =>
+      ~match t with
+      ~(idx, thd, lt, rt) =>
+        Node (~int#r idx) (~int#r thd) (~dtree_spine#r l lt) (~dtree_spine#r r rt)
+      end
+  end
+
+fn ~dtree_spine#Leaf : ~int -> #~dtree_spine = \x =>
+  #(SLeaf, x)
+
+fn ~dtree_spine#Node :
+  (~int * ~int * #~dtree_spine * #~dtree_spine) -> #~dtree_spine =
+  \x =>
+    match x with
+    (idx, thd, lt, rt) =>
+      match lt with
+      #(l, lt') =>
+        match rt with
+        #(r, rt') =>
+          #(SNode l r, ~(idx, thd, lt', rt'))
+        end
+      end
+    end
+
+fn ~dtree_spine#match :
+  #~dtree_spine ->
+  (~int -> 'a) ->
+  (~int * ~int * #~dtree_spine * #~dtree_spine -> 'a) ->
+  'a = \pt f1 f2 =>
+  match pt with
+  #(s, t) =>
+    (match s with
+     | SLeaf => \x => f1 x
+     | SNode l r => \n =>
+         ~match n with
+         ~(idx, thd, lt, rt) => f2 (idx, thd, #(l, lt), #(r, rt))
+         end
+     end : ~dtree_spine s -> 'a) t
+  end
+
+// The public view is the tree spine, knowing the feature index of each node but
+// not the threshold.
+data spineF = SFLeaf | SFNode int spineF spineF
+obliv ~dtree_spineF (s : spineF) =
+  match s with
+  | SFLeaf => ~int
+  | SFNode _ l r => ~int ~* ~dtree_spineF l ~* ~dtree_spineF r
+  end
+
+// Methods for [~dtree_spineF]
+fn ~dtree_spineF#s : (s : spineF) -> dtree -> ~dtree_spineF s = \s t =>
+  match s with
+  | SFLeaf =>
+      match t with
+      | Leaf x => ~int#s x
+      | Node _ _ _ _ => ~~
+      end
+  | SFNode _ l r =>
+      match t with
+      | Leaf _ => ~~
+      | Node _ thd lt rt =>
+          ~(~int#s thd, ~dtree_spineF#s l lt, ~dtree_spineF#s r rt)
+      end
+  end
+
+fn' ~dtree_spineF#r : (s : spineF) -> ~dtree_spineF s -> dtree = \s =>
+  match s with
+  | SFLeaf => \x => Leaf (~int#r x)
+  | SFNode idx l r => \t =>
+    ~match t with
+    ~(thd, lt, rt) =>
+      Node idx (~int#r thd) (~dtree_spineF#r l lt) (~dtree_spineF#r r rt)
+    end
+  end
+
+fn ~dtree_spineF#Leaf : ~int -> #~dtree_spineF = \x =>
+  #(SFLeaf, x)
+
+fn ~dtree_spineF#Node :
+  (int * ~int * #~dtree_spineF * #~dtree_spineF) -> #~dtree_spineF =
+  \x =>
+    match x with
+    (idx, thd, lt, rt) =>
+      match lt with
+      #(l, lt') =>
+        match rt with
+        #(r, rt') =>
+          #(SFNode idx l r, ~(thd, lt', rt'))
+        end
+      end
+    end
+
+fn ~dtree_spineF#match :
+  #~dtree_spineF ->
+  (~int -> 'a) ->
+  (int * ~int * #~dtree_spineF * #~dtree_spineF -> 'a) ->
+  'a = \pt f1 f2 =>
+  match pt with
+  #(s, t) =>
+    (match s with
+     | SFLeaf => \x => f1 x
+     | SFNode idx l r => \n =>
+         ~match n with
+         ~(thd, lt, rt) => f2 (idx, thd, #(l, lt), #(r, rt))
+         end
+     end : ~dtree_spineF s -> 'a) t
+  end
+
+
+// Oblivious type for [features] and its methods
+obliv ~features (k : int) =
+  if k = 0
+  then unit
+  else ~int ~* ~features (k-1)
+
+fn ~features#s : (k : int) -> features -> ~features k = \k xs =>
+  if k = 0
+  then ()
+  else
+    match xs with
+    | Nil => ~~
+    | Cons x xs' => ~(~int#s x, ~features#s (k-1) xs')
+    end
+
+fn' ~features#r : (k : int) -> ~features k -> features = \k =>
+  if k = 0
+  then \_ => Nil
+  else \xs =>
+    ~match xs with
+    ~(x, xs') => Cons (~int#r x) (~features#r (k-1) xs')
+    end
+
+fn ~features#Nil : unit -> #~features = \_ =>
+  #(0, (() :: ~features 0))
+
+fn ~features#Cons : ~int * #~features -> #~features = \p =>
+  match p with
+  (x, pxs) =>
+    match pxs with
+    #(k, xs) =>
+      #(k+1, (~(x, xs) :: ~features (k+1)))
+    end
+  end
+
+fn ~features#match : #~features -> (unit -> 'a) -> (~int * #~features -> 'a) -> 'a =
+  \pxs f1 f2 =>
+    match pxs with
+    #(k, xs) =>
+      (if k = 0
+       then \_ => f1 ()
+       else \xs =>
+         ~match xs with
+         | ~(x, xs') => f2 (x, #(k-1, xs'))
+         end : ~features k -> 'a) xs
+    end
+
+// ----------------------------------------------------------------
+// Functionality independent of policies
+
+fn decide : dtree -> features -> int = \t xs =>
+  match t with
+  | Leaf x => x
+  | Node idx thd lt rt =>
+      let x = lookup xs idx in
+      if x <= thd then decide lt xs else decide rt xs
+  end
+
+fn lookup : features -> int -> int = \xs idx =>
+  match xs with
+  | Nil => 0
+  | Cons x xs' => if idx <= 0 then x else lookup xs' (idx-1)
+  end
+
+// ----------------------------------------------------------------
+// Private implementation
+
+fn ~decide_max : #~dtree_max -> #~features -> ~int = %lift decide
 
 fn ~decide_spineF : #~dtree_spineF -> #~features -> ~int = %lift decide
 
 fn ~decide_spine : #~dtree_spine -> #~features -> ~int = %lift decide
 
-fn ~decide_max : #~dtree_max -> #~features -> ~int = %lift decide
+fn ~decide_all : dtree -> #~features -> ~int = %lift decide
