@@ -9,12 +9,12 @@ open Dtree_helper.M (Driver)
 let () =
   setup_driver_simple ();
 
-  let kt = get_public_int () in
+  let n = get_public_int () in
   let t =
     get_private
-      (dtree_of_sexp_check_max kt)
-      (Conceal.obliv_dtree_max_s kt)
-      (Conceal.obliv_dtree_max_s_for kt)
+      (dtree_of_sexp_check_max n)
+      (Conceal.obliv_dtree_max_s n)
+      (Conceal.obliv_dtree_max_s_for n)
   in
   let k = get_public_int () in
   let xs =
