@@ -1,0 +1,4 @@
+public: 8
+alice:
+public: 8
+bob: (10 20 30 40 50 60 70 80)
