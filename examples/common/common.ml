@@ -1,17 +1,19 @@
+open Taype_driver
 open Driver
 open Prelude
 open Sexplib
 open Scanf
 open Fun
 
-let my_party : int ref = ref (-1)
+let my_party : party ref = ref Party.Public
 let switch : string ref = ref ""
 let stat : int ref = ref (-1)
 
 let party_of_string = function
-  | "public" -> party_public
-  | "alice" -> party_alice
-  | "bob" -> party_bob
+  | "public" -> Party.Public
+  | "trusted" -> Party.Trusted
+  | "alice" -> Party.Private 1
+  | "bob" -> Party.Private 2
   | _ -> failwith "Unknown party: only supports public, alice, and bob"
 
 (* Parse the commandline options. The first options is the party name, and the
@@ -34,7 +36,7 @@ let scan_line () =
    data. *)
 let get_public conv =
   let (party, s) = scan_line () in
-  if party <> party_public then failwith "Input party is not public";
+  if party <> Party.Public then failwith "Input party is not public";
   Sexp.of_string_conv_exn s conv
 
 (* Get a private data from input. [conv] is used to convert the sexp to the data
@@ -43,7 +45,7 @@ let get_public conv =
    [size], with the help from the party who owns it. *)
 let get_private conv sec size =
   let (party, s) = scan_line () in
-  if party = !my_party
+  if party = !my_party || Party.Trusted = !my_party
   then sec (Sexp.of_string_conv_exn s conv)
   else obliv_array_new_from size party
 

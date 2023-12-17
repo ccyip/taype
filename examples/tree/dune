@@ -9,4 +9,4 @@
    "test_swap"
    "test_path")
  (flags (:standard -w -27-33))
- (libraries taype-driver-plaintext-legacy common prelude sexplib))
+ (libraries  common prelude sexplib))

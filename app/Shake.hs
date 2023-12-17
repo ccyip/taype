@@ -11,11 +11,11 @@
 -- Build system.
 module Main (main) where
 
-import qualified Data.String as S
+import Data.String qualified as S
 import Development.Shake
 import Development.Shake.FilePath
 import System.Console.GetOpt
-import qualified Text.Read as R
+import Text.Read qualified as R
 
 main :: IO ()
 main = shakeArgsWith shakeOptions {shakeColor = True} flags $
@@ -103,12 +103,12 @@ mlCmd args =
 garbages :: [FilePattern]
 garbages = ["*.cmi", "*.cmx", "*.o", "*.tpc", "*.oil"]
 
-getExamples :: MonadIO m => m [FilePath]
+getExamples :: (MonadIO m) => m [FilePath]
 getExamples = do
   files <- liftIO $ getDirectoryFilesIO exampleDir ["*/*.tp"]
   return $ hashNub $ takeDirectory1 <$> files
 
-getTaypeFilesIn :: MonadIO m => FilePath -> m [FilePath]
+getTaypeFilesIn :: (MonadIO m) => FilePath -> m [FilePath]
 getTaypeFilesIn example =
   liftIO $ getDirectoryFilesIO (exampleDir </> example) ["*.tp"]
 
@@ -122,7 +122,7 @@ getMLFromTaype file =
   where
     prefix = dropExtension file
 
-getTestSrcIn :: MonadIO m => FilePath -> m [FilePath]
+getTestSrcIn :: (MonadIO m) => FilePath -> m [FilePath]
 getTestSrcIn example =
   liftIO $ getDirectoryFilesIO (exampleDir </> example) ["test_*.ml"]
 
@@ -139,13 +139,14 @@ rulesForExample example = do
   bins <- flip foldMapM srcNames $ \srcName ->
     forM drivers $ \driver -> do
       let bin = mkTestBin (dir </> takeBaseName srcName) driver
+          objs = [commonDir </> driver </> "driver.cmx"]
           allMls =
             ((commonDir </>) <$> ["prelude.ml", "common.ml"])
               <> mls
               <> helpers
               <> [dir </> srcName]
       bin %> \out -> do
-        need allMls
+        need $ objs <> allMls
         mlCmd $
           [ "-o",
             out,
@@ -153,12 +154,15 @@ rulesForExample example = do
             "-package",
             "sexplib",
             "-package",
-            "taype-driver-" <> driver <> "-legacy",
+            "taype-driver-" <> driver,
             "-I",
             commonDir,
             "-I",
+            commonDir </> driver,
+            "-I",
             dir
           ]
+            <> objs
             <> allMls
       return bin
 
@@ -180,29 +184,46 @@ rulesFromTaypeFile tp = do
 rulesForCommon :: Rules ()
 rulesForCommon = do
   let bin = commonDir </> "test"
+      driverML = commonDir </> "driver.ml"
       preludeML = commonDir </> "prelude.ml"
 
   bin %> \out -> do
-    let mls = [preludeML, out <.> "ml"]
-    need mls
-    mlCmd $
+    need [out <.> "ml"]
+    mlCmd
       [ "-o",
         out,
-        "-linkpkg",
-        "-package",
-        "taype-driver-plaintext-legacy"
+        out <.> "ml"
       ]
-        <> mls
 
   preludeML %> \out -> do
     taypeCmd ["--generate-prelude", dropExtension out]
 
-  "build/common" ~> need [bin, preludeML]
+  forM_ drivers $ \driver -> do
+    let ml = commonDir </> driver </> "driver.ml"
+    commonDir </> driver </> "driver.cmx" %> \_ -> do
+      need [driverML]
+      copyFileChanged driverML ml
+      mlCmd
+        [ "-c",
+          "-linkpkg",
+          "-package",
+          "taype-driver-" <> driver,
+          "-open",
+          "Taype_driver_" <> driver,
+          ml
+        ]
+
+  "build/common"
+    ~> need
+      ( [bin, preludeML]
+          <> [commonDir </> dr </> "driver.cmx" | dr <- drivers]
+      )
 
   "clean/common" ~> do
     removeFilesAfter commonDir $ ["test", "prelude.ml"] <> garbages
+    removeFilesAfter commonDir drivers
 
-getInputCsvIn :: MonadIO m => FilePath -> m [FilePath]
+getInputCsvIn :: (MonadIO m) => FilePath -> m [FilePath]
 getInputCsvIn example =
   liftIO $ getDirectoryFilesIO (exampleDir </> example) ["*.input.csv"]
 
@@ -239,6 +260,6 @@ rulesForRunner rnd outRoot example = do
   "run/clean/" <> example ~> removeFilesAfter outDir ["*.output.csv"]
 
 partiesFromDriver :: String -> String
-partiesFromDriver "plaintext" = "public"
+partiesFromDriver "plaintext" = "trusted"
 partiesFromDriver "emp" = "alice,bob"
 partiesFromDriver _ = error "Unknown driver"
