@@ -103,6 +103,16 @@ pLocatedInfix ops =
   choice $
     ops <&> \op -> (,op) <$> pLocatedToken (L.Infix op)
 
+pairKindToParen :: PairKind -> Token
+pairKindToParen = \case
+  PublicP -> L.LParen
+  OblivP -> L.LOParen
+  PsiP -> L.LPParen
+
+pLocatedLParenOf :: [PairKind] -> Parser r (Int, PairKind)
+pLocatedLParenOf ks =
+  choice [(,k) <$> pLocatedToken (pairKindToParen k) | k <- ks]
+
 getLoc :: Expr a -> Int
 getLoc Loc {loc} = loc
 getLoc _ = oops "Location not available"
@@ -151,16 +161,16 @@ grammar = mdo
         right <- pBranch
         return Loc {expr = former cond left right, ..}
       -- Product-like elimination
-      pPMatch former matchToken pPairPat_ pBody = do
+      pPMatch matchToken pPatPair pBody = do
         loc <- pLocatedToken matchToken
         cond <- pExpr
         pToken L.With
         optional $ pToken L.Bar
-        pat <- pPairPat_
+        pat <- pPatPair
         pToken L.DArrow
         body <- pBody
         pToken L.End
-        return Loc {expr = former cond pat body, ..}
+        return Loc {expr = pmatchPat_ cond pat body, ..}
       -- Sum elimination
       pSMatch matchToken olabel = do
         loc <- pLocatedToken matchToken
@@ -168,12 +178,12 @@ grammar = mdo
         pToken L.With
         optional $ pToken L.Bar
         pToken $ L.Inj olabel True
-        lPat <- pOPat
+        lPat <- pPat
         pToken L.DArrow
         lBody <- pExpr
         pToken L.Bar
         pToken $ L.Inj olabel False
-        rPat <- pOPat
+        rPat <- pPat
         pToken L.DArrow
         rBody <- pExpr
         pToken L.End
@@ -275,8 +285,8 @@ grammar = mdo
             pToken L.DArrow
             body <- pExpr
             return $
-              let go ((loc, binder), mTy) body' =
-                    Loc {expr = lam_ binder mTy body', ..}
+              let go ((loc, pat), mTy) body' =
+                    Loc {expr = lamPat_ pat mTy body', ..}
                in foldr go body args,
           -- Let
           pLet pExpr,
@@ -284,18 +294,10 @@ grammar = mdo
           pIf ite_ L.If pExpr,
           -- Oblivious (possibly leaky) if conditional
           pIf oite_ L.OIf pExpr,
-          -- Product elimination
-          pPMatch (pmatchPat_ PublicP) L.Match pPairPat pExpr,
+          -- Product and Psi type elimination
+          pPMatch L.Match (pPatPairOf [PublicP, PsiP]) pExpr,
           -- Oblivious product elimination
-          pPMatch (pmatchPat_ OblivP) L.OMatch pOPairPat pExpr,
-          -- Psi type elimination
-          pPMatch
-            ( \cond (lBinder, rBinder) body ->
-                pmatch_ PsiP cond lBinder rBinder body
-            )
-            L.Match
-            (pPPairPat :: Prod r Text LocatedToken (Binder, Binder))
-            pExpr,
+          pPMatch L.OMatch (pPatPairOf [OblivP]) pExpr,
           -- ADT elimination
           pMatch pExpr,
           -- Public sum elimination
@@ -377,8 +379,9 @@ grammar = mdo
     rule $
       choice
         [ -- Unit value
-          pLocatedToken L.LParen <* pToken L.RParen <&> \loc ->
-            Loc {expr = VUnit, ..},
+          pLocatedToken L.LParen
+            <* pToken L.RParen <&> \loc ->
+              Loc {expr = VUnit, ..},
           -- Boolean literal
           pLocatedBLit <&> \(loc, bLit) -> Loc {expr = BLit {..}, ..},
           -- Integer literal
@@ -497,7 +500,7 @@ grammar = mdo
           -- If conditional
           pIf ite_ L.If pType,
           -- Product elimination
-          pPMatch (pmatchPat_ PublicP) L.Match pPairPat pType,
+          pPMatch L.Match (pPatPairOf [PublicP]) pType,
           -- ADT elimination
           pMatch pType,
           -- Next precedence
@@ -570,10 +573,10 @@ grammar = mdo
   pLocatedFunArg <-
     rule $
       choice
-        [ (,Nothing) <$> pLocatedBinder,
+        [ (,Nothing) <$> pLocatedPat,
           do
             pToken L.LParen
-            binder <- pLocatedBinder
+            binder <- pLocatedPat
             pToken L.Colon
             ty <- pType
             pToken L.RParen
@@ -582,38 +585,27 @@ grammar = mdo
         ]
 
   -- Pattern
-  let pLocatedPairPatRule pLocatedPat_ pLParen = rule $ do
-        patLoc <- pLocatedToken pLParen
-        prefix <- some1 $ pLocatedPat_ <* pToken L.Comma
-        end <- pLocatedPat_
+  pLocatedPat <-
+    rule $
+      choice
+        [ second VarP <$> pLocatedBinder,
+          pLocatedPatPairOf [PublicP, OblivP, PsiP]
+        ]
+  let pLocatedPatPairOf ks = do
+        ~(patLoc, pairKind) <- pLocatedLParenOf ks
+        prefix <- some1 $ pLocatedPat <* pToken L.Comma
+        end <- pLocatedPat
         pToken L.RParen
         return $
-          let go (loc, left) (_, right) = (loc, PairP loc left right)
+          let go (loc, left) (_, right) =
+                (loc, PairP loc pairKind left right)
               (_, pat) = foldr go end prefix
               pat' = case pat of
-                PairP _ left right -> PairP patLoc left right
+                PairP _ k l r -> PairP patLoc k l r
                 p -> p
            in (patLoc, pat')
-      pLocatedPatRule pLocatedPairPat_ =
-        rule $
-          choice
-            [ second VarP <$> pLocatedBinder,
-              pLocatedPairPat_
-            ]
-      pPairPat = snd <$> pLocatedPairPat
-      pOPairPat = snd <$> pLocatedOPairPat
-      pOPat = snd <$> pLocatedOPat
-  pLocatedPairPat <- pLocatedPairPatRule pLocatedPat L.LParen
-  pLocatedPat <- pLocatedPatRule pLocatedPairPat
-  pLocatedOPairPat <- pLocatedPairPatRule pLocatedOPat L.LOParen
-  pLocatedOPat <- pLocatedPatRule pLocatedOPairPat
-  let pPPairPat = do
-        pToken L.LPParen
-        lBinder <- pBinder
-        pToken L.Comma
-        rBinder <- pBinder
-        pToken L.RParen
-        return (lBinder, rBinder)
+  let pPat = snd <$> pLocatedPat
+  let pPatPairOf ks = snd <$> pLocatedPatPairOf ks
 
   return pProg
 

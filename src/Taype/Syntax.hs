@@ -52,6 +52,7 @@ module Taype.Syntax
     smatchPat_,
     pmatch_,
     pmatchPat_,
+    lamPat_,
     lam',
     lams',
     let',
@@ -346,7 +347,7 @@ closeDefs :: Defs Text -> Defs a
 closeDefs = (second (>>>= GV) <$>)
 
 -- | A rudimentary pattern that only supports pairs
-data Pat a = VarP (BinderM a) | PairP Int (Pat a) (Pat a)
+data Pat a = VarP (BinderM a) | PairP Int PairKind (Pat a) (Pat a)
 
 -- | Constraint on a polymorphic type variable
 data PolyConstraint
@@ -830,21 +831,9 @@ smatchPat_ ::
   Expr a ->
   Expr a
 smatchPat_ olabel cond lPat lBody rPat rBody = runFreshM $ do
-  xl <- freshPatBinder lPat
-  lBody' <-
-    elabPat
-      (pmatch_ (pairKindOfOLabel olabel))
-      lPat
-      (V $ fromBinder xl)
-      lBody
-  xr <- freshPatBinder rPat
-  rBody' <-
-    elabPat
-      (pmatch_ (pairKindOfOLabel olabel))
-      rPat
-      (V $ fromBinder xr)
-      rBody
-  return $ smatch_ olabel cond xl lBody' xr rBody'
+  (lBinder, lBody') <- elabPat lPat lBody
+  (rBinder, rBody') <- elabPat rPat rBody
+  return $ smatch_ olabel cond lBinder lBody' rBinder rBody'
 
 pmatch_ ::
   (a ~ Text) => PairKind -> Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a
@@ -858,48 +847,41 @@ pmatch_ pairKind cond lBinder rBinder body =
     }
 
 -- The pattern has to be 'PairP'.
-pmatchPat_ :: (a ~ Text) => PairKind -> Expr a -> Pat a -> Expr a -> Expr a
-pmatchPat_ pairKind cond pat body =
-  runFreshM $ elabPat (pmatch_ pairKind) pat cond body
+pmatchPat_ :: (a ~ Text) => Expr a -> Pat a -> Expr a -> Expr a
+pmatchPat_ cond (PairP _ pairKind left right) body = runFreshM $ do
+  (lBinder, rBinder, body') <- elabPatPair left right body
+  return $ pmatch_ pairKind cond lBinder rBinder body'
+pmatchPat_ _ _ _ = oops "Not a pair pattern"
+
+lamPat_ :: (a ~ Text) => Pat a -> Maybe (Ty a) -> Expr a -> Expr a
+lamPat_ pat argTy body = runFreshM $ do
+  (binder, body') <- elabPat pat body
+  return $ lam_ binder argTy body'
 
 -- | Elaborate pattern.
---
--- The first argument is the smart constructor of case analysis for product-like
--- types, e.g., public and oblivious products.
---
--- The second argument is the pattern to elaborate.
---
--- The third argument is the source expression of the pair pattern 'PairP',
--- which is not used if the pattern is simply a 'VarP'.
---
--- The last argument is the pattern matching body.
---
--- The invariant of this function may be a bit awkward: the returned expression
--- is closed under all pattern variables in the pattern if the pattern is a
--- 'PairP', while it is open if the pattern is a 'VarP'.
-elabPat ::
+elabPat :: (a ~ Text, MonadFresh m) => Pat a -> Expr a -> m (BinderM a, Expr a)
+elabPat (VarP binder) e = return (binder, e)
+elabPat (PairP loc pairKind left right) e = do
+  x <- fresh
+  let name = internalName ("p" <> show x)
+      binder = Named loc name
+  (lBinder, rBinder, body) <- elabPatPair left right e
+  return
+    ( binder,
+      Loc {expr = pmatch_ pairKind (V name) lBinder rBinder body, ..}
+    )
+
+-- | Elaborate a pair of patterns.
+elabPatPair ::
   (a ~ Text, MonadFresh m) =>
-  (Expr a -> BinderM a -> BinderM a -> Expr a -> Expr a) ->
+  Pat a ->
   Pat a ->
   Expr a ->
-  Expr a ->
-  m (Expr a)
-elabPat pmatch = go
-  where
-    go (VarP _) _ body = return body
-    go (PairP _ lPat rPat) src body = do
-      xl <- freshPatBinder lPat
-      xr <- freshPatBinder rPat
-      body' <- go rPat (srcFromBinder xr) body >>= go lPat (srcFromBinder xl)
-      return $ pmatch src xl xr body'
-    srcFromBinder (Named loc name) = Loc {expr = V name, ..}
-    srcFromBinder _ = oops "Not a pair pattern"
-
-freshPatBinder :: (a ~ Text, MonadFresh m) => Pat a -> m (BinderM a)
-freshPatBinder (VarP binder) = return binder
-freshPatBinder (PairP loc _ _) = do
-  x <- fresh
-  return $ Named loc $ internalName ("p" <> show x)
+  m (BinderM a, BinderM a, Expr a)
+elabPatPair left right e = do
+  (rBinder, e') <- elabPat right e
+  (lBinder, body) <- elabPat left e'
+  return (lBinder, rBinder, body)
 
 ----------------------------------------------------------------
 -- Smart constructors that work with 'Name's
@@ -1144,9 +1126,11 @@ cuteDefDoc :: Options -> Text -> Def Text -> Doc
 cuteDefDoc options name = \case
   FunDef {..} ->
     hang $
-      "fn" <> leakyDoc
-        <+> go (cuteBinder name (Just ty))
-        <+> equals <> go (cuteLam True expr)
+      "fn"
+        <> leakyDoc
+          <+> go (cuteBinder name (Just ty))
+          <+> equals
+        <> go (cuteLam True expr)
     where
       leakyDoc = case label of
         LeakyL -> "'"
@@ -1155,8 +1139,8 @@ cuteDefDoc options name = \case
     hang $
       "data"
         <+> pretty name
-          <> sep1
-            (equals <+> sepWith (line <> pipe <> space) (cuteCtor <$> ctors))
+        <> sep1
+          (equals <+> sepWith (line <> pipe <> space) (cuteCtor <$> ctors))
     where
       cuteCtor (ctor, paraTypes) = go $ cuteApp_ (pretty ctor) paraTypes
   OADTDef {..} ->
