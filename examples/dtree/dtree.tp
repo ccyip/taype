@@ -37,29 +37,6 @@ fn' ~dtree_max#r : (k : int) -> ~dtree_max k -> dtree = \k =>
              (~dtree_max#r (k-1) l) (~dtree_max#r (k-1) r)
     end
 
-fn ~dtree_max#Leaf : ~int -> #~dtree_max = \x =>
-  #(0, (x :: ~dtree_max 0))
-
-fn ~dtree_max#Node :
-  (~int * ~int * #~dtree_max * #~dtree_max) -> #~dtree_max =
-  \x =>
-    match x with
-    (idx, thd, lt, rt) =>
-      match lt with
-      #(lk, lt') =>
-        match rt with
-        #(rk, rt') =>
-          let k = ~dtree_max#join lk rk in
-          (#(k+1, ((~inr ~(idx, thd,
-                         ~dtree_max#reshape lk k lt',
-                         ~dtree_max#reshape rk k rt')
-                    : ~int ~+ ~int ~* ~int ~* ~dtree_max k ~* ~dtree_max k)
-                    :: ~dtree_max (k+1)))
-            : #~dtree_max)
-        end
-      end
-    end
-
 fn ~dtree_max#match :
   #~dtree_max ->
   (~int -> 'a) ->
@@ -76,28 +53,6 @@ fn ~dtree_max#match :
            f2 (idx, thd, #(k-1, lt), #(k-1, rt))
        end : ~dtree_max k -> 'a) t
   end
-
-fn ~dtree_max#join : int -> int -> int = \x y => if x <= y then y else x
-
-fn ~dtree_max#reshape :
-  (k : int) -> (k' : int) -> ~dtree_max k -> ~dtree_max k' = \k k' =>
-  if k' = 0
-  then
-    if k = 0
-    then \x => x
-    else \_ => ~~
-  else
-    if k = 0
-    then \x => ~inl x
-    else \n =>
-      ~match n with
-      | ~inl x => ~inl x
-      | ~inr ~(idx, thd, lt, rt) =>
-          ~inr ~(idx, thd,
-                ~dtree_max#reshape (k-1) (k'-1) lt,
-                ~dtree_max#reshape (k-1) (k'-1) rt)
-      end
-
 
 // This public view is the spine of the tree.
 data spine = SLeaf | SNode spine spine
@@ -133,23 +88,6 @@ fn' ~dtree_spine#r : (s : spine) -> ~dtree_spine s -> dtree = \s =>
         Node (~int#r idx) (~int#r thd) (~dtree_spine#r l lt) (~dtree_spine#r r rt)
       end
   end
-
-fn ~dtree_spine#Leaf : ~int -> #~dtree_spine = \x =>
-  #(SLeaf, x)
-
-fn ~dtree_spine#Node :
-  (~int * ~int * #~dtree_spine * #~dtree_spine) -> #~dtree_spine =
-  \x =>
-    match x with
-    (idx, thd, lt, rt) =>
-      match lt with
-      #(l, lt') =>
-        match rt with
-        #(r, rt') =>
-          #(SNode l r, ~(idx, thd, lt', rt'))
-        end
-      end
-    end
 
 fn ~dtree_spine#match :
   #~dtree_spine ->
@@ -202,23 +140,6 @@ fn' ~dtree_spineF#r : (s : spineF) -> ~dtree_spineF s -> dtree = \s =>
     end
   end
 
-fn ~dtree_spineF#Leaf : ~int -> #~dtree_spineF = \x =>
-  #(SFLeaf, x)
-
-fn ~dtree_spineF#Node :
-  (int * ~int * #~dtree_spineF * #~dtree_spineF) -> #~dtree_spineF =
-  \x =>
-    match x with
-    (idx, thd, lt, rt) =>
-      match lt with
-      #(l, lt') =>
-        match rt with
-        #(r, rt') =>
-          #(SFNode idx l r, ~(thd, lt', rt'))
-        end
-      end
-    end
-
 fn ~dtree_spineF#match :
   #~dtree_spineF ->
   (~int -> 'a) ->
@@ -258,18 +179,6 @@ fn' ~features#r : (k : int) -> ~features k -> features = \k =>
     ~match xs with
     ~(x, xs') => Cons (~int#r x) (~features#r (k-1) xs')
     end
-
-fn ~features#Nil : unit -> #~features = \_ =>
-  #(0, (() :: ~features 0))
-
-fn ~features#Cons : ~int * #~features -> #~features = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, (~(x, xs) :: ~features (k+1)))
-    end
-  end
 
 fn ~features#match : #~features -> (unit -> 'a) -> (~int * #~features -> 'a) -> 'a =
   \pxs f1 f2 =>
