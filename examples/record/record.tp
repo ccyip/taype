@@ -55,7 +55,7 @@ fn count_healthy_age_group : db -> int -> int -> int * int = \ps b e =>
 
 fn healthy_rate_of_age_group : db -> int -> int -> int = \ps b e =>
   match count_healthy_age_group ps b e with
-  | (n, total) =>
+  (n, total) =>
     if total = 0
     then 0
     else n * 100 / total
@@ -210,41 +210,30 @@ fn ~patient#s : (v : patient_view) -> patient -> ~patient v = \v p =>
   match v with
   | Known_id _ =>
       match p with
-      Patient _ age h w => ~(~int#s age, ~int#s h, ~int#s w)
+      | Patient _ age h w => ~(~int#s age, ~int#s h, ~int#s w)
       end
   | Known_data _ _ =>
       match p with
-      Patient id age _ _ => ~(~int#s id, ~int#s age)
+      | Patient id age _ _ => ~(~int#s id, ~int#s age)
       end
   end
 
 fn' ~patient#r : (v : patient_view) -> ~patient v -> patient = \v =>
   match v with
-  | Known_id id => \p =>
-    ~match p with
-    ~(age, h, w) => Patient id (~int#r age) (~int#r h) (~int#r w)
-    end
-  | Known_data h w => \p =>
-    ~match p with
-    ~(id, age) => Patient (~int#r id) (~int#r age) h w
-    end
+  | Known_id id =>
+    \~(age, h, w) => Patient id (~int#r age) (~int#r h) (~int#r w)
+  | Known_data h w =>
+    \~(id, age) => Patient (~int#r id) (~int#r age) h w
   end
 
 fn ~patient#match : #~patient -> (~int * ~int * ~int * ~int -> 'a) -> 'a =
-  \p f =>
-    match p with
-    #(v, p) =>
-      (match v with
-       | Known_id id => \p =>
-           ~match p with
-           ~(age, h, w) => f (~int#s id, age, h, w)
-           end
-       | Known_data h w => \p =>
-          ~match p with
-          ~(id, age) => f (id, age, ~int#s h, ~int#s w)
-          end
-       end : ~patient v -> 'a) p
-    end
+  \#(v, p) f =>
+    (match v with
+     | Known_id id =>
+       \~(age, h, w) => f (~int#s id, age, h, w)
+     | Known_data h w =>
+       \~(id, age) => f (id, age, ~int#s h, ~int#s w)
+     end : ~patient v -> 'a) p
 
 // Due to the lack of type polymorphism, we need to define db_view and
 // db_view_concat even though they are just list and list operations.
@@ -269,38 +258,22 @@ fn ~db#s : (vs : db_view) -> db -> ~db vs = \vs ps =>
 fn' ~db#r : (vs : db_view) -> ~db vs -> db = \vs =>
   match vs with
   | Db_View_Empty => \_ => Db_Empty
-  | Db_View_More v vs' => \ps =>
-    ~match ps with
-    ~(p, ps') => Db_More (~patient#r v p) (~db#r vs' ps')
-    end
+  | Db_View_More v vs' =>
+    \~(p, ps') => Db_More (~patient#r v p) (~db#r vs' ps')
   end
 
 fn ~db#Db_Empty : unit -> #~db = \_ => #(Db_View_Empty, ())
 
-fn ~db#Db_More : #~patient * #~db -> #~db = \p =>
-  match p with
-  (p, db) =>
-    match p with
-    #(v, p) =>
-      match db with
-      #(vs, db) =>
-        #(Db_View_More v vs, ~(p, db))
-      end
-    end
-  end
+fn ~db#Db_More : #~patient * #~db -> #~db = \(#(v, p), #(vs, db)) =>
+  #(Db_View_More v vs, ~(p, db))
 
 fn ~db#match : #~db -> (unit -> 'a) -> (#~patient * #~db -> 'a) -> 'a =
-  \db f1 f2 =>
-    match db with
-    #(vs, db) =>
-      (match vs with
-      | Db_View_Empty => \_ => f1 ()
-      | Db_View_More v vs' => \db =>
-        ~match db with
-        ~(p, db') => f2 (#(v, p), #(vs', db'))
-        end
-      end : ~db vs -> 'a) db
-    end
+  \#(vs, db) f1 f2 =>
+    (match vs with
+    | Db_View_Empty => \_ => f1 ()
+    | Db_View_More v vs' =>
+      \~(p, db) => f2 (#(v, p), #(vs', db))
+    end : ~db vs -> 'a) db
 
 obliv ~bmi_db (k : int) =
   if k = 0
@@ -319,25 +292,16 @@ fn ~bmi_db#s : (k : int) -> bmi_db -> ~bmi_db k = \k bmis =>
 fn' ~bmi_db#r : (k : int) -> ~bmi_db k -> bmi_db = \k =>
   if k = 0
   then \_ => Nil
-  else \bmis =>
-    ~match bmis with
-    ~(id, bmi, bmis') => Cons (~int#r id) (~int#r bmi) (~bmi_db#r (k-1) bmis')
-    end
+  else \~(id, bmi, bmis) => Cons (~int#r id) (~int#r bmi) (~bmi_db#r (k-1) bmis)
 
 fn ~bmi_db#match :
   #~bmi_db ->
   (unit -> 'a) ->
   (~int * ~int * #~bmi_db -> 'a) ->
   'a =
-  \db f1 f2 =>
-    match db with
-    #(k, db) =>
-      (if k = 0 then \_ => f1 ()
-       else \db =>
-         ~match db with
-         ~(id, bmi, db') => f2 (id, bmi, #(k-1, db'))
-         end : ~bmi_db k -> 'a) db
-    end
+  \#(k, db) f1 f2 =>
+    (if k = 0 then \_ => f1 ()
+     else \~(id, bmi, db) => f2 (id, bmi, #(k-1, db)) : ~bmi_db k -> 'a) db
 
 // Due to the lack of (polymorhpic) sum type support at the moment, we need to
 // encode the oblivious type of [int_option]. Ideally the boilerplate of
@@ -356,13 +320,10 @@ fn' ~int_option#r : (u : unit) -> ~int_option u -> int_option = \_ opt =>
 fn ~int_option#None : unit -> #~int_option = \_ => #((), ~inl ())
 fn ~int_option#Some : ~int -> #~int_option = \x => #((), ~inr x)
 fn ~int_option#match : #~int_option -> (unit -> 'a) -> (~int -> 'a) -> 'a =
-  \opt f1 f2 =>
-    match opt with
-    #(_, opt) =>
-      ~match opt with
-      | ~inl _ => f1 ()
-      | ~inr x => f2 x
-      end
+  \#(_, opt) f1 f2 =>
+    ~match opt with
+    | ~inl _ => f1 ()
+    | ~inr x => f2 x
     end
 fn ~int_option#join : unit -> unit -> unit = \_ _ => ()
 fn ~int_option#reshape :
@@ -392,10 +353,8 @@ fn ~dtree#s : (v : dtree_view) -> dtree -> ~dtree v = \v t =>
 
 fn' ~dtree#r : (v : dtree_view) -> ~dtree v -> dtree = \v =>
   match v with
-  | Node_View f lv rv => \t =>
-      ~match t with
-      ~(thrd, lt, rt) => Node f (~int#r thrd) (~dtree#r lv lt) (~dtree#r rv rt)
-      end
+  | Node_View f lv rv =>
+    \~(thrd, lt, rt) => Node f (~int#r thrd) (~dtree#r lv lt) (~dtree#r rv rt)
   | Leaf_View => \t => Leaf (~bool#r t)
   end
 
@@ -403,17 +362,12 @@ fn ~dtree#match :
   #~dtree ->
   (feature * ~int * #~dtree * #~dtree -> 'a) ->
   (~bool -> 'a) ->
-  'a = \t f1 f2 =>
-  match t with
-  #(v, t) =>
-    (match v with
-     | Node_View f lv rv => \t =>
-         ~match t with
-         ~(thrd, lt, rt) => f1 (f, thrd, #(lv, lt), #(rv, rt))
-         end
-     | Leaf_View => \t => f2 t
-     end : ~dtree v -> 'a) t
-  end
+  'a = \#(v, t) f1 f2 =>
+  (match v with
+   | Node_View f lv rv =>
+     \~(thrd, lt, rt) => f1 (f, thrd, #(lv, lt), #(rv, rt))
+   | Leaf_View => \t => f2 t
+   end : ~dtree v -> 'a) t
 
 //--------------------------------------------------------------
 // Lifted functions

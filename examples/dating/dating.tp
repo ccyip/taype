@@ -77,19 +77,11 @@ fn ~profile#s : (k : bool) -> profile -> ~profile k = \k p =>
   | Profile g a h i => ~(~int#s g, ~int#s a, ~int#s h, ~int#s i)
   end
 
-fn' ~profile#r : (k : bool) -> ~profile k -> profile = \k p =>
-  ~match p with
-  ~(g, a, h, i) => Profile (~int#r g) (~int#r a) (~int#r h) (~int#r i)
-  end
+fn' ~profile#r : (k : bool) -> ~profile k -> profile = \k ~(g, a, h, i) =>
+  Profile (~int#r g) (~int#r a) (~int#r h) (~int#r i)
 
 fn ~profile#match : #~profile -> (~int * ~int * ~int * ~int -> 'a) -> 'a =
-  \p f =>
-    match p with
-    #(_, p) =>
-      ~match p with
-      ~(g, a, h, i) => f (g, a, h, i)
-      end
-    end
+  \#(_, ~(g, a, h, i)) f => f (g, a, h, i)
 
 // We can also use [unit ~+ unit ~+ unit ~+ unit].
 obliv ~feature (_ : bool) = ~bool ~* ~bool
@@ -102,12 +94,9 @@ fn ~feature#s : (k : bool) -> feature -> ~feature k = \k f =>
   | Income => ~(~bool#s true, ~bool#s true)
   end
 
-fn' ~feature#r : (k : bool) -> ~feature k -> feature = \k f =>
-  ~match f with
-  ~(b1, b2) =>
-    ~if b1 then ~if b2 then Income else Height
-    else ~if b2 then Age else Gender
-  end
+fn' ~feature#r : (k : bool) -> ~feature k -> feature = \k ~(b1, b2) =>
+  ~if b1 then ~if b2 then Income else Height
+  else ~if b2 then Age else Gender
 
 fn ~feature#match :
   #~feature ->
@@ -115,15 +104,9 @@ fn ~feature#match :
   (unit -> 'a) ->
   (unit -> 'a) ->
   (unit -> 'a) ->
-  'a = \f fg fa fh fi =>
-    match f with
-    #(_, f) =>
-      ~match f with
-      ~(b1, b2) =>
-        ~if b1 then ~if b2 then fi () else fh ()
-        else ~if b2 then fa () else fg ()
-      end
-    end
+  'a = \#(_, ~(b1, b2)) fg fa fh fi =>
+    ~if b1 then ~if b2 then fi () else fh ()
+    else ~if b2 then fa () else fg ()
 
 // Public view is maximum depth.
 obliv ~exp (k : int) =
@@ -171,25 +154,22 @@ fn ~exp#match :
   (~int -> 'a) ->
   (~bool * #~feature -> 'a) ->
   (#~exp * #~exp -> 'a) ->
-  'a = \e fc fv fa =>
-    match e with
-    #(k, e) =>
-      (if k = 0
-       then \e =>
+  'a = \#(k, e) fc fv fa =>
+    (if k = 0
+     then \e =>
+       ~match e with
+       | ~inl x => fc x
+       | ~inr ~(b, f) => fv (b, #(true, f))
+       end
+     else \e =>
+       ~match e with
+       | ~inl x => fc x
+       | ~inr e =>
          ~match e with
-         | ~inl x => fc x
-         | ~inr ~(b, f) => fv (b, #(true, f))
+         | ~inl ~(b, f) => fv (b, #(true, f))
+         | ~inr ~(e1, e2) => fa (#(k-1, e1), #(k-1, e2))
          end
-       else \e =>
-         ~match e with
-         | ~inl x => fc x
-         | ~inr e =>
-           ~match e with
-           | ~inl ~(b, f) => fv (b, #(true, f))
-           | ~inr ~(e1, e2) => fa (#(k-1, e1), #(k-1, e2))
-           end
-         end : ~exp k -> 'a) e
-    end
+       end : ~exp k -> 'a) e
 
 // Public view is the maximum depth, including [exp].
 obliv ~pred (k : int) =
@@ -219,10 +199,7 @@ fn ~pred#s : (k : int) -> pred -> ~pred k = \k p =>
 
 fn' ~pred#r : (k : int) -> ~pred k -> pred = \k =>
   if k = 0
-  then \p =>
-    ~match p with
-    ~(e1, e2) => Le (~exp#r 0 e1) (~exp#r 0 e2)
-    end
+  then \~(e1, e2) => Le (~exp#r 0 e1) (~exp#r 0 e2)
   else \p =>
     ~match p with
     | ~inl ~(e1, e2) => Le (~exp#r k e1) (~exp#r k e2)
@@ -243,28 +220,22 @@ fn ~pred#match :
   (#~pred * #~pred -> 'a) ->
   (#~pred * #~pred -> 'a) ->
   (#~pred -> 'a) ->
-  'a = \p fle fa fo fnot =>
-    match p with
-    #(k, p) =>
-      (if k = 0
-       then \p =>
+  'a = \#(k, p) fle fa fo fnot =>
+    (if k = 0
+     then \~(e1, e2) => fle (#(0, e1), #(0, e2))
+     else \p =>
+       ~match p with
+       | ~inl ~(e1, e2) => fle (#(k, e1), #(k, e2))
+       | ~inr p =>
          ~match p with
-         ~(e1, e2) => fle (#(0, e1), #(0, e2))
-         end
-       else \p =>
-         ~match p with
-         | ~inl ~(e1, e2) => fle (#(k, e1), #(k, e2))
+         | ~inl ~(p1, p2) => fa (#(k-1, p1), #(k-1, p2))
          | ~inr p =>
            ~match p with
-           | ~inl ~(p1, p2) => fa (#(k-1, p1), #(k-1, p2))
-           | ~inr p =>
-             ~match p with
-             | ~inl ~(p1, p2) => fo (#(k-1, p1), #(k-1, p2))
-             | ~inr p1 => fnot #(k-1, p1)
-             end
+           | ~inl ~(p1, p2) => fo (#(k-1, p1), #(k-1, p2))
+           | ~inr p1 => fnot #(k-1, p1)
            end
-         end : ~pred k -> 'a) p
-    end
+         end
+       end : ~pred k -> 'a) p
 
 // ----------------------------------------------------------------
 // Oblivious functionality

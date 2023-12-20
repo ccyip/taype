@@ -121,17 +121,11 @@ fn ~list#Nil : unit -> #~list = \_ =>
 // list]. Roughly speaking, oblivious integer and boolean are compatible with
 // the public versions, and Psi types of the OADTs are compatible with the
 // corresponding ADTs.
-fn ~list#Cons : ~int * #~list -> #~list = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      // The public view of a [Cons] should be one bigger than its tail. Again,
-      // we use the "cheating" operator [::] to get around the current
-      // limitation of the type checker.
-      #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
-    end
-  end
+fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
+  // The public view of a [Cons] should be one bigger than its tail. Again,
+  // we use the "cheating" operator [::] to get around the current
+  // limitation of the type checker.
+  #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
 
 // Similar to constructors (the introduction form of an ADT), we also need to
 // define the "destructor", i.e. the elimination form, which corresponds to
@@ -144,27 +138,24 @@ fn ~list#Cons : ~int * #~list -> #~list = \p =>
 // does not support parametric type polymorphism yet; this use of parametric
 // type is limited to match instance, and has a few restrictions.
 fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      // Again, we use this trick of returning functions inside pattern matching
-      // (or conditional) to make dependent type checker happy.
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         // Implicitly, the type variable ['a] needs to be *mergeable*, if we
-         // use [~if] or [~match] expressions that return this ['a]. Roughly
-         // speaking, a Psi type is mergeable if it has a join structure, and
-         // oblivious types are mergeable. For example, [#~list] is mergeable
-         // because it has a join structure that is defined below, and [~bool]
-         // and [~int] are mergeable. When the lifting procedure resolves the
-         // match instance, it will require the type unified with ['a] to be
-         // mergeable, or the lifting procedure will fail.
-         ~match xs with
-         | ~inl _ => f1 ()
-         | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~list k -> 'a) xs
-    end
+  \#(k, xs) f1 f2 =>
+    // Again, we use this trick of returning functions inside pattern matching
+    // (or conditional) to make dependent type checker happy.
+    (if k = 0
+     then \_ => f1 ()
+     else \xs =>
+       // Implicitly, the type variable ['a] needs to be *mergeable*, if we
+       // use [~if] or [~match] expressions that return this ['a]. Roughly
+       // speaking, a Psi type is mergeable if it has a join structure, and
+       // oblivious types are mergeable. For example, [#~list] is mergeable
+       // because it has a join structure that is defined below, and [~bool]
+       // and [~int] are mergeable. When the lifting procedure resolves the
+       // match instance, it will require the type unified with ['a] to be
+       // mergeable, or the lifting procedure will fail.
+       ~match xs with
+       | ~inl _ => f1 ()
+       | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
+       end : ~list k -> 'a) xs
 
 // A view instance maps the ADT to one of its valid public views of the OADT,
 // preferably a "minimal" one. We can coerce a public ADT to a Psi type, e.g.,

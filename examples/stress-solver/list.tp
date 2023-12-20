@@ -96,8 +96,7 @@ fn filter : (int -> bool) -> list -> list = \f xs =>
   match xs with
   | Nil => Nil
   | Cons x xs' =>
-    let v = filter f xs' in
-    if f x then Cons x v else v
+    if f x then Cons x (filter f xs') else filter f xs'
   end
 
 fn test_map : list -> int -> list = \xs y =>
@@ -181,27 +180,18 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
 fn ~list#Nil : unit -> #~list = \_ =>
   #(0, (() :: ~list 0))
 
-fn ~list#Cons : ~int * #~list -> #~list = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
-    end
-  end
+fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
+  #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
 
 fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~inl _ => f1 ()
-         | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~list k -> 'a) xs
-    end
+  \#(k, xs) f1 f2 =>
+    (if k = 0
+     then \_ => f1 ()
+     else \xs =>
+       ~match xs with
+       | ~inl _ => f1 ()
+       | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
+       end : ~list k -> 'a) xs
 
 fn ~list#view : list -> int = length
 
@@ -238,43 +228,27 @@ fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
 fn' ~list_eq#r : (k : int) -> ~list_eq k -> list = \k =>
   if k = 0
   then \_ => Nil
-  else \xs => ~match xs with
-              ~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
-              end
+  else \~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
 
 fn ~list_eq#Nil : unit -> #~list_eq = \_ =>
   #(0, (() :: ~list_eq 0))
 
-fn ~list_eq#Cons : ~int * #~list_eq -> #~list_eq = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, (~(x, xs) :: ~list_eq (k+1)))
-    end
-  end
+fn ~list_eq#Cons : ~int * #~list_eq -> #~list_eq = \(x, #(k, xs)) =>
+  #(k+1, (~(x, xs) :: ~list_eq (k+1)))
 
 fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~list_eq k -> 'a) xs
-    end
+  \#(k, xs) f1 f2 =>
+    (if k = 0
+     then \_ => f1 ()
+     else \~(x, xs') => f2 (x, #(k-1, xs')) : ~list_eq k -> 'a) xs
 
 fn ~list_eq#view : list -> int = length
 
 fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
   %match #~list_eq #~list pxs
     (\_ => ~list#Nil ())
-    (\xs =>
-      match xs with
-      (x, xs') => ~list#Cons (x, ~list_eq#~list#coerce xs')
-      end)
+    (\(x, xs') => ~list#Cons (x, ~list_eq#~list#coerce xs'))
+
 
 // ----------------------------------------------------------------
 // Dummy OADTs for enlarge the search space

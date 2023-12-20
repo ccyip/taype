@@ -133,34 +133,22 @@ fn' ~tree#r : (k : spine) -> ~tree k -> tree = \k =>
 fn ~tree#Leaf : unit -> #~tree = \_ =>
   #(SLeaf, ())
 
-fn ~tree#Node : ~int * #~tree * #~tree -> #~tree = \p =>
-  match p with
-  (x, lt, rt) =>
-    match lt with
-    #(lk, lt) =>
-      match rt with
-      #(rk, rt) =>
-        #(SNode lk rk, ~inr ~(x, lt, rt))
-      end
-    end
-  end
+fn ~tree#Node : ~int * #~tree * #~tree -> #~tree = \(x, #(lk, lt), #(rk, rt)) =>
+  #(SNode lk rk, ~inr ~(x, lt, rt))
 
 fn ~tree#match :
   #~tree ->
   (unit -> 'a) ->
   (~int * #~tree * #~tree -> 'a) ->
-  'a = \t f1 f2 =>
-  match t with
-  #(k, t) =>
-    (match k with
-     | SLeaf => \_ => f1 ()
-     | SNode sl sr => \n =>
-       ~match n with
-       | ~inl _ => f1 ()
-       | ~inr ~(x, l, r) => f2 (x, #(sl, l), #(sr, r))
-       end
-     end : ~tree k -> 'a) t
-  end
+  'a = \#(k, t) f1 f2 =>
+  (match k with
+   | SLeaf => \_ => f1 ()
+   | SNode sl sr => \n =>
+     ~match n with
+     | ~inl _ => f1 ()
+     | ~inr ~(x, l, r) => f2 (x, #(sl, l), #(sr, r))
+     end
+   end : ~tree k -> 'a) t
 
 fn ~tree#join : spine -> spine -> spine = \x y =>
   match x with
@@ -215,27 +203,18 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
 fn ~list#Nil : unit -> #~list = \_ =>
   #(0, (() :: ~list 0))
 
-fn ~list#Cons : ~int * #~list -> #~list = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
-    end
-  end
+fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
+  #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
 
 fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~inl _ => f1 ()
-         | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~list k -> 'a) xs
-    end
+  \#(k, xs) f1 f2 =>
+    (if k = 0
+     then \_ => f1 ()
+     else \xs =>
+       ~match xs with
+       | ~inl _ => f1 ()
+       | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
+       end : ~list k -> 'a) xs
 
 fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
 

@@ -113,37 +113,34 @@ fn ~expr#match :
   (#~expr * #~expr -> 'a) ->
   (#~expr * #~expr -> 'a) ->
   (#~expr * #~expr -> 'a) ->
-  'a = \e fc fv fa fs fm fd =>
-  match e with
-  #(k, e) =>
-    (if k = 0
-     then \e =>
+  'a = \#(k, e) fc fv fa fs fm fd =>
+  (if k = 0
+   then \e =>
+     ~match e with
+     | ~inl x => fc x
+     | ~inr idx => fv idx
+     end
+   else \e =>
+     ~match e with
+     | ~inl x => fc x
+     | ~inr e =>
        ~match e with
-       | ~inl x => fc x
-       | ~inr idx => fv idx
-       end
-     else \e =>
-       ~match e with
-       | ~inl x => fc x
+       | ~inl idx => fv idx
        | ~inr e =>
          ~match e with
-         | ~inl idx => fv idx
+         | ~inl ~(e1, e2) => fa (#(k-1, e1), #(k-1, e2))
          | ~inr e =>
            ~match e with
-           | ~inl ~(e1, e2) => fa (#(k-1, e1), #(k-1, e2))
+           | ~inl ~(e1, e2) => fs (#(k-1, e1), #(k-1, e2))
            | ~inr e =>
              ~match e with
-             | ~inl ~(e1, e2) => fs (#(k-1, e1), #(k-1, e2))
-             | ~inr e =>
-               ~match e with
-               | ~inl ~(e1, e2) => fm (#(k-1, e1), #(k-1, e2))
-               | ~inr ~(e1, e2) => fd (#(k-1, e1), #(k-1, e2))
-               end
+             | ~inl ~(e1, e2) => fm (#(k-1, e1), #(k-1, e2))
+             | ~inr ~(e1, e2) => fd (#(k-1, e1), #(k-1, e2))
              end
            end
          end
-       end : ~expr k -> 'a) e
-  end
+       end
+     end : ~expr k -> 'a) e
 
 // k is the exact length of the variable list.
 obliv ~vars (k : int) =
@@ -163,22 +160,16 @@ fn ~vars#s : (k : int) -> vars -> ~vars k = \k xs =>
 fn' ~vars#r : (k : int) -> ~vars k -> vars = \k =>
   if k = 0
   then \_ => Nil
-  else \xs =>
-    ~match xs with
-    ~(x, xs') => Cons (~int#r x) (~vars#r (k-1) xs')
-    end
+  else \~(x, xs') => Cons (~int#r x) (~vars#r (k-1) xs')
 
 fn ~vars#match : #~vars -> (unit -> 'a) -> (~int * #~vars -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~vars k -> 'a) xs
-    end
+  \#(k, xs) f1 f2 =>
+    (if k = 0
+     then \_ => f1 ()
+     else \xs =>
+       ~match xs with
+       | ~(x, xs') => f2 (x, #(k-1, xs'))
+       end : ~vars k -> 'a) xs
 
 //--------------------------------------------------------------
 // Lifted functions

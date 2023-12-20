@@ -113,7 +113,7 @@ fn sum_clusters : int -> int -> vlist -> vec -> vec * int =
       | Nil => (zero dim, 0)
       | Cons c cs' =>
         match sum_clusters dim idx xs' cs' with
-        | (sum, n) =>
+        (sum, n) =>
           if c = idx
           then (add x sum, n+1)
           else (sum, n)
@@ -184,31 +184,17 @@ fn ~vec#s : (k : int) -> vec -> ~vec k = \k xs =>
 fn' ~vec#r : (k : int) -> ~vec k -> vec = \k =>
   if k = 0
   then \_ => Nil
-  else \xs => ~match xs with
-              ~(x, xs') => Cons (~int#r x) (~vec#r (k-1) xs')
-              end
+  else \~(x, xs') => Cons (~int#r x) (~vec#r (k-1) xs')
 
 fn ~vec#Nil : unit -> #~vec = \_ => #(0, (() :: ~vec 0))
-fn ~vec#Cons : ~int * #~vec -> #~vec = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, (~(x, xs) :: ~vec (k+1)))
-    end
-  end
+fn ~vec#Cons : ~int * #~vec -> #~vec = \(x, #(k, xs)) =>
+  #(k+1, (~(x, xs) :: ~vec (k+1)))
 
 fn ~vec#match : #~vec -> (unit -> 'a) -> (~int * #~vec -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~vec k -> 'a) xs
-    end
+  \#(k, xs) f1 f2 =>
+    (if k = 0
+     then \_ => f1 ()
+     else \~(x, xs') => f2 (x, #(k-1, xs')) : ~vec k -> 'a) xs
 
 fn ~vec#view : vec -> int = length
 
@@ -222,55 +208,30 @@ obliv ~vlist (p : int * int) =
     else ~vec dim ~* ~vlist (dim, k-1)
   end
 
-fn ~vlist#s : (p : int * int) -> vlist -> ~vlist p = \p xs =>
-  match p with
-  (dim, k) =>
-    if k = 0
-    then ()
-    else match xs with
-         | VNil => ~~
-         | VCons x xs' => ~(~vec#s dim x, ~vlist#s (dim, k-1) xs')
-         end
-  end
+fn ~vlist#s : (p : int * int) -> vlist -> ~vlist p = \(dim, k) xs =>
+  if k = 0
+  then ()
+  else match xs with
+       | VNil => ~~
+       | VCons x xs' => ~(~vec#s dim x, ~vlist#s (dim, k-1) xs')
+       end
 
-fn' ~vlist#r : (p : int * int) -> ~vlist p -> vlist = \p =>
-  match p with
-  (dim, k) =>
-    if k = 0
-    then \_ => VNil
-    else \xs => ~match xs with
-                ~(x, xs') => VCons (~vec#r dim x) (~vlist#r (dim, k-1) xs')
-                end
-  end
+fn' ~vlist#r : (p : int * int) -> ~vlist p -> vlist = \(dim, k) =>
+  if k = 0
+  then \_ => VNil
+  else \~(x, xs') => VCons (~vec#r dim x) (~vlist#r (dim, k-1) xs')
 
 fn ~vlist#VNil : unit -> #~vlist = \_ => #((0, 0), (() :: ~vlist (0, 0)))
-fn ~vlist#VCons : #~vec * #~vlist -> #~vlist = \p =>
-  match p with
-  (v, vs) =>
-    match v with
-    #(dim, v) =>
-      match vs with
-      #(k, vs) =>
-        match k with
-        (_, k) => #((dim, k+1), (~(v, vs) :: ~vlist (dim, k+1)))
-        end
-      end
-    end
-  end
+fn ~vlist#VCons : #~vec * #~vlist -> #~vlist = \(#(dim, v), #((_, k), vs)) =>
+  #((dim, k+1), (~(v, vs) :: ~vlist (dim, k+1)))
 
 fn ~vlist#match : #~vlist -> (unit -> 'a) -> (#~vec * #~vlist -> 'a) -> 'a =
-  \vs f1 f2 =>
-    match vs with
-    #(k', vs) =>
-      (match k' with
-       (dim, k) =>
-         if k = 0 then \_ => f1 ()
-         else \vs =>
-           ~match vs with
-           ~(v, vs') => f2 (#(dim, v), #((dim, k-1), vs'))
-           end
-       end : ~vlist k' -> 'a) vs
-    end
+  \#(k', vs) f1 f2 =>
+    (match k' with
+     (dim, k) =>
+       if k = 0 then \_ => f1 ()
+       else \~(v, vs') => f2 (#(dim, v), #((dim, k-1), vs'))
+     end : ~vlist k' -> 'a) vs
 
 fn ~vlist#view : vlist -> int * int = \vs =>
   match vs with
@@ -304,27 +265,18 @@ fn' ~vec'#r : (k : int) -> ~vec' k -> vec = \k =>
               end
 
 fn ~vec'#Nil : unit -> #~vec' = \_ => #(0, (() :: ~vec' 0))
-fn ~vec'#Cons : ~int * #~vec' -> #~vec' = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~vec' k) :: ~vec' (k+1)))
-    end
-  end
+fn ~vec'#Cons : ~int * #~vec' -> #~vec' = \(x, #(k, xs)) =>
+  #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~vec' k) :: ~vec' (k+1)))
 
 fn ~vec'#match : #~vec' -> (unit -> 'a) -> (~int * #~vec' -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~inl _ => f1 ()
-         | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~vec' k -> 'a) xs
-    end
+  \#(k, xs) f1 f2 =>
+    (if k = 0
+     then \_ => f1 ()
+     else \xs =>
+       ~match xs with
+       | ~inl _ => f1 ()
+       | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
+       end : ~vec' k -> 'a) xs
 
 fn ~vec'#view : vec -> int = length
 
@@ -351,64 +303,46 @@ obliv ~vlist' (p : int * int) =
     else unit ~+ ~vec' dim ~* ~vlist' (dim, k-1)
   end
 
-fn ~vlist'#s : (p : int * int) -> vlist -> ~vlist' p = \p xs =>
-  match p with
-  (dim, k) =>
-    if k = 0
-    then ()
-    else match xs with
-         | VNil => ~inl ()
-         | VCons x xs' => ~inr ~(~vec'#s dim x, ~vlist'#s (dim, k-1) xs')
-         end
-  end
+fn ~vlist'#s : (p : int * int) -> vlist -> ~vlist' p = \(dim, k) xs =>
+  if k = 0
+  then ()
+  else match xs with
+       | VNil => ~inl ()
+       | VCons x xs' => ~inr ~(~vec'#s dim x, ~vlist'#s (dim, k-1) xs')
+       end
 
-fn' ~vlist'#r : (p : int * int) -> ~vlist' p -> vlist = \p =>
-  match p with
-  (dim, k) =>
-    if k = 0
-    then \_ => VNil
-    else \xs => ~match xs with
-                | ~inl _ => VNil
-                | ~inr ~(x, xs') => VCons (~vec'#r dim x) (~vlist'#r (dim, k-1) xs')
-                end
-  end
+fn' ~vlist'#r : (p : int * int) -> ~vlist' p -> vlist = \(dim, k) =>
+  if k = 0
+  then \_ => VNil
+  else \xs => ~match xs with
+              | ~inl _ => VNil
+              | ~inr ~(x, xs') => VCons (~vec'#r dim x) (~vlist'#r (dim, k-1) xs')
+              end
 
 fn ~vlist'#VNil : unit -> #~vlist' = \_ => #((0, 0), (() :: ~vlist' (0, 0)))
-fn ~vlist'#VCons : #~vec' * #~vlist' -> #~vlist' = \p =>
-  match p with
-  (v, vs) =>
-    match v with
-    #(dim1, v) =>
-      match vs with
-      #(k', vs) =>
-        match k' with
-        (dim2, k) =>
-          let dim = ~vec'#join dim1 dim2 in
-          let v = ~vec'#reshape dim1 dim v in
-          let vs = ~vlist'#reshape k' (dim, k) vs in
-          (#((dim, k+1),
-             ((~inr ~(v, vs) : unit ~+ ~vec' dim ~* ~vlist' (dim, k))
-                 :: ~vlist' (dim, k+1)))
-           : #~vlist')
-        end
-      end
-    end
+fn ~vlist'#VCons : #~vec' * #~vlist' -> #~vlist' = \(#(dim1, v), #(k', vs)) =>
+  match k' with
+  (dim2, k) =>
+    let dim = ~vec'#join dim1 dim2 in
+    let v = ~vec'#reshape dim1 dim v in
+    let vs = ~vlist'#reshape k' (dim, k) vs in
+    (#((dim, k+1),
+       ((~inr ~(v, vs) : unit ~+ ~vec' dim ~* ~vlist' (dim, k))
+           :: ~vlist' (dim, k+1)))
+     : #~vlist')
   end
 
 fn ~vlist'#match : #~vlist' -> (unit -> 'a) -> (#~vec' * #~vlist' -> 'a) -> 'a =
-  \vs f1 f2 =>
-    match vs with
-    #(k', vs) =>
-      (match k' with
-       (dim, k) =>
-         if k = 0 then \_ => f1 ()
-         else \vs =>
-           ~match vs with
-           | ~inl _ => f1 ()
-           | ~inr ~(v, vs') => f2 (#(dim, v), #((dim, k-1), vs'))
-           end
-       end : ~vlist' k' -> 'a) vs
-    end
+  \#(k', vs) f1 f2 =>
+    (match k' with
+     (dim, k) =>
+       if k = 0 then \_ => f1 ()
+       else \vs =>
+         ~match vs with
+         | ~inl _ => f1 ()
+         | ~inr ~(v, vs') => f2 (#(dim, v), #((dim, k-1), vs'))
+         end
+     end : ~vlist' k' -> 'a) vs
 
 fn ~vlist'#view : vlist -> int * int = \vs =>
   match vs with
@@ -416,34 +350,23 @@ fn ~vlist'#view : vlist -> int * int = \vs =>
   | VCons v _ => (~vec'#view v, vlength vs)
   end
 
-fn ~vlist'#join : int * int -> int * int -> int * int = \px py =>
-  match px with
-  (dimx, kx) =>
-    match py with
-    (dimy, ky) => (~vec'#join dimx dimy, if kx <= ky then ky else kx)
-    end
-  end
+fn ~vlist'#join : int * int -> int * int -> int * int = \(dimx, kx) (dimy, ky) =>
+  (~vec'#join dimx dimy, if kx <= ky then ky else kx)
 
 fn ~vlist'#reshape :
-  (p : int * int) -> (p' : int * int) -> ~vlist' p -> ~vlist' p' = \p p' =>
-  match p' with
-  (dim', k') =>
-    if k' = 0
-    then \_ => ()
-    else
-      match p with
-      (dim, k) =>
-        if k = 0
-        then \_ => ~inl ()
-        else \vs =>
-               ~match vs with
-               | ~inl _ => ~inl ()
-               | ~inr ~(v, vs') =>
-                 ~inr ~(~vec'#reshape dim dim' v,
-                        ~vlist'#reshape (dim, k-1) (dim', k'-1) vs')
-               end
-      end
-  end
+  (p : int * int) -> (p' : int * int) -> ~vlist' p -> ~vlist' p' = \(dim, k) (dim', k') =>
+  if k' = 0
+  then \_ => ()
+  else
+    if k = 0
+    then \_ => ~inl ()
+    else \vs =>
+           ~match vs with
+           | ~inl _ => ~inl ()
+           | ~inr ~(v, vs') =>
+             ~inr ~(~vec'#reshape dim dim' v,
+                    ~vlist'#reshape (dim, k-1) (dim', k'-1) vs')
+           end
 
 fn ~vec#~vec'#coerce : #~vec -> #~vec' = \v =>
   %match #~vec #~vec' v
@@ -455,9 +378,7 @@ fn ~vec#~vec'#coerce : #~vec -> #~vec' = \v =>
 fn ~vlist#~vlist'#coerce : #~vlist -> #~vlist' = \vs =>
   %match #~vlist #~vlist' vs
     (\_ => ~vlist'#VNil ())
-    (\p => match p with
-           (v, vs) => ~vlist'#VCons (~vec#~vec'#coerce v, ~vlist#~vlist'#coerce vs)
-           end)
+    (\(v, vs) => ~vlist'#VCons (~vec#~vec'#coerce v, ~vlist#~vlist'#coerce vs))
 
 // --------------------------------------------------------------
 // Join structures for oblivious types with exact bound
@@ -468,12 +389,11 @@ fn ~vlist#~vlist'#coerce : #~vlist -> #~vlist' = \vs =>
 // indeed the case. Note that this can result in incorrect implementation if we
 // ever need to merge two [#~vec] with different dimensions.
 
-// fn ~vec#join : int -> int -> int = \k k' =>
-//   if k = k' then k else (-1)
+// The two public view arguments must be the same.
+
+// fn ~vec#join : int -> int -> int = \k _ => k
 // fn ~vec#reshape : (k : int) -> (k' : int) -> ~vec k -> ~vec k' =
-//   \k k' v =>
-//     if k = k' then (v :: ~vec k')
-//     else ~~
+//   \k k' v => (v :: ~vec k')
 
 // --------------------------------------------------------------
 // Lifted functions

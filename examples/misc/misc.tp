@@ -125,33 +125,19 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
 fn' ~list#r : (k : int) -> ~list k -> list = \k =>
   if k = 0
   then \_ => Nil
-  else \xs => ~match xs with
-              ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
-              end
+  else \~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
 
 fn ~list#Nil : unit -> #~list = \_ =>
   #(0, (() :: ~list 0))
 
-fn ~list#Cons : ~int * #~list -> #~list = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, (~(x, xs) :: ~list (k+1)))
-    end
-  end
+fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
+  #(k+1, (~(x, xs) :: ~list (k+1)))
 
 fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~list k -> 'a) xs
-    end
+  \#(k, xs) f1 f2 =>
+    (if k = 0
+     then \_ => f1 ()
+     else \~(x, xs') => f2 (x, #(k-1, xs')) : ~list k -> 'a) xs
 
 fn ~list#view : list -> int = length
 

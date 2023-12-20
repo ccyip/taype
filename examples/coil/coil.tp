@@ -3,6 +3,12 @@
 
 data list = Nil | Cons int list
 
+fn length : list -> int = \xs =>
+  match xs with
+  | Nil => 0
+  | Cons _ xs' => 1 + length xs'
+  end
+
 obliv ~list (k : int) =
   if k = 0
   then unit
@@ -27,33 +33,18 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
 fn ~list#Nil : unit -> #~list = \_ =>
   #(0, (() :: ~list 0))
 
-fn ~list#Cons : ~int * #~list -> #~list = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
-    end
-  end
+fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
+  #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
 
 fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~inl _ => f1 ()
-         | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~list k -> 'a) xs
-    end
-
-fn length : list -> int = \xs =>
-  match xs with
-  | Nil => 0
-  | Cons _ xs' => 1 + length xs'
-  end
+  \#(k, xs) f1 f2 =>
+    (if k = 0
+     then \_ => f1 ()
+     else \xs =>
+       ~match xs with
+       | ~inl _ => f1 ()
+       | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
+       end : ~list k -> 'a) xs
 
 fn ~list#view : list -> int = length
 
@@ -71,6 +62,7 @@ fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
       | ~inr ~(x, xs') => ~inr ~(x, ~list#reshape (k-1) (k'-1) xs')
       end
 
+
 obliv ~list_eq (k : int) =
   if k = 0
   then unit
@@ -87,43 +79,26 @@ fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
 fn' ~list_eq#r : (k : int) -> ~list_eq k -> list = \k =>
   if k = 0
   then \_ => Nil
-  else \xs => ~match xs with
-              ~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
-              end
+  else \~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
 
 fn ~list_eq#Nil : unit -> #~list_eq = \_ =>
   #(0, (() :: ~list_eq 0))
 
-fn ~list_eq#Cons : ~int * #~list_eq -> #~list_eq = \p =>
-  match p with
-  (x, pxs) =>
-    match pxs with
-    #(k, xs) =>
-      #(k+1, (~(x, xs) :: ~list_eq (k+1)))
-    end
-  end
+fn ~list_eq#Cons : ~int * #~list_eq -> #~list_eq = \(x, #(k, xs)) =>
+  #(k+1, (~(x, xs) :: ~list_eq (k+1)))
 
 fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a =
-  \pxs f1 f2 =>
-    match pxs with
-    #(k, xs) =>
-      (if k = 0
-       then \_ => f1 ()
-       else \xs =>
-         ~match xs with
-         | ~(x, xs') => f2 (x, #(k-1, xs'))
-         end : ~list_eq k -> 'a) xs
-    end
+  \#(k, xs) f1 f2 =>
+    (if k = 0
+     then \_ => f1 ()
+     else \~(x, xs') => f2 (x, #(k-1, xs')) : ~list_eq k -> 'a) xs
 
 fn ~list_eq#view : list -> int = length
 
 fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
   %match #~list_eq #~list pxs
     (\_ => ~list#Nil ())
-    (\xs =>
-      match xs with
-      (x, xs') => ~list#Cons (x, ~list_eq#~list#coerce xs')
-      end)
+    (\(x, xs') => ~list#Cons (x, ~list_eq#~list#coerce xs'))
 
 // ----------------------------------------------------------------
 // Decision tree, its oblivious types and instances
@@ -136,6 +111,7 @@ obliv ~dtree_max (k : int) =
   then ~int
   else ~int ~+ ~int ~* ~int ~* ~dtree_max (k-1) ~* ~dtree_max (k-1)
 
+// Methods for [~dtree_max]
 fn ~dtree_max#s : (k : int) -> dtree -> ~dtree_max k = \k t =>
   if k = 0
   then
@@ -162,66 +138,19 @@ fn' ~dtree_max#r : (k : int) -> ~dtree_max k -> dtree = \k =>
              (~dtree_max#r (k-1) l) (~dtree_max#r (k-1) r)
     end
 
-fn ~dtree_max#Leaf : ~int -> #~dtree_max = \x =>
-  #(0, (x :: ~dtree_max 0))
-
-fn ~dtree_max#Node :
-  (~int * ~int * #~dtree_max * #~dtree_max) -> #~dtree_max =
-  \x =>
-    match x with
-    (idx, thd, lt, rt) =>
-      match lt with
-      #(lk, lt') =>
-        match rt with
-        #(rk, rt') =>
-          let k = ~dtree_max#join lk rk in
-          (#(k+1, ((~inr ~(idx, thd,
-                         ~dtree_max#reshape lk k lt',
-                         ~dtree_max#reshape rk k rt')
-                    : ~int ~+ ~int ~* ~int ~* ~dtree_max k ~* ~dtree_max k)
-                    :: ~dtree_max (k+1)))
-            : #~dtree_max)
-        end
-      end
-    end
-
 fn ~dtree_max#match :
   #~dtree_max ->
   (~int -> 'a) ->
   (~int * ~int * #~dtree_max * #~dtree_max -> 'a) ->
-  'a = \pt f1 f2 =>
-  match pt with
-  #(k, t) =>
-    (if k = 0
-     then \x => f1 x
-     else \n =>
-       ~match n with
-       | ~inl x => f1 x
-       | ~inr ~(idx, thd, lt, rt) =>
-           f2 (idx, thd, #(k-1, lt), #(k-1, rt))
-       end : ~dtree_max k -> 'a) t
-  end
-
-fn ~dtree_max#join : int -> int -> int = \x y => if x <= y then y else x
-
-fn ~dtree_max#reshape :
-  (k : int) -> (k' : int) -> ~dtree_max k -> ~dtree_max k' = \k k' =>
-  if k' = 0
-  then
-    if k = 0
-    then \x => x
-    else \_ => ~~
-  else
-    if k = 0
-    then \x => ~inl x
-    else \n =>
-      ~match n with
-      | ~inl x => ~inl x
-      | ~inr ~(idx, thd, lt, rt) =>
-          ~inr ~(idx, thd,
-                ~dtree_max#reshape (k-1) (k'-1) lt,
-                ~dtree_max#reshape (k-1) (k'-1) rt)
-      end
+  'a = \#(k, t) f1 f2 =>
+  (if k = 0
+   then \x => f1 x
+   else \n =>
+     ~match n with
+     | ~inl x => f1 x
+     | ~inr ~(idx, thd, lt, rt) =>
+         f2 (idx, thd, #(k-1, lt), #(k-1, rt))
+     end : ~dtree_max k -> 'a) t
 
 // ----------------------------------------------------------------
 // Functionality
@@ -242,8 +171,7 @@ fn filter : (int -> bool) -> list -> list = \f xs =>
   match xs with
   | Nil => Nil
   | Cons x xs' =>
-    let v = filter f xs' in
-    if f x then Cons x v else v
+    if f x then Cons x (filter f xs') else filter f xs'
   end
 
 fn lookup : list -> int -> int = \xs i =>
