@@ -1,7 +1,6 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE PatternGuards #-}
-{-# LANGUAGE Safe #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DerivingStrategies #-}
 
 {- |
 This module implements a decision procedure for quantifier-free linear
@@ -37,10 +36,10 @@ module Data.Integer.SAT
     slnEnumerate,
 
     -- * Debug
-    dotPropSet,
-    sizePropSet,
-    allInerts,
-    ppInerts,
+    -- dotPropSet,
+    -- sizePropSet,
+    -- allInerts,
+    -- ppInerts,
 
     -- * For QuickCheck
     iPickBounded,
@@ -49,14 +48,11 @@ module Data.Integer.SAT
   )
 where
 
-import Control.Applicative (Alternative (..), Applicative (..), (<$>))
-import Control.Monad (MonadPlus (..), ap, guard, liftM)
-import Data.List (partition)
-import Data.Map (Map)
+import Control.Monad (ap, liftM)
+import Data.List (partition, maximum, minimum)
 import qualified Data.Map as Map
-import Data.Maybe (fromMaybe, mapMaybe, maybeToList)
-import Text.PrettyPrint
-import Prelude hiding ((<>))
+-- import Text.PrettyPrint
+import Prelude hiding ((<>), toList, get)
 
 infixr 2 :||
 
@@ -73,13 +69,13 @@ infixl 7 :*
 
 -- | A collection of propositions.
 newtype PropSet = State (Answer RW)
-  deriving (Show)
+  -- deriving (Show)
 
-dotPropSet :: PropSet -> Doc
-dotPropSet (State a) = dotAnswer (ppInerts . inerts) a
+-- dotPropSet :: PropSet -> Doc
+-- dotPropSet (State a) = dotAnswer (ppInerts . inerts) a
 
-sizePropSet :: PropSet -> (Integer, Integer, Integer)
-sizePropSet (State a) = answerSize a
+-- sizePropSet :: PropSet -> (Integer, Integer, Integer)
+-- sizePropSet (State a) = answerSize a
 
 -- | An empty collection of propositions.
 noProps :: PropSet
@@ -152,7 +148,7 @@ data Prop
   | Expr :> Expr
   | Expr :<= Expr
   | Expr :>= Expr
-  deriving (Read, Show, Ord, Eq)
+  deriving stock (Read, Show, Ord, Eq)
 
 {- | The type of integer expressions.
  Variable names must be non-negative.
@@ -180,7 +176,7 @@ data Expr
     Min Expr Expr
   | -- | Maximum of two arguments
     Max Expr Expr
-  deriving (Read, Show, Ord, Eq)
+  deriving stock (Read, Show, Ord, Eq)
 
 prop :: Prop -> S ()
 prop PTrue = return ()
@@ -253,7 +249,7 @@ data RW = RW
   { nameSource :: !Int
   , inerts :: Inerts
   }
-  deriving (Show)
+  -- deriving (Show)
 
 initRW :: RW
 initRW = RW {nameSource = 0, inerts = iNone}
@@ -270,10 +266,10 @@ ctEq t1 t2 = t1 |-| t2
 data Bound
   = -- | The integer is strictly positive
     Bound Integer Term
-  deriving (Show)
+  -- deriving (Show)
 
 data BoundType = Lower | Upper
-  deriving (Show)
+  deriving stock (Show)
 
 toCt :: BoundType -> Name -> Bound -> Term
 toCt Lower x (Bound c t) = ctLt t (c |*| tVar x)
@@ -292,21 +288,21 @@ data Inerts = Inerts
     -- These form an idempotent substitution.
     solved :: NameMap Term
   }
-  deriving (Show)
+  -- deriving (Show)
 
-ppInerts :: Inerts -> Doc
-ppInerts is =
-  vcat $
-    [ppLower x b | (x, (ls, _)) <- bnds, b <- ls]
-    ++ [ppUpper x b | (x, (_, us)) <- bnds, b <- us]
-      ++ [ppEq e | e <- Map.toList (solved is)]
-  where
-    bnds = Map.toList (bounds is)
+-- ppInerts :: Inerts -> Doc
+-- ppInerts is =
+--   vcat $
+--     [ppLower x b | (x, (ls, _)) <- bnds, b <- ls]
+--     ++ [ppUpper x b | (x, (_, us)) <- bnds, b <- us]
+--       ++ [ppEq e | e <- Map.toList (solved is)]
+--   where
+--     bnds = Map.toList (bounds is)
 
-    ppT c x = ppTerm (c |*| tVar x)
-    ppLower x (Bound c t) = ppTerm t <+> text "<" <+> ppT c x
-    ppUpper x (Bound c t) = ppT c x <+> text "<" <+> ppTerm t
-    ppEq (x, t) = ppName x <+> text "=" <+> ppTerm t
+--     ppT c x = ppTerm (c |*| tVar x)
+--     ppLower x (Bound c t) = ppTerm t <+> text "<" <+> ppT c x
+--     ppUpper x (Bound c t) = ppT c x <+> text "<" <+> ppTerm t
+--     ppEq (x, t) = ppName x <+> text "=" <+> ppTerm t
 
 -- | An empty inert set.
 iNone :: Inerts
@@ -392,7 +388,7 @@ data Solutions
   = Done
   | TopVar Name Integer (Maybe Integer) (Maybe Integer) Inerts
   | FixedVar Name Integer Solutions
-  deriving (Show)
+  -- deriving (Show)
 
 slnCurrent :: Solutions -> [(Int, Integer)]
 slnCurrent s = [(x, v) | (UserName x, v) <- go s]
@@ -657,7 +653,7 @@ solveIsNeg' t
                     | i <- [1 .. b - 1]
                     ]
               solveIsNeg real
-              foldl orElse (solveIsNeg dark) (map solveIs0 gray)
+              foldl' orElse (solveIsNeg dark) (map solveIs0 gray)
         )
         ctrs
   | otherwise = error "solveIsNeg: unreachable"
@@ -698,48 +694,48 @@ which is covered by the dark shadow.
 -- Monads
 
 data Answer a = None | One a | Choice (Answer a) (Answer a)
-  deriving (Show)
+  -- deriving (Show)
 
-answerSize :: Answer a -> (Integer, Integer, Integer)
-answerSize = go 0 0 0
-  where
-    go !n !o !c ans =
-      case ans of
-        None -> (n + 1, o, c)
-        One _ -> (n, o + 1, c)
-        Choice x y ->
-          case go n o (c + 1) x of
-            (n', o', c') -> go n' o' c' y
+-- answerSize :: Answer a -> (Integer, Integer, Integer)
+-- answerSize = go 0 0 0
+--   where
+--     go !n !o !c ans =
+--       case ans of
+--         None -> (n + 1, o, c)
+--         One _ -> (n, o + 1, c)
+--         Choice x y ->
+--           case go n o (c + 1) x of
+--             (n', o', c') -> go n' o' c' y
 
-dotAnswer :: (a -> Doc) -> Answer a -> Doc
-dotAnswer pp g0 = vcat [text "digraph {", nest 2 (fst $ go 0 g0), text "}"]
-  where
-    node x d =
-      integer x <+> brackets (text "label=" <> text (show d))
-        <> semi
-    edge x y = integer x <+> text "->" <+> integer y
+-- dotAnswer :: (a -> Doc) -> Answer a -> Doc
+-- dotAnswer pp g0 = vcat [text "digraph {", nest 2 (fst $ go 0 g0), text "}"]
+--   where
+--     node x d =
+--       integer x <+> brackets (text "label=" <> text (show d))
+--         <> semi
+--     edge x y = integer x <+> text "->" <+> integer y
 
-    go x None =
-      let x' = x + 1
-       in seq x' (node x "", x')
-    go x (One a) =
-      let x' = x + 1
-       in seq x' (node x (show (pp a)), x')
-    go x (Choice c1 c2) =
-      let x' = x + 1
-          (ls1, x1) = go x' c1
-          (ls2, x2) = go x1 c2
-       in seq
-            x'
-            ( vcat
-                [ node x "|"
-                , edge x x'
-                , edge x x1
-                , ls1
-                , ls2
-                ]
-            , x2
-            )
+--     go x None =
+--       let x' = x + 1
+--        in seq x' (node x "", x')
+--     go x (One a) =
+--       let x' = x + 1
+--        in seq x' (node x (show (pp a)), x')
+--     go x (Choice c1 c2) =
+--       let x' = x + 1
+--           (ls1, x1) = go x' c1
+--           (ls2, x2) = go x1 c2
+--        in seq
+--             x'
+--             ( vcat
+--                 [ node x "|"
+--                 , edge x x'
+--                 , edge x x1
+--                 , ls1
+--                 , ls2
+--                 ]
+--             , x2
+--             )
 
 toList :: Answer a -> [a]
 toList a = go a []
@@ -749,9 +745,6 @@ toList a = go a []
     go None xs = xs
 
 instance Monad Answer where
-#if !MIN_VERSION_ghc(8,8,1)
-  fail _             = None
-#endif
   None >>= _ = None
   One a >>= k = k a
   Choice m1 m2 >>= k = mplus (m1 >>= k) (m2 >>= k)
@@ -850,11 +843,11 @@ apSubst t =
 --------------------------------------------------------------------------------
 
 data Name = UserName !Int | SysName !Int
-  deriving (Read, Show, Eq, Ord)
+  deriving stock (Read, Show, Eq, Ord)
 
-ppName :: Name -> Doc
-ppName (UserName x) = text "u" <> int x
-ppName (SysName x) = text "s" <> int x
+-- ppName :: Name -> Doc
+-- ppName (UserName x) = text "u" <> int x
+-- ppName (SysName x) = text "s" <> int x
 
 toName :: Int -> Name
 toName = UserName
@@ -871,7 +864,7 @@ type NameMap = Map Name
  INVARIANT: the `Map` does not map anything to 0.
 -}
 data Term = T !Integer (NameMap Integer)
-  deriving (Eq, Ord)
+  deriving stock (Eq, Ord)
 
 infixl 6 |+|, |-|
 
@@ -922,27 +915,27 @@ tLetNum x k t =
 tLetNums :: [(Name, Integer)] -> Term -> Term
 tLetNums xs t = foldr (\(x, i) t1 -> tLetNum x i t1) t xs
 
-instance Show Term where
-  showsPrec c t = showsPrec c (show (ppTerm t))
+-- instance Show Term where
+--   showsPrec c t = showsPrec c (show (ppTerm t))
 
-ppTerm :: Term -> Doc
-ppTerm (T k m) =
-  case Map.toList m of
-    [] -> integer k
-    xs | k /= 0 -> hsep (integer k : map ppProd xs)
-    x : xs -> hsep (ppFst x : map ppProd xs)
-  where
-    ppFst (x, 1) = ppName x
-    ppFst (x, -1) = text "-" <> ppName x
-    ppFst (x, n) = ppMul n x
+-- ppTerm :: Term -> Doc
+-- ppTerm (T k m) =
+--   case Map.toList m of
+--     [] -> integer k
+--     xs | k /= 0 -> hsep (integer k : map ppProd xs)
+--     x : xs -> hsep (ppFst x : map ppProd xs)
+--   where
+--     ppFst (x, 1) = ppName x
+--     ppFst (x, -1) = text "-" <> ppName x
+--     ppFst (x, n) = ppMul n x
 
-    ppProd (x, 1) = text "+" <+> ppName x
-    ppProd (x, -1) = text "-" <+> ppName x
-    ppProd (x, n)
-      | n > 0 = text "+" <+> ppMul n x
-      | otherwise = text "-" <+> ppMul (abs n) x
+--     ppProd (x, 1) = text "+" <+> ppName x
+--     ppProd (x, -1) = text "-" <+> ppName x
+--     ppProd (x, n)
+--       | n > 0 = text "+" <+> ppMul n x
+--       | otherwise = text "-" <+> ppMul (abs n) x
 
-    ppMul n x = integer n <+> text "*" <+> ppName x
+--     ppMul n x = integer n <+> text "*" <+> ppName x
 
 {- | Remove a variable from the term, and return its coefficient.
  If the variable is not present in the term, the coefficient is 0.
