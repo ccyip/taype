@@ -60,6 +60,7 @@ library
                        Oil.Translation
                        Oil.Optimization
                        Oil.ToOCaml
+                       Data.Integer.SAT
   mixins:              base hiding (Prelude)
                      , relude (Relude as Prelude)
                      , relude
