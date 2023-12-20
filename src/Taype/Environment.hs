@@ -44,6 +44,7 @@ module Taype.Environment
 
     -- * Prelude context
     preludeGCtx,
+    builtinAlt,
   )
 where
 
@@ -249,6 +250,11 @@ preludeGCtx =
                 TInt PublicL,
                 SafeL
               ),
+              ( unsignedName "+",
+                [UInt, UInt],
+                UInt,
+                SafeL
+              ),
               ( oblivName "+",
                 [TInt OblivL, TInt OblivL],
                 TInt OblivL,
@@ -257,6 +263,11 @@ preludeGCtx =
               ( "-",
                 [TInt PublicL, TInt PublicL],
                 TInt PublicL,
+                SafeL
+              ),
+              ( unsignedName "-",
+                [UInt, UInt],
+                UInt,
                 SafeL
               ),
               ( oblivName "-",
@@ -269,6 +280,11 @@ preludeGCtx =
                 TInt PublicL,
                 SafeL
               ),
+              ( unsignedName "*",
+                [UInt, UInt],
+                UInt,
+                SafeL
+              ),
               ( oblivName "*",
                 [TInt OblivL, TInt OblivL],
                 TInt OblivL,
@@ -277,6 +293,11 @@ preludeGCtx =
               ( "/",
                 [TInt PublicL, TInt PublicL],
                 TInt PublicL,
+                SafeL
+              ),
+              ( unsignedName "/",
+                [UInt, UInt],
+                UInt,
                 SafeL
               ),
               ( oblivName "/",
@@ -319,6 +340,11 @@ preludeGCtx =
                 TBool PublicL,
                 SafeL
               ),
+              ( unsignedName "=",
+                [UInt, UInt],
+                TBool PublicL,
+                SafeL
+              ),
               ( oblivName "=",
                 [TInt OblivL, TInt OblivL],
                 TBool OblivL,
@@ -326,6 +352,11 @@ preludeGCtx =
               ),
               ( "<=",
                 [TInt PublicL, TInt PublicL],
+                TBool PublicL,
+                SafeL
+              ),
+              ( unsignedName "<=",
+                [UInt, UInt],
                 TBool PublicL,
                 SafeL
               ),
@@ -359,6 +390,9 @@ preludeGCtx =
 builtin :: (Text, [Ty a], Ty a, LLabel) -> NamedDef a
 builtin (name, paraTypes, resType, label) = (name, BuiltinDef {..})
 
+builtinAlt :: [(Text, Text)]
+builtinAlt = [(x, unsignedName x) | x <- ["+", "-", "*", "/", "=", "<="]]
+
 ----------------------------------------------------------------
 -- Pretty printer
 
@@ -369,6 +403,6 @@ instance Cute (TCtx Text) where
       hang $
         "Typing context"
           <> colon
-          </> if null tctx then "<empty>" else sepWith hardline docs
+            </> if null tctx then "<empty>" else sepWith hardline docs
     where
       go (x, t) = cuteBinder x (Just t)

@@ -556,6 +556,8 @@ grammar = mdo
           pLocatedToken L.TInt <&> \loc -> Loc {expr = TInt PublicL, ..},
           -- Oblivious integer type
           pLocatedToken L.OInt <&> \loc -> Loc {expr = TInt OblivL, ..},
+          -- Unsigned integer type
+          pLocatedToken L.UInt <&> \loc -> Loc {expr = UInt, ..},
           -- Psi type
           do
             loc <- pLocatedToken L.Psi
@@ -653,6 +655,7 @@ renderToken = \case
   L.BLit _ -> "boolean literal"
   L.TInt -> "int"
   L.OInt -> pretty $ oblivName "int"
+  L.UInt -> "uint"
   L.ILit _ -> "integer literal"
   L.Data -> "data"
   L.Obliv -> "obliv"

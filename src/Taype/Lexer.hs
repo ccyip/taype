@@ -51,6 +51,7 @@ data Token
   | BLit Bool
   | TInt
   | OInt
+  | UInt
   | ILit Int
   | Data
   | Obliv
@@ -107,7 +108,8 @@ pToken =
           TBool <$ symbol "bool",
           OBool <$ symbol (oblivName "bool"),
           TInt <$ symbol "int",
-          OInt <$ symbol (oblivName "int")
+          OInt <$ symbol (oblivName "int"),
+          UInt <$ symbol "uint"
         ]
         <?> "built-in type",
       choice
@@ -237,6 +239,7 @@ reserved =
     oblivName "bool",
     "int",
     oblivName "int",
+    "uint",
     "true",
     "false"
   ]

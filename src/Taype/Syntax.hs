@@ -139,6 +139,8 @@ data Expr a
     BLit {bLit :: Bool}
   | -- | Public and oblivious integer type
     TInt {olabel :: OLabel}
+  | -- | Unsigned integer type
+    UInt
   | -- | Integer literal
     ILit {iLit :: Int}
   | -- | (Dependent) if conditional
@@ -387,6 +389,7 @@ instance Monad Expr where
   TBool {..} >>= _ = TBool {..}
   BLit {..} >>= _ = BLit {..}
   TInt {..} >>= _ = TInt {..}
+  UInt >>= _ = UInt
   ILit {..} >>= _ = ILit {..}
   Ite {..} >>= f =
     Ite
@@ -482,6 +485,7 @@ instance Eq1 Expr where
   liftEq _ TBool {olabel} TBool {olabel = olabel'} = olabel == olabel'
   liftEq _ BLit {bLit} BLit {bLit = bLit'} = bLit == bLit'
   liftEq _ TInt {olabel} TInt {olabel = olabel'} = olabel == olabel'
+  liftEq _ UInt UInt = True
   liftEq _ ILit {iLit} ILit {iLit = iLit'} = iLit == iLit'
   liftEq
     eq
@@ -1045,6 +1049,7 @@ instance Cute (Expr Text) where
   cute TBool {..} = cute $ accentOfOLabel olabel <> "bool"
   cute BLit {..} = if bLit then "true" else "false"
   cute TInt {..} = cute $ accentOfOLabel olabel <> "int"
+  cute UInt = "uint"
   cute ILit {..} = cute iLit
   cute Ite {..} = cuteIte PublicL cond left right
   cute Match {..} = cuteMatch PublicL True cond alts
@@ -1207,6 +1212,7 @@ instance HasPLevel (Expr a) where
     TBool {} -> 0
     BLit {} -> 0
     TInt {} -> 0
+    UInt -> 0
     ILit {} -> 0
     Prod {} -> 20
     Pair {} -> 0

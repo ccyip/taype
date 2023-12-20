@@ -240,6 +240,7 @@ toOilSize _ = oops "Not an oblivious type"
 toOilTy :: T.Ty Name -> Ty
 toOilTy (T.TBool PublicL) = tGV "bool"
 toOilTy (T.TInt PublicL) = TInt
+toOilTy T.UInt = TInt
 toOilTy T.GV {..} = tGV ref
 toOilTy T.Prod {..} = prod_ (toOilTy left) (toOilTy right)
 -- NOTE: Psi type is translated to a pair for now. This may change in the

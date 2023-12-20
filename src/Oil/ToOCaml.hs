@@ -408,6 +408,12 @@ builtinExprTable =
     ("-", "-"),
     ("*", "*"),
     ("/", "/"),
+    (unsignedName "<=", "<="),
+    (unsignedName "=", "="),
+    (unsignedName "+", "+"),
+    (unsignedName "-", "-"),
+    (unsignedName "*", "*"),
+    (unsignedName "/", "/"),
     ("not", "not"),
     ("&&", "&&"),
     ("||", "||")

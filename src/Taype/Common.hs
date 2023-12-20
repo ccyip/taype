@@ -54,6 +54,7 @@ module Taype.Common
     retractionName,
     internalPrefix,
     internalName,
+    unsignedName,
     embelName,
     embelPrefix,
     eraseName,
@@ -343,6 +344,10 @@ internalPrefix = "$"
 
 internalName :: Text -> Text
 internalName = (internalPrefix <>)
+
+-- | Unsigned name
+unsignedName :: Text -> Text
+unsignedName = (<> "'")
 
 -- | Embelish name
 embelPrefix :: Text

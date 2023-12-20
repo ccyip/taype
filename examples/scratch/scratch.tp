@@ -2,7 +2,7 @@
 
 data list = Nil | Cons int list
 
-fn length : list -> int = \xs =>
+fn length : list -> uint = \xs =>
   match xs with
   | Nil => 0
   | Cons _ xs' => 1 + length xs'
@@ -44,12 +44,12 @@ fn insert_list : list -> list -> list = \xs ys =>
 // ----------------------------------------------------------------
 // Oblivious list and its instances
 
-obliv ~list (k : int) =
+obliv ~list (k : uint) =
   if k = 0
   then unit
   else unit ~+ ~int ~* ~list (k-1)
 
-fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
+fn ~list#s : (k : uint) -> list -> ~list k = \k xs =>
   if k = 0
   then ()
   else match xs with
@@ -57,7 +57,7 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
        | Cons x xs' => ~inr ~(~int#s x, ~list#s (k-1) xs')
        end
 
-fn' ~list#r : (k : int) -> ~list k -> list = \k =>
+fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
   if k = 0
   then \_ => Nil
   else \xs => ~match xs with
@@ -81,11 +81,11 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
        | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
        end : ~list k -> 'a) xs
 
-fn ~list#view : list -> int = length
+fn ~list#view : list -> uint = length
 
-fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
+fn ~list#join : uint -> uint -> uint = \x y => if x <= y then y else x
 
-fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
+fn ~list#reshape : (k : uint) -> (k' : uint) -> ~list k -> ~list k' = \k k' =>
   if k' = 0
   then \_ => ()
   else
@@ -100,12 +100,12 @@ fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
 // ----------------------------------------------------------------
 // Oblivious list with extact length and its instances
 
-obliv ~list_eq (k : int) =
+obliv ~list_eq (k : uint) =
   if k = 0
   then unit
   else ~int ~* ~list_eq (k-1)
 
-fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
+fn ~list_eq#s : (k : uint) -> list -> ~list_eq k = \k xs =>
   if k = 0
   then ()
   else match xs with
@@ -113,7 +113,7 @@ fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
        | Cons x xs' => ~(~int#s x, ~list_eq#s (k-1) xs')
        end
 
-fn' ~list_eq#r : (k : int) -> ~list_eq k -> list = \k =>
+fn' ~list_eq#r : (k : uint) -> ~list_eq k -> list = \k =>
   if k = 0
   then \_ => Nil
   else \~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
@@ -130,7 +130,7 @@ fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a 
      then \_ => f1 ()
      else \~(x, xs') => f2 (x, #(k-1, xs')) : ~list_eq k -> 'a) xs
 
-fn ~list_eq#view : list -> int = length
+fn ~list_eq#view : list -> uint = length
 
 fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
   %match #~list_eq #~list pxs
@@ -140,7 +140,7 @@ fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
 // ----------------------------------------------------------------
 // Oblivious functions by hand
 
-fn ~elem' : (k : int) -> ~int -> ~list k -> ~bool = \k ~y =>
+fn ~elem' : (k : uint) -> ~int -> ~list k -> ~bool = \k ~y =>
   if k = 0
   then \_ => ~bool#s false
   else \~xs =>
@@ -152,7 +152,7 @@ fn ~elem' : (k : int) -> ~int -> ~list k -> ~bool = \k ~y =>
       else ~elem' (k-1) ~y ~xs'
     end
 
-fn ~insert' : (k : int) -> ~int -> ~list k -> ~list (k+1) = \k y =>
+fn ~insert' : (k : uint) -> ~int -> ~list k -> ~list (k+1) = \k y =>
   if k = 0
   then \_ => ((~inr ~(y, ()) : unit ~+ ~int ~* unit) :: ~list (k+1))
   else \xs =>
@@ -167,7 +167,7 @@ fn ~insert' : (k : int) -> ~int -> ~list k -> ~list (k+1) = \k y =>
              :: ~list (k+1))
     end
 
-fn ~filter' : (k : int) -> (~int -> ~bool) -> ~list k -> ~list k = \k f =>
+fn ~filter' : (k : uint) -> (~int -> ~bool) -> ~list k -> ~list k = \k f =>
   if k = 0
   then \_ => ()
   else \xs =>
@@ -180,10 +180,10 @@ fn ~filter' : (k : int) -> (~int -> ~bool) -> ~list k -> ~list k = \k f =>
       else (~list#reshape (k-1) k v :: unit ~+ ~int ~* ~list (k-1))
     end
 
-fn ~test_filter' : (k : int) -> ~list k -> ~int -> ~list k = \k xs y =>
+fn ~test_filter' : (k : uint) -> ~list k -> ~int -> ~list k = \k xs y =>
   ~filter' k (\x => x ~<= y) xs
 
-fn ~map' : (k : int) -> (~int -> ~int) -> ~list k -> ~list k = \k f =>
+fn ~map' : (k : uint) -> (~int -> ~int) -> ~list k -> ~list k = \k f =>
   if k = 0
   then \_ => ()
   else \xs =>
@@ -193,10 +193,10 @@ fn ~map' : (k : int) -> (~int -> ~int) -> ~list k -> ~list k = \k f =>
       ~inr ~(f x, ~map' (k-1) f xs')
     end
 
-fn ~test_map' : (k : int) -> ~list k -> ~int -> ~list k = \k xs y =>
+fn ~test_map' : (k : uint) -> ~list k -> ~int -> ~list k = \k xs y =>
   ~map' k (\x => x ~+ y) xs
 
-fn ~insert_eq' : (k : int) -> ~int -> ~list_eq k -> ~list_eq (k+1) = \k y =>
+fn ~insert_eq' : (k : uint) -> ~int -> ~list_eq k -> ~list_eq (k+1) = \k y =>
   if k = 0 then \_ => (~(y, ()) :: ~list_eq (k+1))
   else \xs =>
     ~match xs with
@@ -206,7 +206,7 @@ fn ~insert_eq' : (k : int) -> ~int -> ~list_eq k -> ~list_eq (k+1) = \k y =>
     end
 
 fn ~insert_list_eq' :
-  (xk : int) -> (yk : int) -> ~list_eq xk -> ~list_eq yk -> ~list_eq (xk+yk) =
+  (xk : uint) -> (yk : uint) -> ~list_eq xk -> ~list_eq yk -> ~list_eq (xk+yk) =
   \xk yk xs =>
     if yk = 0 then \_ => (xs :: ~list_eq (xk+yk))
     else \~(y, ys') =>

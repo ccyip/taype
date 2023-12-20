@@ -109,6 +109,7 @@ typing ::
 typing e@VUnit Nothing = mkLet' TUnit e
 typing e@BLit {} Nothing = mkLet' (TBool PublicL) e
 typing e@ILit {} Nothing = mkLet' (TInt PublicL) e
+typing e@ILit {..} (Just UInt) | 0 <= iLit = mkLet' UInt e
 typing e@V {..} Nothing =
   lookupTy name >>= \case
     Just t -> return (t, e)
@@ -181,7 +182,11 @@ typing App {..} Nothing =
     -- Constructors have to be fully applied.
     Just (ctor, CtorDef {..}) ->
       typeCtorApp ctor paraTypes (GV dataType)
-    _ -> typeFnApp
+    Just (f, BuiltinDef {})
+      | Just f' <- lookup f builtinAlt ->
+          typeFnApp (GV f) `catchError` \e ->
+            withError (const e) $ typeFnApp (GV f')
+    _ -> typeFnApp fn
   where
     -- Application for constructors
     typeCtorApp f paraTypes resType = do
@@ -191,8 +196,8 @@ typing App {..} Nothing =
       let bindings = zip3 xs paraTypes args'
       secondF (lets' bindings) $ mkLet' resType $ f @@@ V <$> xs
     -- Application for functions
-    typeFnApp = do
-      (fnTy', fn') <- infer fn
+    typeFnApp f = do
+      (fnTy', fn') <- infer f
       (bindings, t') <- go args fnTy'
       x <- fresh
       secondF (lets' ((x, fnTy', fn') : bindings)) $
@@ -844,6 +849,7 @@ kinding :: Ty Name -> Maybe Kind -> TcM (Kind, Ty Name)
 kinding TUnit Nothing = return (AnyK, TUnit)
 kinding ty@TBool {..} Nothing = return (kindOfOLabel olabel, ty)
 kinding ty@TInt {..} Nothing = return (kindOfOLabel olabel, ty)
+kinding ty@UInt Nothing = return (PublicK, ty)
 kinding ty@GV {..} Nothing =
   lookupGSig ref >>= \case
     Just ADTDef {} -> return (PublicK, ty)
@@ -1258,7 +1264,7 @@ processPpx ctx = go
         xs <- freshes $ length ts
         let xts = zipWith (\x t -> (x, Nothing, t)) xs ts
         sxs <- mapM (\x -> (x,) <$> fresh) [x | (x, _, Sum {}) <- xts]
-        let xs' = [ fromMaybe x $ lookup x sxs | x <- xs ]
+        let xs' = [fromMaybe x $ lookup x sxs | x <- xs]
             mk [] el _ = el
             mk ((y, y') : ys) el er =
               SMatch
@@ -2382,8 +2388,8 @@ preCheckDef defs name def = do
           "OADT definition"
             <+> pretty name
             <+> "lacks some instances:"
-              <> softline
-              <> andList missing
+            <> softline
+            <> andList missing
 
     labelOfInst RetractionInst {} = LeakyL
     labelOfInst _ = SafeL
@@ -2484,10 +2490,11 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
               "Function"
                 <+> pretty name
                 <+> "is a constructor instance of the OADT"
-                <+> pretty oadtName <> ", but"
-                <+> pretty ctor
-                <+> "is not a constructor of the ADT"
-                <+> pretty pubName
+                <+> pretty oadtName
+                <> ", but"
+                  <+> pretty ctor
+                  <+> "is not a constructor of the ADT"
+                  <+> pretty pubName
       MatchInst {..} -> do
         argTs <-
           mustBeArrow ty >>= \case
@@ -2586,9 +2593,10 @@ preCheckInst loc name inst ty = isOADTDef (oadtNameOfInst inst) >>= go
             "Function"
               <+> pretty name
               <+> "is an instance of"
-              <+> pretty oadtName <> ", but"
               <+> pretty oadtName
-              <+> "is not an OADT or not in scope"
+              <> ", but"
+                <+> pretty oadtName
+                <+> "is not an OADT or not in scope"
     mustBeArrow t = case isArrow t of
       Just r -> return r
       _ ->
