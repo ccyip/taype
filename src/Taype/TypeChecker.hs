@@ -579,27 +579,15 @@ typing Arb {oblivTy = Nothing} (Just t) = do
   mkLet' t Arb {oblivTy = Just t}
 typing PolyEq {..} Nothing = do
   (t, lhs') <- infer lhs
-  void $ checkKind t PublicK
-  rhs' <- check rhs t
-  x <- fresh
-  y <- fresh
-  -- Elaborate polymorphic equality to known monomorphic ones.
-  let mkMonoEq fn = do
-        f <- fresh
-        secondF
-          ( lets'
-              [ (f, arrows_ [t, t] (TBool PublicL), GV fn),
-                (x, t, lhs'),
-                (y, t, rhs')
-              ]
-          )
-          $ mkLet'
-            (TBool PublicL)
-            (V f @@ [V x, V y])
   case t of
-    TInt PublicL -> mkMonoEq "="
-    UInt -> mkMonoEq (unsignedName "=")
-    _ ->
+    -- Elaborate polymorphic equality to known monomorphic ones.
+    TInt PublicL -> infer $ GV "=" @@ [lhs, rhs]
+    UInt -> infer $ GV (unsignedName "=") @@ [lhs, rhs]
+    _ -> do
+      void $ checkKind t PublicK
+      rhs' <- check rhs t
+      x <- fresh
+      y <- fresh
       secondF (lets' [(x, t, lhs'), (y, t, rhs')]) $
         mkLet'
           (TBool PublicL)
