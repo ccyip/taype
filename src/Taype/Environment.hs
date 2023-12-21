@@ -44,6 +44,9 @@ module Taype.Environment
 
     -- * Prelude context
     preludeGCtx,
+    arithOps,
+    arithUnsignedOps,
+    isArithOp,
     builtinAlt,
   )
 where
@@ -390,8 +393,19 @@ preludeGCtx =
 builtin :: (Text, [Ty a], Ty a, LLabel) -> NamedDef a
 builtin (name, paraTypes, resType, label) = (name, BuiltinDef {..})
 
+arithOps :: [Text]
+arithOps = ["+", "-", "*", "/", "=", "<="]
+
+arithUnsignedOps :: [Text]
+arithUnsignedOps = unsignedName <$> arithOps
+
+isArithOp :: Text -> Maybe (Text, Bool)
+isArithOp x = case find (\(op, op') -> x == op || x == op') builtinAlt of
+  Just (op, _) -> Just (op, x == op)
+  _ -> Nothing
+
 builtinAlt :: [(Text, Text)]
-builtinAlt = [(x, unsignedName x) | x <- ["+", "-", "*", "/", "=", "<="]]
+builtinAlt = zip arithOps arithUnsignedOps
 
 ----------------------------------------------------------------
 -- Pretty printer

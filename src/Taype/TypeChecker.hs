@@ -70,6 +70,7 @@ import Algebra.PartialOrd
 import Bound
 import Control.Monad.Error.Class
 import Data.Char
+import Data.Integer.SAT qualified as SAT
 import Data.List (lookup, partition)
 import Data.Maybe (fromJust)
 import Data.Text qualified as T
@@ -583,19 +584,21 @@ typing PolyEq {..} Nothing = do
   x <- fresh
   y <- fresh
   -- Elaborate polymorphic equality to known monomorphic ones.
+  let mkMonoEq fn = do
+        f <- fresh
+        secondF
+          ( lets'
+              [ (f, arrows_ [t, t] (TBool PublicL), GV fn),
+                (x, t, lhs'),
+                (y, t, rhs')
+              ]
+          )
+          $ mkLet'
+            (TBool PublicL)
+            (V f @@ [V x, V y])
   case t of
-    TInt PublicL -> do
-      f <- fresh
-      secondF
-        ( lets'
-            [ (f, arrows_ [TInt PublicL, TInt PublicL] (TBool PublicL), GV "="),
-              (x, t, lhs'),
-              (y, t, rhs')
-            ]
-        )
-        $ mkLet'
-          (TBool PublicL)
-          (V f @@ [V x, V y])
+    TInt PublicL -> mkMonoEq "="
+    UInt -> mkMonoEq (unsignedName "=")
     _ ->
       secondF (lets' [(x, t, lhs'), (y, t, rhs')]) $
         mkLet'
@@ -1704,7 +1707,7 @@ equate_ e e' = do
     go OProj {projKind, expr} OProj {projKind = projKind', expr = expr'}
       | projKind == projKind' = equate_ expr expr'
     go nf nf' | nf == nf' = pass
-    go _ _ = errDummy
+    go nf nf' = lastDitch nf nf'
 
     -- Equate two expressions with at least one being global variable.
     equateGV nf nf' | nf == nf' = pass
@@ -1714,7 +1717,7 @@ equate_ e e' = do
         _ ->
           tryUnfold nf' >>= \case
             Just expr' -> equate_ nf expr'
-            _ -> errDummy
+            _ -> lastDitch nf nf'
 
     -- Equate two expressions with at least one being application.
     equateApp :: Expr Name -> Expr Name -> TcM ()
@@ -1725,13 +1728,15 @@ equate_ e e' = do
           _ ->
             tryUnfoldApp nf' >>= \case
               Just expr' -> equate_ nf expr'
-              _ -> errDummy
+              _ -> lastDitch nf nf'
 
     equateApp_ App {fn, args} App {fn = fn', args = args'}
       | length args == length args' = do
           equate_ fn fn'
           zipWithM_ equate_ args args'
     equateApp_ _ _ = errDummy
+
+    lastDitch nf nf' = unlessM (proveArithEq nf nf') errDummy
 
 equateSome :: NonEmpty (Expr Name) -> TcM ()
 equateSome (e :| es) = forM_ es $ equate e
@@ -1778,7 +1783,11 @@ whnf Ite {..} = do
   nf <- whnf cond
   case nf of
     BLit {..} -> if bLit then whnf left else whnf right
-    _ -> return Ite {cond = nf, ..}
+    _ ->
+      proveArithProp nf >>= \case
+        Just True -> whnf left
+        Just False -> whnf right
+        _ -> return Ite {cond = nf, ..}
 whnf Match {..} = do
   nf <- whnf cond
   let fb = Match {cond = nf, ..}
@@ -1816,6 +1825,143 @@ whnf_ e = do
       tryUnfoldApp nf >>= \case
         Just e' -> whnf_ e'
         _ -> return nf
+
+----------------------------------------------------------------
+-- Integer arithmetic solver
+
+-- | The state used for the solver
+--
+-- This state currently only consists of the propositions. We may add a map in
+-- the future to equate common expressions.
+type SATState = SAT.PropSet
+
+type SATM = StateT SATState TcM
+
+runSATM :: SATM a -> TcM a
+runSATM m = evalStateT m SAT.noProps
+
+addProp :: (MonadState SATState m) => SAT.Prop -> m ()
+addProp p = modify (SAT.assert p)
+
+getPropSet :: (MonadState SATState m) => m SAT.PropSet
+getPropSet = get
+
+toSATVar :: Name -> SAT.Expr
+toSATVar = SAT.Var . SAT.toName
+
+-- | Check if an expression is a candidate for arithmetic solver.
+--
+-- The expression must be in WHNF. Return 'Just True' if signed, and 'Just
+-- False' if unsigned.
+isArith :: Expr a -> Maybe Bool
+isArith App {fn = GV op} | Just (_, s) <- isArithOp op = Just s
+isArith _ = Nothing
+
+-- | Denote an expression to integer arithmetic expression.
+--
+-- The expression must be in WHNF. The first argument indicates whether the
+-- expression is unsigned.
+toArith :: Bool -> Expr Name -> SATM SAT.Expr
+toArith s = \case
+  ILit {..} -> return $ SAT.K $ toInteger iLit
+  V {..} ->
+    -- Currently we may add duplicate constraints for the same variable. It is sound, but may harm performance.
+    var name
+  e@App {fn = GV x, args = [lhs, rhs]}
+    | Just (op, s') <- isArithOp x -> do
+        lhsNf <- lift $ whnf lhs
+        rhsNf <- lift $ whnf rhs
+        case op of
+          "+" -> go2 s' lhsNf rhsNf (SAT.:+)
+          "-" ->
+            go2 s' lhsNf rhsNf $
+              if s
+                then (SAT.:-)
+                else \a b -> SAT.Max (SAT.K 0) (a SAT.:- b)
+          "*" -> case (lhsNf, rhsNf) of
+            (ILit {..}, _) -> go1 s' rhsNf $ \a -> toInteger iLit SAT.:* a
+            (_, ILit {..}) -> go1 s' lhsNf $ \a -> toInteger iLit SAT.:* a
+            _ -> uninterp e
+          "/" -> case rhsNf of
+            ILit {..} -> go1 s' lhsNf $ \a -> SAT.Div a $ toInteger iLit
+            _ -> uninterp e
+          _ -> uninterp e
+  e -> uninterp e
+  where
+    var x = do
+      let a = toSATVar x
+      unless s $ addProp $ SAT.K 0 SAT.:<= a
+      return a
+    -- In the future, we should assign the same variable to the same
+    -- subexpressions.
+    uninterp _ = lift fresh >>= var
+    go2 s' lhs rhs f = do
+      lhs' <- toArith s' lhs
+      rhs' <- toArith s' rhs
+      return $ f lhs' rhs'
+    go1 s' e f = do
+      e' <- toArith s' e
+      return $ f e'
+
+-- | Denote a arithmetic proposition.
+--
+-- The expression must be in WHNF and a valid arithmetic proposition.
+toProp :: Expr Name -> SATM SAT.Prop
+toProp = \case
+  App {fn = GV x, args = [lhs, rhs]}
+    | Just (op, s) <- isArithOp x -> do
+        lhs' <- lift (whnf lhs) >>= toArith s
+        rhs' <- lift (whnf rhs) >>= toArith s
+        return $ case op of
+          "=" -> lhs' SAT.:== rhs'
+          "<=" -> lhs' SAT.:<= rhs'
+          _ -> invalid
+  _ -> invalid
+  where
+    invalid = oops "Not a valid arithmetic proposition"
+
+-- | Check satisfiability.
+--
+-- The given proposition is NOT added to the state.
+checkProp :: SAT.Prop -> SATM Bool
+checkProp p = do
+  isNothing . SAT.checkSat . SAT.assert p <$> getPropSet
+
+proveProp :: SAT.Prop -> SATM Bool
+proveProp p = checkProp $ SAT.Not p
+
+disproveProp :: SAT.Prop -> SATM Bool
+disproveProp = checkProp
+
+-- | Prove or disprove an arithmetic proposition.
+--
+-- The expression must be in WHNF. Return 'Just' if the proposition is
+-- successfully proved or disproved, and return 'Nothing' if not an arithmetic
+-- proposition or the result is unknown.
+proveArithProp :: Expr Name -> TcM (Maybe Bool)
+proveArithProp e = case isArith e of
+  Just _ -> runSATM $ do
+    p <- toProp e
+    proveProp p >>= \case
+      True -> return $ Just True
+      False ->
+        disproveProp p >>= \case
+          True -> return $ Just False
+          False -> return Nothing
+  Nothing -> return Nothing
+
+-- | Prove the quality of two arithmetic expressions.
+--
+-- The expressions must be in WHNF.
+proveArithEq :: Expr Name -> Expr Name -> TcM Bool
+proveArithEq lhs rhs = case (isArith lhs, isArith rhs) of
+  (Just s, _) -> go s
+  (_, Just s) -> go s
+  _ -> return False
+  where
+    go s =
+      let p = GV (if s then "=" else unsignedName "=") @@ [lhs, rhs]
+       in runSATM $ toProp p >>= proveProp
 
 ----------------------------------------------------------------
 -- Helper functions
