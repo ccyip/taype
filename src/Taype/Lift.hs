@@ -154,6 +154,9 @@ liftExpr e@BLit {} t@(TBool PublicL) idx = do
 liftExpr e@ILit {} t@(TInt PublicL) idx = do
   tell1 $ EqC idx (fromJust (pubTyToSTy t))
   return e
+liftExpr e@ILit {} t@UInt idx = do
+  tell1 $ EqC idx (fromJust (pubTyToSTy t))
+  return e
 liftExpr e@V {..} _ idx = do
   (_, idx') <- lookupCCtx name
   tell1 $ CoerceC {from = idx', to = idx}
@@ -679,13 +682,27 @@ collectLifts = runFreshM . foldMapM go
 buildOCtx :: Options -> GCtx Name -> Defs Name -> IO OCtx
 buildOCtx options@Options {..} gctx defs = do
   oadtCtx <- forM adts $ \(name, ctors) -> (name,) <$> go name (toList ctors)
-  return $ [("bool", builtinInfo "bool"), ("int", builtinInfo "int")] <> oadtCtx
+  return $
+    [ ("bool", builtinInfo "bool"),
+      ("int", builtinInfo "int"),
+      ("uint", empInfo)
+    ]
+      <> oadtCtx
   where
     builtinInfo name =
       OADTInfo
         { oadts = [(oblivName name, 1)],
           coerces = [[SConst name, SConst $ oblivName name]],
           joins = [SConst $ oblivName name],
+          ctors = [],
+          matches = ([], []),
+          sums = []
+        }
+    empInfo =
+      OADTInfo
+        { oadts = [],
+          coerces = [],
+          joins = [],
           ctors = [],
           matches = ([], []),
           sums = []
@@ -860,6 +877,7 @@ pubTyToSTyBase :: Ty Name -> Maybe (STy a)
 pubTyToSTyBase TUnit = return SUnit
 pubTyToSTyBase (TBool PublicL) = return $ SConst "bool"
 pubTyToSTyBase (TInt PublicL) = return $ SConst "int"
+pubTyToSTyBase UInt = return $ SConst "uint"
 pubTyToSTyBase GV {..} = return $ SConst ref
 pubTyToSTyBase _ = Nothing
 
@@ -895,6 +913,7 @@ substSTyToTy gctx model = go
     base x | x == oblivName "bool" = TBool OblivL
     base x | x == "int" = TInt PublicL
     base x | x == oblivName "int" = TInt OblivL
+    base x | x == "uint" = UInt
     base (T.splitOn "+" -> [left, right]) =
       Sum {olabel = PublicL, left = base left, right = base right}
     base x = case lookupGCtx x gctx of

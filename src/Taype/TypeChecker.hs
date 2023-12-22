@@ -2264,6 +2264,7 @@ compatibleClass GV {..} = return $ Just GV {..}
 compatibleClass TUnit = return $ Just TUnit
 compatibleClass TBool {} = return $ Just TBool {olabel = PublicL}
 compatibleClass TInt {} = return $ Just TInt {olabel = PublicL}
+compatibleClass UInt = return $ Just UInt
 compatibleClass Psi {..} = do
   ref <- pubNameOfOADTName oadtName
   return $ Just GV {..}
