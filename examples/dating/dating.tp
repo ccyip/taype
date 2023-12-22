@@ -69,7 +69,7 @@ fn good_match : profile -> pred -> profile -> pred -> bool =
 // Oblivious types
 
 // Due to the way unit is translated, we cannot use unit as public view. This
-// need to be fixed in the future.
+// needs to be fixed in the future.
 obliv ~profile (_ : bool) = ~int ~* ~int ~* ~int ~* ~int
 
 fn ~profile#s : (k : bool) -> profile -> ~profile k = \k p =>
@@ -109,14 +109,14 @@ fn ~feature#match :
     else ~if b2 then fa () else fg ()
 
 // Public view is maximum depth.
-obliv ~exp (k : int) =
+obliv ~exp (k : uint) =
   if k = 0 then ~int ~+ ~bool ~* ~feature true
   else
     ~int ~+ 
     ~bool ~* ~feature true ~+ 
     ~exp (k-1) ~* ~exp (k-1)
 
-fn ~exp#s : (k : int) -> exp -> ~exp k = \k e =>
+fn ~exp#s : (k : uint) -> exp -> ~exp k = \k e =>
   if k = 0
   then
     match e with
@@ -132,7 +132,7 @@ fn ~exp#s : (k : int) -> exp -> ~exp k = \k e =>
     | Add e1 e2 => ~inr (~inr ~(~exp#s (k-1) e1, ~exp#s (k-1) e2))
     end
 
-fn' ~exp#r : (k : int) -> ~exp k -> exp = \k =>
+fn' ~exp#r : (k : uint) -> ~exp k -> exp = \k =>
   if k = 0
   then \e =>
     ~match e with
@@ -172,7 +172,7 @@ fn ~exp#match :
        end : ~exp k -> 'a) e
 
 // Public view is the maximum depth, including [exp].
-obliv ~pred (k : int) =
+obliv ~pred (k : uint) =
   if k = 0 then ~exp 0 ~* ~exp 0
   else
     ~exp k ~* ~exp k ~+
@@ -180,7 +180,7 @@ obliv ~pred (k : int) =
     ~pred (k-1) ~* ~pred (k-1) ~+
     ~pred (k-1)
 
-fn ~pred#s : (k : int) -> pred -> ~pred k = \k p =>
+fn ~pred#s : (k : uint) -> pred -> ~pred k = \k p =>
   if k = 0
   then
     match p with
@@ -197,7 +197,7 @@ fn ~pred#s : (k : int) -> pred -> ~pred k = \k p =>
     | Not p1 => ~inr (~inr (~inr (~pred#s (k-1) p1)))
     end
 
-fn' ~pred#r : (k : int) -> ~pred k -> pred = \k =>
+fn' ~pred#r : (k : uint) -> ~pred k -> pred = \k =>
   if k = 0
   then \~(e1, e2) => Le (~exp#r 0 e1) (~exp#r 0 e2)
   else \p =>

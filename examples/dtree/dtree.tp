@@ -5,13 +5,13 @@ data features = Nil | Cons int features
 // Oblivious types (policies) for [dtree]
 
 // This public view is the maximum height of the tree.
-obliv ~dtree_max (k : int) =
+obliv ~dtree_max (k : uint) =
   if k = 0
   then ~int
   else ~int ~+ ~int ~* ~int ~* ~dtree_max (k-1) ~* ~dtree_max (k-1)
 
 // Methods for [~dtree_max]
-fn ~dtree_max#s : (k : int) -> dtree -> ~dtree_max k = \k t =>
+fn ~dtree_max#s : (k : uint) -> dtree -> ~dtree_max k = \k t =>
   if k = 0
   then
     match t with
@@ -26,7 +26,7 @@ fn ~dtree_max#s : (k : int) -> dtree -> ~dtree_max k = \k t =>
                ~dtree_max#s (k-1) lt, ~dtree_max#s (k-1) rt)
     end
 
-fn' ~dtree_max#r : (k : int) -> ~dtree_max k -> dtree = \k =>
+fn' ~dtree_max#r : (k : uint) -> ~dtree_max k -> dtree = \k =>
   if k = 0
   then \x => Leaf (~int#r x)
   else \t =>

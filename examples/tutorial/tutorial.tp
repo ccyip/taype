@@ -31,7 +31,7 @@ fn insert : int -> list -> list = \x xs =>
 // the oblivious type with "~". The name after the prefix should start with a
 // lower-case letter. All builtin oblivious operations are also prefixed by "~".
 // Here the public view [k] is the maximum length of the list.
-obliv ~list (k : int) =
+obliv ~list (k : uint) =
   if k = 0
   // If the maximum length is 0, the list can only be a Nil (with no
   // information attached to it), so we return a [unit] type.
@@ -47,7 +47,7 @@ obliv ~list (k : int) =
 // the OADT structure of [~list]. The name [~list#s] indicates that this is the
 // section instance of the oblivious type [~list]. We will use the builtin
 // section and retraction functions for integers, [~int#s] and [~int#r].
-fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
+fn ~list#s : (k : uint) -> list -> ~list k = \k xs =>
   if k = 0
   // In this case, the oblivious list is simply a unit type, with the only
   // inhabitant [()].
@@ -64,7 +64,7 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
 // system of taype ensures this kind of leaky functions do not interfere the
 // oblivious computation; retraction functions can only be used in the reveal
 // phase to disclose the output of the oblivious computation.
-fn' ~list#r : (k : int) -> ~list k -> list = \k =>
+fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
   // Note that, unlike [~list#s], we have to do pattern matching and return a
   // function inside, instead of pattern matching in a lambda abstraction. This
   // is a well-known trick we apply to please the dependent type checker (and
@@ -102,19 +102,8 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
 // This is the [Nil] constructor instance of [~list]. [Nil] takes nothing, so
 // the argument is [unit].
 fn ~list#Nil : unit -> #~list = \_ =>
-  // A [Nil] may have public view [0]. Apparently, [~list 0] is equivalent to
-  // the unit value [()], but the current type checker is not smart enough to
-  // know [0 = 0] is [true]. We provide a "cheating" operator, [::], which is
-  // similar to the ascription operator [:], and it asks the type checker to
-  // "trust me". In this case, we ask the type checker to trust that [unit] and
-  // [~list 0] are equivalent. The compiler will generate a warning, and we
-  // should use this operator with caution. Alternatively, we can define the
-  // second component of this Psi type as [if 0 = 0 then () else ~~], where
-  // [~~] is the arbitrary operator that we can use in the dead branch. As we
-  // improve the type checker, e.g., adding a decision procedure to check
-  // equivalence involving integers for presburger arithmetics, this may not be
-  // needed in the future.
-  #(0, (() :: ~list 0))
+  // A [Nil] may have public view [0].
+  #(0, ())
 
 // This is the [Cons] constructor instance of [~list]. The argument should be
 // *compatible* with the product of this constructor's arguments, i.e. [int *
@@ -122,10 +111,8 @@ fn ~list#Nil : unit -> #~list = \_ =>
 // the public versions, and Psi types of the OADTs are compatible with the
 // corresponding ADTs.
 fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
-  // The public view of a [Cons] should be one bigger than its tail. Again,
-  // we use the "cheating" operator [::] to get around the current
-  // limitation of the type checker.
-  #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
+  // The public view of a [Cons] should be one bigger than its tail.
+  #(k+1, ~inr ~(x, xs))
 
 // Similar to constructors (the introduction form of an ADT), we also need to
 // define the "destructor", i.e. the elimination form, which corresponds to
@@ -161,7 +148,7 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
 // preferably a "minimal" one. We can coerce a public ADT to a Psi type, e.g.,
 // from [list] to [#~list], if it has a view instance. In this case, the view
 // instance is simply the length function.
-fn ~list#view : list -> int = \xs =>
+fn ~list#view : list -> uint = \xs =>
   match xs with
   | Nil => 0
   | Cons _ xs' => 1 + ~list#view xs'
@@ -176,10 +163,10 @@ fn ~list#view : list -> int = \xs =>
 // A join instance of an OADT returns the join, i.e. supremum or least upper
 // bound, of its two public views. In this case, it is the maximum of the two
 // integers.
-fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
+fn ~list#join : uint -> uint -> uint = \x y => if x <= y then y else x
 
 // A reshape instance converts an OADT to one with a "bigger" public view.
-fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
+fn ~list#reshape : (k : uint) -> (k' : uint) -> ~list k -> ~list k' = \k k' =>
   if k' = 0
   then \_ => ()
   else

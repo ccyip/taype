@@ -5,13 +5,13 @@ data vec = Nil | Cons int vec
 
 data vlist = VNil | VCons vec vlist
 
-fn length : vec -> int = \xs =>
+fn length : vec -> uint = \xs =>
   match xs with
   | Nil => 0
   | Cons _ xs' => 1 + length xs'
   end
 
-fn vlength : vlist -> int = \xs =>
+fn vlength : vlist -> uint = \xs =>
   match xs with
   | VNil => 0
   | VCons _ xs' => 1 + vlength xs'
@@ -37,7 +37,7 @@ fn dist : vec -> vec -> int = \xs ys =>
   end
 
 // Return a zero vector of given dimension.
-fn zero : int -> vec = \dim =>
+fn zero : uint -> vec = \dim =>
   if dim = 0
   then Nil
   else Cons 0 (zero (dim-1))
@@ -64,7 +64,7 @@ fn div : vec -> int -> vec = \xs n =>
 
 // Pick [n_clusters] arbitrary centroids. Here we pick them according to a
 // stride.
-fn init_centroids : int -> int -> int -> vlist -> vlist =
+fn init_centroids : uint -> uint -> uint -> vlist -> vlist =
   \n_clusters stride n centroids =>
     match centroids with
     | VNil => VNil
@@ -104,7 +104,7 @@ fn assign : vlist -> vlist -> vec = \centroids xs =>
   end
 
 // Calculate the sum and the number of data points in a cluster.
-fn sum_clusters : int -> int -> vlist -> vec -> vec * int =
+fn sum_clusters : uint -> int -> vlist -> vec -> vec * int =
   \dim idx xs clus =>
     match xs with
     | VNil => (zero dim, 0)
@@ -121,7 +121,7 @@ fn sum_clusters : int -> int -> vlist -> vec -> vec * int =
       end
     end
 
-fn update' : int -> int -> vlist -> vec -> vlist -> vlist =
+fn update' : uint -> int -> vlist -> vec -> vlist -> vlist =
   \dim idx xs clus centroids =>
     match centroids with
     | VNil => VNil
@@ -135,12 +135,12 @@ fn update' : int -> int -> vlist -> vec -> vlist -> vlist =
     end
 
 // Update centroids according to the current clusters.
-fn update : int -> vlist -> vec -> vlist -> vlist =
+fn update : uint -> vlist -> vec -> vlist -> vlist =
   \dim => update' dim 0
 
 // Repeatedly assign clusters and update centroids, according to the given
 // number of iteration.
-fn kmeans_loop : int -> int -> vlist -> vlist -> vec -> vlist * vec =
+fn kmeans_loop : uint -> uint -> vlist -> vlist -> vec -> vlist * vec =
   \n dim xs centroids clus =>
     if n = 0
     then (centroids, clus)
@@ -149,7 +149,7 @@ fn kmeans_loop : int -> int -> vlist -> vlist -> vec -> vlist * vec =
          kmeans_loop (n-1) dim xs centroids' clus'
 
 // The entry point of the k-mean algorithm.
-fn kmeans : int -> int -> int -> vlist -> vec =
+fn kmeans : uint -> uint -> uint -> vlist -> vec =
   \n_iter n_clusters dim xs =>
     let len = vlength xs in
     let stride = len / n_clusters in
@@ -159,7 +159,7 @@ fn kmeans : int -> int -> int -> vlist -> vec =
     (_, clus) => clus
     end
 
-fn test_kmeans : int -> int -> int -> vlist -> vlist -> vec =
+fn test_kmeans : uint -> uint -> uint -> vlist -> vlist -> vec =
   \n_iter n_clusters dim xs ys =>
     kmeans n_iter n_clusters dim (vappend xs ys)
 
@@ -167,12 +167,12 @@ fn test_kmeans : int -> int -> int -> vlist -> vlist -> vec =
 // Oblivious types
 
 // We know the exact dimension of a vector.
-obliv ~vec (k : int) =
+obliv ~vec (k : uint) =
   if k = 0
   then unit
   else ~int ~* ~vec (k-1)
 
-fn ~vec#s : (k : int) -> vec -> ~vec k = \k xs =>
+fn ~vec#s : (k : uint) -> vec -> ~vec k = \k xs =>
   if k = 0
   then ()
   else match xs with
@@ -181,14 +181,14 @@ fn ~vec#s : (k : int) -> vec -> ~vec k = \k xs =>
          ~(~int#s x, ~vec#s (k-1) xs')
        end
 
-fn' ~vec#r : (k : int) -> ~vec k -> vec = \k =>
+fn' ~vec#r : (k : uint) -> ~vec k -> vec = \k =>
   if k = 0
   then \_ => Nil
   else \~(x, xs') => Cons (~int#r x) (~vec#r (k-1) xs')
 
-fn ~vec#Nil : unit -> #~vec = \_ => #(0, (() :: ~vec 0))
+fn ~vec#Nil : unit -> #~vec = \_ => #(0, ())
 fn ~vec#Cons : ~int * #~vec -> #~vec = \(x, #(k, xs)) =>
-  #(k+1, (~(x, xs) :: ~vec (k+1)))
+  #(k+1, ~(x, xs))
 
 fn ~vec#match : #~vec -> (unit -> 'a) -> (~int * #~vec -> 'a) -> 'a =
   \#(k, xs) f1 f2 =>
@@ -196,11 +196,11 @@ fn ~vec#match : #~vec -> (unit -> 'a) -> (~int * #~vec -> 'a) -> 'a =
      then \_ => f1 ()
      else \~(x, xs') => f2 (x, #(k-1, xs')) : ~vec k -> 'a) xs
 
-fn ~vec#view : vec -> int = length
+fn ~vec#view : vec -> uint = length
 
 // The public view is the dimension of the payload vectors and the length of
 // the list.
-obliv ~vlist (p : int * int) =
+obliv ~vlist (p : uint * uint) =
   match p with
   (dim, k) =>
     if k = 0
@@ -208,7 +208,7 @@ obliv ~vlist (p : int * int) =
     else ~vec dim ~* ~vlist (dim, k-1)
   end
 
-fn ~vlist#s : (p : int * int) -> vlist -> ~vlist p = \(dim, k) xs =>
+fn ~vlist#s : (p : uint * uint) -> vlist -> ~vlist p = \(dim, k) xs =>
   if k = 0
   then ()
   else match xs with
@@ -216,13 +216,15 @@ fn ~vlist#s : (p : int * int) -> vlist -> ~vlist p = \(dim, k) xs =>
        | VCons x xs' => ~(~vec#s dim x, ~vlist#s (dim, k-1) xs')
        end
 
-fn' ~vlist#r : (p : int * int) -> ~vlist p -> vlist = \(dim, k) =>
+fn' ~vlist#r : (p : uint * uint) -> ~vlist p -> vlist = \(dim, k) =>
   if k = 0
   then \_ => VNil
   else \~(x, xs') => VCons (~vec#r dim x) (~vlist#r (dim, k-1) xs')
 
-fn ~vlist#VNil : unit -> #~vlist = \_ => #((0, 0), (() :: ~vlist (0, 0)))
+fn ~vlist#VNil : unit -> #~vlist = \_ => #((0, 0), ())
 fn ~vlist#VCons : #~vec * #~vlist -> #~vlist = \(#(dim, v), #((_, k), vs)) =>
+  // Assume the new vector has the same dimension. Alternatively, we can
+  // truncate or pad the new vector.
   #((dim, k+1), (~(v, vs) :: ~vlist (dim, k+1)))
 
 fn ~vlist#match : #~vlist -> (unit -> 'a) -> (#~vec * #~vlist -> 'a) -> 'a =
@@ -233,7 +235,7 @@ fn ~vlist#match : #~vlist -> (unit -> 'a) -> (#~vec * #~vlist -> 'a) -> 'a =
        else \~(v, vs') => f2 (#(dim, v), #((dim, k-1), vs'))
      end : ~vlist k' -> 'a) vs
 
-fn ~vlist#view : vlist -> int * int = \vs =>
+fn ~vlist#view : vlist -> uint * uint = \vs =>
   match vs with
   | VNil => (0, 0)
   | VCons v _ => (~vec#view v, vlength vs)
@@ -243,12 +245,12 @@ fn ~vlist#view : vlist -> int * int = \vs =>
 // Oblivious types with join structures
 
 // Public view is the maximum length.
-obliv ~vec' (k : int) =
+obliv ~vec' (k : uint) =
   if k = 0
   then unit
   else unit ~+ ~int ~* ~vec' (k-1)
 
-fn ~vec'#s : (k : int) -> vec -> ~vec' k = \k xs =>
+fn ~vec'#s : (k : uint) -> vec -> ~vec' k = \k xs =>
   if k = 0
   then ()
   else match xs with
@@ -256,7 +258,7 @@ fn ~vec'#s : (k : int) -> vec -> ~vec' k = \k xs =>
        | Cons x xs' => ~inr ~(~int#s x, ~vec'#s (k-1) xs')
        end
 
-fn' ~vec'#r : (k : int) -> ~vec' k -> vec = \k =>
+fn' ~vec'#r : (k : uint) -> ~vec' k -> vec = \k =>
   if k = 0
   then \_ => Nil
   else \xs => ~match xs with
@@ -264,9 +266,9 @@ fn' ~vec'#r : (k : int) -> ~vec' k -> vec = \k =>
               | ~inr ~(x, xs') => Cons (~int#r x) (~vec'#r (k-1) xs')
               end
 
-fn ~vec'#Nil : unit -> #~vec' = \_ => #(0, (() :: ~vec' 0))
+fn ~vec'#Nil : unit -> #~vec' = \_ => #(0, ())
 fn ~vec'#Cons : ~int * #~vec' -> #~vec' = \(x, #(k, xs)) =>
-  #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~vec' k) :: ~vec' (k+1)))
+  #(k+1, ~inr ~(x, xs))
 
 fn ~vec'#match : #~vec' -> (unit -> 'a) -> (~int * #~vec' -> 'a) -> 'a =
   \#(k, xs) f1 f2 =>
@@ -278,11 +280,11 @@ fn ~vec'#match : #~vec' -> (unit -> 'a) -> (~int * #~vec' -> 'a) -> 'a =
        | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
        end : ~vec' k -> 'a) xs
 
-fn ~vec'#view : vec -> int = length
+fn ~vec'#view : vec -> uint = length
 
-fn ~vec'#join : int -> int -> int = \x y => if x <= y then y else x
+fn ~vec'#join : uint -> uint -> uint = \x y => if x <= y then y else x
 
-fn ~vec'#reshape : (k : int) -> (k' : int) -> ~vec' k -> ~vec' k' = \k k' =>
+fn ~vec'#reshape : (k : uint) -> (k' : uint) -> ~vec' k -> ~vec' k' = \k k' =>
   if k' = 0
   then \_ => ()
   else
@@ -295,7 +297,7 @@ fn ~vec'#reshape : (k : int) -> (k' : int) -> ~vec' k -> ~vec' k' = \k k' =>
       end
 
 // Public view is maximum length, and also use [~vec'].
-obliv ~vlist' (p : int * int) =
+obliv ~vlist' (p : uint * uint) =
   match p with
   (dim, k) =>
     if k = 0
@@ -303,7 +305,7 @@ obliv ~vlist' (p : int * int) =
     else unit ~+ ~vec' dim ~* ~vlist' (dim, k-1)
   end
 
-fn ~vlist'#s : (p : int * int) -> vlist -> ~vlist' p = \(dim, k) xs =>
+fn ~vlist'#s : (p : uint * uint) -> vlist -> ~vlist' p = \(dim, k) xs =>
   if k = 0
   then ()
   else match xs with
@@ -311,7 +313,7 @@ fn ~vlist'#s : (p : int * int) -> vlist -> ~vlist' p = \(dim, k) xs =>
        | VCons x xs' => ~inr ~(~vec'#s dim x, ~vlist'#s (dim, k-1) xs')
        end
 
-fn' ~vlist'#r : (p : int * int) -> ~vlist' p -> vlist = \(dim, k) =>
+fn' ~vlist'#r : (p : uint * uint) -> ~vlist' p -> vlist = \(dim, k) =>
   if k = 0
   then \_ => VNil
   else \xs => ~match xs with
@@ -319,17 +321,14 @@ fn' ~vlist'#r : (p : int * int) -> ~vlist' p -> vlist = \(dim, k) =>
               | ~inr ~(x, xs') => VCons (~vec'#r dim x) (~vlist'#r (dim, k-1) xs')
               end
 
-fn ~vlist'#VNil : unit -> #~vlist' = \_ => #((0, 0), (() :: ~vlist' (0, 0)))
+fn ~vlist'#VNil : unit -> #~vlist' = \_ => #((0, 0), ())
 fn ~vlist'#VCons : #~vec' * #~vlist' -> #~vlist' = \(#(dim1, v), #(k', vs)) =>
   match k' with
   (dim2, k) =>
     let dim = ~vec'#join dim1 dim2 in
     let v = ~vec'#reshape dim1 dim v in
     let vs = ~vlist'#reshape k' (dim, k) vs in
-    (#((dim, k+1),
-       ((~inr ~(v, vs) : unit ~+ ~vec' dim ~* ~vlist' (dim, k))
-           :: ~vlist' (dim, k+1)))
-     : #~vlist')
+    (#((dim, k+1), ~inr ~(v, vs)) : #~vlist')
   end
 
 fn ~vlist'#match : #~vlist' -> (unit -> 'a) -> (#~vec' * #~vlist' -> 'a) -> 'a =
@@ -344,17 +343,17 @@ fn ~vlist'#match : #~vlist' -> (unit -> 'a) -> (#~vec' * #~vlist' -> 'a) -> 'a =
          end
      end : ~vlist' k' -> 'a) vs
 
-fn ~vlist'#view : vlist -> int * int = \vs =>
+fn ~vlist'#view : vlist -> uint * uint = \vs =>
   match vs with
   | VNil => (0, 0)
   | VCons v _ => (~vec'#view v, vlength vs)
   end
 
-fn ~vlist'#join : int * int -> int * int -> int * int = \(dimx, kx) (dimy, ky) =>
+fn ~vlist'#join : uint * uint -> uint * uint -> uint * uint = \(dimx, kx) (dimy, ky) =>
   (~vec'#join dimx dimy, if kx <= ky then ky else kx)
 
 fn ~vlist'#reshape :
-  (p : int * int) -> (p' : int * int) -> ~vlist' p -> ~vlist' p' = \(dim, k) (dim', k') =>
+  (p : uint * uint) -> (p' : uint * uint) -> ~vlist' p -> ~vlist' p' = \(dim, k) (dim', k') =>
   if k' = 0
   then \_ => ()
   else
@@ -401,5 +400,5 @@ fn ~vlist#~vlist'#coerce : #~vlist -> #~vlist' = \vs =>
 // fn ~test_kmeans : int -> int -> int -> #~vlist -> #~vlist -> #~vec + #~vec' =
 //   %lift test_kmeans
 
-fn ~test_kmeans : int -> int -> int -> #~vlist -> #~vlist -> #~vec =
+fn ~test_kmeans : uint -> uint -> uint -> #~vlist -> #~vlist -> #~vec =
   %lift test_kmeans

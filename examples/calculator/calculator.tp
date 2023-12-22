@@ -177,4 +177,4 @@ fn ~vars#match : #~vars -> (unit -> 'a) -> (~int * #~vars -> 'a) -> 'a =
 fn ~eval : #~vars -> #~expr -> ~int = %lift eval
 
 fn ~vars2 : ~int -> ~int -> #~vars = \x y =>
-  #(2, (~(x, ~(y, ())) :: ~vars 2))
+  #(2, ~(x, ~(y, ())))

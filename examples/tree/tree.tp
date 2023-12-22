@@ -101,12 +101,12 @@ fn test_collect : tree -> int -> list = \t y =>
 // ----------------------------------------------------------------
 // Oblivious types
 
-obliv ~tree (k : int) =
+obliv ~tree (k : uint) =
   if k = 0
   then unit
   else unit ~+ ~int ~* ~tree (k-1) ~* ~tree (k-1)
 
-fn ~tree#s : (k : int) -> tree -> ~tree k = \k t =>
+fn ~tree#s : (k : uint) -> tree -> ~tree k = \k t =>
   if k = 0
   then ()
   else match t with
@@ -115,7 +115,7 @@ fn ~tree#s : (k : int) -> tree -> ~tree k = \k t =>
            ~inr ~(~int#s x, ~tree#s (k-1) l, ~tree#s (k-1) r)
        end
 
-fn' ~tree#r : (k : int) -> ~tree k -> tree = \k =>
+fn' ~tree#r : (k : uint) -> ~tree k -> tree = \k =>
   if k = 0
   then \_ => Leaf
   else \t =>
@@ -124,15 +124,11 @@ fn' ~tree#r : (k : int) -> ~tree k -> tree = \k =>
     | ~inr ~(x, l, r) => Node (~int#r x) (~tree#r (k-1) l) (~tree#r (k-1) r)
     end
 
-fn ~tree#Leaf : unit -> #~tree = \_ =>
-  #(0, (() :: ~tree 0))
+fn ~tree#Leaf : unit -> #~tree = \_ => #(0, ())
 
 fn ~tree#Node : ~int * #~tree * #~tree -> #~tree = \(x, #(lk, lt), #(rk, rt)) =>
   let k = ~tree#join lk rk in
-  (#(k+1, ((~inr ~(x, ~tree#reshape lk k lt, ~tree#reshape rk k rt)
-            : ~int ~+ ~int ~* ~tree k ~* ~tree k)
-            :: ~tree (k+1)))
-   : #~tree)
+  (#(k+1, ~inr ~(x, ~tree#reshape lk k lt, ~tree#reshape rk k rt)) : #~tree)
 
 fn ~tree#match :
   #~tree ->
@@ -146,9 +142,9 @@ fn ~tree#match :
      | ~inr ~(x, lt, rt) => f2 (x, #(k-1, lt), #(k-1, rt))
      end : ~tree k -> 'a) t
 
-fn ~tree#join : int -> int -> int = \x y => if x <= y then y else x
+fn ~tree#join : uint -> uint -> uint = \x y => if x <= y then y else x
 
-fn ~tree#reshape : (k : int) -> (k' : int) -> ~tree k -> ~tree k' = \k k' =>
+fn ~tree#reshape : (k : uint) -> (k' : uint) -> ~tree k -> ~tree k' = \k k' =>
   if k' = 0
   then \_ => ()
   else if k = 0 then \_ => ~inl ()
@@ -163,12 +159,12 @@ fn ~tree#reshape : (k : int) -> (k' : int) -> ~tree k -> ~tree k' = \k k' =>
 // ----------------------------------------------------------------
 // Oblivious list and its instances (copied from [list.tp])
 
-obliv ~list (k : int) =
+obliv ~list (k : uint) =
   if k = 0
   then unit
   else unit ~+ ~int ~* ~list (k-1)
 
-fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
+fn ~list#s : (k : uint) -> list -> ~list k = \k xs =>
   if k = 0
   then ()
   else match xs with
@@ -176,7 +172,7 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
        | Cons x xs' => ~inr ~(~int#s x, ~list#s (k-1) xs')
        end
 
-fn' ~list#r : (k : int) -> ~list k -> list = \k =>
+fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
   if k = 0
   then \_ => Nil
   else \xs => ~match xs with
@@ -184,11 +180,10 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
               | ~inr ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
               end
 
-fn ~list#Nil : unit -> #~list = \_ =>
-  #(0, (() :: ~list 0))
+fn ~list#Nil : unit -> #~list = \_ => #(0, ())
 
 fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
-  #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
+  #(k+1, ~inr ~(x, xs))
 
 fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
   \#(k, xs) f1 f2 =>
@@ -200,9 +195,9 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
        | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
        end : ~list k -> 'a) xs
 
-fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
+fn ~list#join : uint -> uint -> uint = \x y => if x <= y then y else x
 
-fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
+fn ~list#reshape : (k : uint) -> (k' : uint) -> ~list k -> ~list k' = \k k' =>
   if k' = 0
   then \_ => ()
   else
@@ -213,6 +208,7 @@ fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
       | ~inl _ => ~inl ()
       | ~inr ~(x, xs') => ~inr ~(x, ~list#reshape (k-1) (k'-1) xs')
       end
+
 
 // ----------------------------------------------------------------
 // Lifted functions

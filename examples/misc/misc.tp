@@ -1,6 +1,6 @@
 data list = Nil | Cons int list
 
-fn length : list -> int = \xs =>
+fn length : list -> uint = \xs =>
   match xs with
   | Nil => 0
   | Cons _ xs' => 1 + length xs'
@@ -109,12 +109,12 @@ fn test_elect2 : int -> list -> list -> int = \n xs ys =>
 // Oblivious types
 
 // Exact length as the public view.
-obliv ~list (k : int) =
+obliv ~list (k : uint) =
   if k = 0
   then unit
   else ~int ~* ~list (k-1)
 
-fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
+fn ~list#s : (k : uint) -> list -> ~list k = \k xs =>
   if k = 0
   then ()
   else match xs with
@@ -122,16 +122,15 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
        | Cons x xs' => ~(~int#s x, ~list#s (k-1) xs')
        end
 
-fn' ~list#r : (k : int) -> ~list k -> list = \k =>
+fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
   if k = 0
   then \_ => Nil
   else \~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
 
-fn ~list#Nil : unit -> #~list = \_ =>
-  #(0, (() :: ~list 0))
+fn ~list#Nil : unit -> #~list = \_ => #(0, ())
 
 fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
-  #(k+1, (~(x, xs) :: ~list (k+1)))
+  #(k+1, ~(x, xs))
 
 fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
   \#(k, xs) f1 f2 =>
@@ -139,7 +138,7 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
      then \_ => f1 ()
      else \~(x, xs') => f2 (x, #(k-1, xs')) : ~list k -> 'a) xs
 
-fn ~list#view : list -> int = length
+fn ~list#view : list -> uint = length
 
 // ----------------------------------------------------------------
 // Lifted functions

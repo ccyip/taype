@@ -1,6 +1,6 @@
 data list = Nil | Cons int list
 
-fn length : list -> int = \xs =>
+fn length : list -> uint = \xs =>
   match xs with
   | Nil => 0
   | Cons _ xs' => 1 + length xs'
@@ -156,12 +156,12 @@ fn test_span : list -> int -> list * list = \xs y =>
 // ----------------------------------------------------------------
 // Oblivious list and its instances
 
-obliv ~list (k : int) =
+obliv ~list (k : uint) =
   if k = 0
   then unit
   else unit ~+ ~int ~* ~list (k-1)
 
-fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
+fn ~list#s : (k : uint) -> list -> ~list k = \k xs =>
   if k = 0
   then ()
   else match xs with
@@ -169,7 +169,7 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
        | Cons x xs' => ~inr ~(~int#s x, ~list#s (k-1) xs')
        end
 
-fn' ~list#r : (k : int) -> ~list k -> list = \k =>
+fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
   if k = 0
   then \_ => Nil
   else \xs => ~match xs with
@@ -177,11 +177,10 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
               | ~inr ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
               end
 
-fn ~list#Nil : unit -> #~list = \_ =>
-  #(0, (() :: ~list 0))
+fn ~list#Nil : unit -> #~list = \_ => #(0, ())
 
 fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
-  #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
+  #(k+1, ~inr ~(x, xs))
 
 fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
   \#(k, xs) f1 f2 =>
@@ -193,11 +192,11 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
        | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
        end : ~list k -> 'a) xs
 
-fn ~list#view : list -> int = length
+fn ~list#view : list -> uint = length
 
-fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
+fn ~list#join : uint -> uint -> uint = \x y => if x <= y then y else x
 
-fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
+fn ~list#reshape : (k : uint) -> (k' : uint) -> ~list k -> ~list k' = \k k' =>
   if k' = 0
   then \_ => ()
   else
@@ -212,12 +211,12 @@ fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
 // ----------------------------------------------------------------
 // Oblivious list with extact length and its instances
 
-obliv ~list_eq (k : int) =
+obliv ~list_eq (k : uint) =
   if k = 0
   then unit
   else ~int ~* ~list_eq (k-1)
 
-fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
+fn ~list_eq#s : (k : uint) -> list -> ~list_eq k = \k xs =>
   if k = 0
   then ()
   else match xs with
@@ -225,16 +224,15 @@ fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
        | Cons x xs' => ~(~int#s x, ~list_eq#s (k-1) xs')
        end
 
-fn' ~list_eq#r : (k : int) -> ~list_eq k -> list = \k =>
+fn' ~list_eq#r : (k : uint) -> ~list_eq k -> list = \k =>
   if k = 0
   then \_ => Nil
   else \~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
 
-fn ~list_eq#Nil : unit -> #~list_eq = \_ =>
-  #(0, (() :: ~list_eq 0))
+fn ~list_eq#Nil : unit -> #~list_eq = \_ => #(0, ())
 
 fn ~list_eq#Cons : ~int * #~list_eq -> #~list_eq = \(x, #(k, xs)) =>
-  #(k+1, (~(x, xs) :: ~list_eq (k+1)))
+  #(k+1, ~(x, xs))
 
 fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a =
   \#(k, xs) f1 f2 =>
@@ -242,7 +240,7 @@ fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a 
      then \_ => f1 ()
      else \~(x, xs') => f2 (x, #(k-1, xs')) : ~list_eq k -> 'a) xs
 
-fn ~list_eq#view : list -> int = length
+fn ~list_eq#view : list -> uint = length
 
 fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
   %match #~list_eq #~list pxs
@@ -253,48 +251,48 @@ fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
 // ----------------------------------------------------------------
 // Dummy OADTs for enlarge the search space
 
-obliv ~list1 (_ : int) = unit
-fn ~list1#s : (k : int) -> list -> ~list1 k = \_ _ => ()
-fn ~list1#r : (k : int) -> ~list1 k -> list = \_ _ => Nil
+obliv ~list1 (_ : uint) = unit
+fn ~list1#s : (k : uint) -> list -> ~list1 k = \_ _ => ()
+fn ~list1#r : (k : uint) -> ~list1 k -> list = \_ _ => Nil
 fn ~list1#Nil : unit -> #~list1 = \_ => #(0, ())
 fn ~list1#Cons : ~int * #~list1 -> #~list1 = \_ => #(0, ())
 fn ~list1#match : #~list1 -> (unit -> 'a) -> (~int * #~list1 -> 'a) -> 'a = \_ f _ => f ()
-fn ~list1#view : list -> int = length
-fn ~list1#join : int -> int -> int = \_ _ => 0
-fn ~list1#reshape : (k : int) -> (k' : int) -> ~list1 k -> ~list1 k' = \_ _ _ => ()
+fn ~list1#view : list -> uint = length
+fn ~list1#join : uint -> uint -> uint = \_ _ => 0
+fn ~list1#reshape : (k : uint) -> (k' : uint) -> ~list1 k -> ~list1 k' = \_ _ _ => ()
 fn ~list_eq#~list1#coerce : #~list_eq -> #~list1 = \_ => #(0, ())
 
-obliv ~list2 (_ : int) = unit
-fn ~list2#s : (k : int) -> list -> ~list2 k = \_ _ => ()
-fn ~list2#r : (k : int) -> ~list2 k -> list = \_ _ => Nil
+obliv ~list2 (_ : uint) = unit
+fn ~list2#s : (k : uint) -> list -> ~list2 k = \_ _ => ()
+fn ~list2#r : (k : uint) -> ~list2 k -> list = \_ _ => Nil
 fn ~list2#Nil : unit -> #~list2 = \_ => #(0, ())
 fn ~list2#Cons : ~int * #~list2 -> #~list2 = \_ => #(0, ())
 fn ~list2#match : #~list2 -> (unit -> 'a) -> (~int * #~list2 -> 'a) -> 'a = \_ f _ => f ()
-fn ~list2#view : list -> int = length
-fn ~list2#join : int -> int -> int = \_ _ => 0
-fn ~list2#reshape : (k : int) -> (k' : int) -> ~list2 k -> ~list2 k' = \_ _ _ => ()
+fn ~list2#view : list -> uint = length
+fn ~list2#join : uint -> uint -> uint = \_ _ => 0
+fn ~list2#reshape : (k : uint) -> (k' : uint) -> ~list2 k -> ~list2 k' = \_ _ _ => ()
 fn ~list1#~list2#coerce : #~list1 -> #~list2 = \_ => #(0, ())
 
-obliv ~list3 (_ : int) = unit
-fn ~list3#s : (k : int) -> list -> ~list3 k = \_ _ => ()
-fn ~list3#r : (k : int) -> ~list3 k -> list = \_ _ => Nil
+obliv ~list3 (_ : uint) = unit
+fn ~list3#s : (k : uint) -> list -> ~list3 k = \_ _ => ()
+fn ~list3#r : (k : uint) -> ~list3 k -> list = \_ _ => Nil
 fn ~list3#Nil : unit -> #~list3 = \_ => #(0, ())
 fn ~list3#Cons : ~int * #~list3 -> #~list3 = \_ => #(0, ())
 fn ~list3#match : #~list3 -> (unit -> 'a) -> (~int * #~list3 -> 'a) -> 'a = \_ f _ => f ()
-fn ~list3#view : list -> int = length
-fn ~list3#join : int -> int -> int = \_ _ => 0
-fn ~list3#reshape : (k : int) -> (k' : int) -> ~list3 k -> ~list3 k' = \_ _ _ => ()
+fn ~list3#view : list -> uint = length
+fn ~list3#join : uint -> uint -> uint = \_ _ => 0
+fn ~list3#reshape : (k : uint) -> (k' : uint) -> ~list3 k -> ~list3 k' = \_ _ _ => ()
 fn ~list2#~list3#coerce : #~list2 -> #~list3 = \_ => #(0, ())
 
-obliv ~list4 (_ : int) = unit
-fn ~list4#s : (k : int) -> list -> ~list4 k = \_ _ => ()
-fn ~list4#r : (k : int) -> ~list4 k -> list = \_ _ => Nil
+obliv ~list4 (_ : uint) = unit
+fn ~list4#s : (k : uint) -> list -> ~list4 k = \_ _ => ()
+fn ~list4#r : (k : uint) -> ~list4 k -> list = \_ _ => Nil
 fn ~list4#Nil : unit -> #~list4 = \_ => #(0, ())
 fn ~list4#Cons : ~int * #~list4 -> #~list4 = \_ => #(0, ())
 fn ~list4#match : #~list4 -> (unit -> 'a) -> (~int * #~list4 -> 'a) -> 'a = \_ f _ => f ()
-fn ~list4#view : list -> int = length
-fn ~list4#join : int -> int -> int = \_ _ => 0
-fn ~list4#reshape : (k : int) -> (k' : int) -> ~list4 k -> ~list4 k' = \_ _ _ => ()
+fn ~list4#view : list -> uint = length
+fn ~list4#join : uint -> uint -> uint = \_ _ => 0
+fn ~list4#reshape : (k : uint) -> (k' : uint) -> ~list4 k -> ~list4 k' = \_ _ _ => ()
 fn ~list3#~list4#coerce : #~list3 -> #~list4 = \_ => #(0, ())
 
 fn ~list4#~list#coerce : #~list4 -> #~list = \_ => ~list#Nil ()

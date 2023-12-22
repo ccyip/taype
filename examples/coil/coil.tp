@@ -3,18 +3,12 @@
 
 data list = Nil | Cons int list
 
-fn length : list -> int = \xs =>
-  match xs with
-  | Nil => 0
-  | Cons _ xs' => 1 + length xs'
-  end
-
-obliv ~list (k : int) =
+obliv ~list (k : uint) =
   if k = 0
   then unit
   else unit ~+ ~int ~* ~list (k-1)
 
-fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
+fn ~list#s : (k : uint) -> list -> ~list k = \k xs =>
   if k = 0
   then ()
   else match xs with
@@ -22,7 +16,7 @@ fn ~list#s : (k : int) -> list -> ~list k = \k xs =>
        | Cons x xs' => ~inr ~(~int#s x, ~list#s (k-1) xs')
        end
 
-fn' ~list#r : (k : int) -> ~list k -> list = \k =>
+fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
   if k = 0
   then \_ => Nil
   else \xs => ~match xs with
@@ -30,11 +24,10 @@ fn' ~list#r : (k : int) -> ~list k -> list = \k =>
               | ~inr ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
               end
 
-fn ~list#Nil : unit -> #~list = \_ =>
-  #(0, (() :: ~list 0))
+fn ~list#Nil : unit -> #~list = \_ => #(0, ())
 
 fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
-  #(k+1, ((~inr ~(x, xs) : unit ~+ ~int ~* ~list k) :: ~list (k+1)))
+  #(k+1, ~inr ~(x, xs))
 
 fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
   \#(k, xs) f1 f2 =>
@@ -46,11 +39,15 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
        | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
        end : ~list k -> 'a) xs
 
-fn ~list#view : list -> int = length
+fn ~list#view : list -> uint = \xs =>
+  match xs with
+  | Nil => 0
+  | Cons _ xs => 1 + ~list#view xs
+  end
 
-fn ~list#join : int -> int -> int = \x y => if x <= y then y else x
+fn ~list#join : uint -> uint -> uint = \x y => if x <= y then y else x
 
-fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
+fn ~list#reshape : (k : uint) -> (k' : uint) -> ~list k -> ~list k' = \k k' =>
   if k' = 0
   then \_ => ()
   else
@@ -63,12 +60,12 @@ fn ~list#reshape : (k : int) -> (k' : int) -> ~list k -> ~list k' = \k k' =>
       end
 
 
-obliv ~list_eq (k : int) =
+obliv ~list_eq (k : uint) =
   if k = 0
   then unit
   else ~int ~* ~list_eq (k-1)
 
-fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
+fn ~list_eq#s : (k : uint) -> list -> ~list_eq k = \k xs =>
   if k = 0
   then ()
   else match xs with
@@ -76,16 +73,15 @@ fn ~list_eq#s : (k : int) -> list -> ~list_eq k = \k xs =>
        | Cons x xs' => ~(~int#s x, ~list_eq#s (k-1) xs')
        end
 
-fn' ~list_eq#r : (k : int) -> ~list_eq k -> list = \k =>
+fn' ~list_eq#r : (k : uint) -> ~list_eq k -> list = \k =>
   if k = 0
   then \_ => Nil
   else \~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
 
-fn ~list_eq#Nil : unit -> #~list_eq = \_ =>
-  #(0, (() :: ~list_eq 0))
+fn ~list_eq#Nil : unit -> #~list_eq = \_ => #(0, ())
 
 fn ~list_eq#Cons : ~int * #~list_eq -> #~list_eq = \(x, #(k, xs)) =>
-  #(k+1, (~(x, xs) :: ~list_eq (k+1)))
+  #(k+1, ~(x, xs))
 
 fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a =
   \#(k, xs) f1 f2 =>
@@ -93,7 +89,11 @@ fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a 
      then \_ => f1 ()
      else \~(x, xs') => f2 (x, #(k-1, xs')) : ~list_eq k -> 'a) xs
 
-fn ~list_eq#view : list -> int = length
+fn ~list_eq#view : list -> uint = \xs =>
+  match xs with
+  | Nil => 0
+  | Cons _ xs => 1 + ~list_eq#view xs
+  end
 
 fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
   %match #~list_eq #~list pxs
@@ -154,6 +154,12 @@ fn ~dtree_max#match :
 
 // ----------------------------------------------------------------
 // Functionality
+
+fn length : list -> int = \xs =>
+  match xs with
+  | Nil => 0
+  | Cons _ xs' => 1 + length xs'
+  end
 
 fn elem : int -> list -> bool = \y xs =>
   match xs with

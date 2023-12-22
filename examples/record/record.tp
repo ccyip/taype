@@ -275,12 +275,12 @@ fn ~db#match : #~db -> (unit -> 'a) -> (#~patient * #~db -> 'a) -> 'a =
       \~(p, db) => f2 (#(v, p), #(vs', db))
     end : ~db vs -> 'a) db
 
-obliv ~bmi_db (k : int) =
+obliv ~bmi_db (k : uint) =
   if k = 0
   then unit
   else ~int ~* ~int ~* ~bmi_db (k-1)
 
-fn ~bmi_db#s : (k : int) -> bmi_db -> ~bmi_db k = \k bmis =>
+fn ~bmi_db#s : (k : uint) -> bmi_db -> ~bmi_db k = \k bmis =>
   if k = 0
   then ()
   else match bmis with
@@ -289,7 +289,7 @@ fn ~bmi_db#s : (k : int) -> bmi_db -> ~bmi_db k = \k bmis =>
          ~(~int#s id, ~int#s bmi, ~bmi_db#s (k-1) bmis')
        end
 
-fn' ~bmi_db#r : (k : int) -> ~bmi_db k -> bmi_db = \k =>
+fn' ~bmi_db#r : (k : uint) -> ~bmi_db k -> bmi_db = \k =>
   if k = 0
   then \_ => Nil
   else \~(id, bmi, bmis) => Cons (~int#r id) (~int#r bmi) (~bmi_db#r (k-1) bmis)
