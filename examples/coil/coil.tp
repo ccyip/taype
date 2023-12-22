@@ -267,8 +267,8 @@ fn ~map : (~int -> ~int) -> #~list -> #~list = %lift map
 
 fn ~elem : ~int -> #~list_eq -> ~bool = %lift elem
 
-fn ~test_filter : #~list -> ~int -> #~list = \xs y =>
-  ~filter (\x => y ~<= x) xs
+fn test_filter : list -> int -> list = \xs y => filter (\x => y <= x) xs
+fn ~test_filter : #~list -> ~int -> #~list = %lift test_filter
 
 fn ~decide_max : #~dtree_max -> #~list_eq -> ~int = %lift decide
 fn ~decide_all : dtree -> #~list_eq -> ~int = %lift decide

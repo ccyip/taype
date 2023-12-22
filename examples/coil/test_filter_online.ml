@@ -5,7 +5,7 @@ open Coil_helper
 open Coil_helper.M (Driver)
 
 let () =
-  let n = 3 in
+  let n = 4 in
 
   let xs = mylist_of_list List.(1 -- n) in
   let y = n + 1 in

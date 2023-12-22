@@ -7,8 +7,7 @@ open Coil_helper
 let () =
   setup_driver "127.0.0.1" 12345 Party.Public;
 
-  (* [n = 4] will get killed by OOM. *)
-  let n = 3 in
+  let n = 4 in
 
   let xs = Conceal.obliv_list_s_for n Party.Trusted in
   let y = Conceal.obliv_int_s_for Party.Trusted in
