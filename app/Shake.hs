@@ -183,9 +183,10 @@ rulesForRunner rnd outRoot example = do
             input,
             output
           ]
-      return tgtWithDriver
+      return (driver, tgtWithDriver)
 
-    tgtWithName ~> need tgtWithDrivers
+    let tgts = [t | (driver, t) <- tgtWithDrivers, driver == "emp"]
+    tgtWithName ~> need tgts
     return tgtWithName
 
   tgt ~> need tgtWithNames
