@@ -18,6 +18,10 @@ let () =
 
   compile_coil "dtree_max" res Ser.int;
 
+  finalize_driver ();
+
+  setup_driver "127.0.0.1" 12345 Party.Public;
+
   let dtree = Sexp.of_string_conv_exn "(0 15 (1 18 1 2) 3)" dtree_of_sexp in
   let features = Conceal.obliv_list_eq_s_for n Party.Trusted in
 

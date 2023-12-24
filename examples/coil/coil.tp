@@ -180,12 +180,22 @@ fn filter : (int -> bool) -> list -> list = \f xs =>
     if f x then Cons x (filter f xs') else filter f xs'
   end
 
-fn lookup : list -> int -> int = \xs i =>
+// fn lookup : list -> int -> int = \xs i =>
+//   match xs with
+//   | Nil => 0
+//   | Cons x xs' =>
+//     if 0 = i then x else lookup xs' (i-1)
+//   end
+
+// This lookup implementation is closer to the coil implementation.
+fn lookup_ : list -> int -> int -> int = \xs off i =>
   match xs with
   | Nil => 0
   | Cons x xs' =>
-    if 0 = i then x else lookup xs' (i-1)
+    if off = i then x else lookup_ xs' (off+1) i
   end
+  
+fn lookup : list -> int -> int = \xs i => lookup_ xs 0 i
 
 // Technically this is not an association list. Encoding a proper association
 // list is not hard, but need to redefine the list type and boilerplate
@@ -292,6 +302,7 @@ fn ~log_lookup : #~list_eq -> ~int -> ~int = %lift log_lookup
 
 // merge
 fn ~merge : #~list_eq -> #~list_eq -> #~list = %lift merge
+// fn ~merge : #~list_eq -> #~list_eq -> #~list_eq + #~list = %lift merge
 
 // sp_auction
 fn ~sp : #~list_eq -> ~int * ~int = %lift sp
