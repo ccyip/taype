@@ -237,7 +237,7 @@ rulesForRunner rnd outRoot example = do
     let testName = dropExtensions inputName
         tgtWithName = tgt <> "/" <> testName
 
-    outputs <- forM drivers $ \driver -> do
+    allOutputs <- forM drivers $ \driver -> do
       let input = inDir </> inputName
           output = outDir </> testName <.> driver <.> "output" <.> "csv"
           isPlainText = driver == "plaintext"
@@ -250,8 +250,9 @@ rulesForRunner rnd outRoot example = do
         runnerCmd [bin, partiesFromDriver driver, show rnd', input, out]
 
       tgtWithName <> "/" <> driver ~> need [output]
-      return output
+      return (isPlainText, output)
 
+    let outputs = [output | (b, output) <- allOutputs, not b]
     tgtWithName ~> need outputs
     return outputs
 
