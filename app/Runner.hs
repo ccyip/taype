@@ -12,11 +12,11 @@
 -- Evaluate the oblivious testing programs.
 module Main (main) where
 
-import qualified Data.Csv as Csv
+import Data.Csv qualified as Csv
 import Data.List (maximum)
-import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
-import qualified Data.Vector as V
+import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
+import Data.Vector qualified as V
 import Options.Applicative
 import System.IO (hClose, withBinaryFile)
 import System.Process.Typed
@@ -51,11 +51,14 @@ run options@Options {..} = do
               (\field field' -> if field == "^" then field' else field)
               fields
               prev
-      stats <- forM [1 .. optRounds] $ \j -> do
-        log_ $ "Test case " <> show i <> " (round " <> show j <> ")"
-        run1 options hd fields'
-      let stat = sum stats `div` length stats
+      stat1 <- go1 hd fields' i (1 :: Int)
+      stats2 <- if stat1 < 0 then return [] else forM [2 .. optRounds] $ go1 hd fields' i
+      let stats = stat1 : stats2
+          stat = sum stats `div` length stats
       go hd fields' input (i + 1) $ (show stat : fields') : acc
+    go1 hd fields i j = do
+      log_ $ "Test case " <> show i <> " (round " <> show j <> ")"
+      run1 options hd fields
     filterOutput hd output =
       [ field
         | (party, field) <- zip hd output,
@@ -68,6 +71,13 @@ run1 Options {..} hd fields =
     withManyProcessesWait_ (procs hs) go
   where
     go ps = do
+      rc <- forM ps waitExitCode
+      if all (== ExitSuccess) rc
+        then go_ ps
+        else do
+          putTextLn "Test failed (crash or timeout)"
+          return (-1)
+    go_ ps = do
       output <- forM ps $ \p ->
         let h = getStdout p
          in (,) <$> TIO.hGetLine h <*> TIO.hGetContents h
@@ -81,8 +91,9 @@ run1 Options {..} hd fields =
     proc1 party handle =
       setStdout createPipe $
         setStdin (useHandleClose handle) $
-          proc optProg $
-            toString party : optArgs
+          proc "timeout" $
+            -- Hardcode 5 minute timeout.
+            "5m" : optProg : toString party : optArgs
 
 withInput :: [Text] -> [Text] -> [Text] -> ([Handle] -> IO a) -> IO a
 withInput parties owners fields f = go [] parties
@@ -118,7 +129,7 @@ withManyProcessesWait_ configs f = go [] configs
   where
     go ps [] = f (reverse ps)
     go ps (config : configs') = do
-      withProcessWait_ config $ \p -> go (p : ps) configs'
+      withProcessWait config $ \p -> go (p : ps) configs'
 
 main :: IO ()
 main = run =<< execParser (info (opts <**> helper) helpMod)
