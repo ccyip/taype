@@ -38,10 +38,17 @@ main = shakeArgsWith shakeOptions {shakeColor = True} flags $
               (\s -> Right $ \opts -> opts {optOutputDir = s})
               "OUTDIR"
           )
-          "Path to the output directory"
+          "Path to the output directory",
+        Option
+          ""
+          ["naive"]
+          ( NoArg
+              (Right $ \opts -> opts {optNaive = True})
+          )
+          "Disable smart array"
       ]
     mkRules args = do
-      let Options {optRound = rnd, optOutputDir = outDir} =
+      let Options {optRound = rnd, optOutputDir = outDir, optNaive = naive} =
             flipfoldl' ($) defaultOptions args
       examples <- getExamples
       mls <- foldMapM (rulesForExample outDir) examples
@@ -55,7 +62,7 @@ main = shakeArgsWith shakeOptions {shakeColor = True} flags $
         need $ ("clean/" <>) <$> examples
         mlCmd ["clean"]
 
-      mapM_ (rulesForRunner rnd outDir) examples
+      mapM_ (rulesForRunner naive rnd outDir) examples
 
       "run" ~> do
         need $ ("run/" <>) <$> examples
@@ -67,14 +74,16 @@ main = shakeArgsWith shakeOptions {shakeColor = True} flags $
 
 data Options = Options
   { optRound :: Int,
-    optOutputDir :: FilePath
+    optOutputDir :: FilePath,
+    optNaive :: Bool
   }
 
 defaultOptions :: Options
 defaultOptions =
   Options
     { optRound = 1,
-      optOutputDir = exampleDir </> "output"
+      optOutputDir = exampleDir </> "output",
+      optNaive = False
     }
 
 drivers :: [String]
@@ -155,8 +164,8 @@ getInputCsvIn :: (MonadIO m) => FilePath -> m [FilePath]
 getInputCsvIn example =
   liftIO $ getDirectoryFilesIO (exampleDir </> example) ["*.input.csv"]
 
-rulesForRunner :: Int -> FilePath -> FilePath -> Rules ()
-rulesForRunner rnd outRoot example = do
+rulesForRunner :: Bool -> Int -> FilePath -> FilePath -> Rules ()
+rulesForRunner naive rnd outRoot example = do
   inputNames <- getInputCsvIn example
   let inDir = exampleDir </> example
       outDir = outRoot </> example
@@ -177,7 +186,7 @@ rulesForRunner rnd outRoot example = do
         need [buildTgt, input]
         runnerCmd
           [ bin,
-            driver,
+            if naive then driver <> "-naive" else driver,
             partiesFromDriver driver,
             show rnd',
             input,

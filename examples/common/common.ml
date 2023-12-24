@@ -14,6 +14,8 @@ let party_of_string = function
 let driver_of_string = function
   | "plaintext" -> (module Taype_driver_plaintext.Driver : S)
   | "emp" -> (module Taype_driver_emp.Driver : S)
+  | "plaintext-naive" -> (module Taype_driver_plaintext.Driver_naive : S)
+  | "emp-naive" -> (module Taype_driver_emp.Driver_naive : S)
   | _ -> failwith "Unknown driver: only supports plaintext and emp"
 
 let scan_line () =
