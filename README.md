@@ -28,7 +28,7 @@ You can create a new opam switch for Taype and install dependencies via:
 ``` sh
 opam switch create taype --package=ocaml-variants.4.14.1+options,ocaml-option-flambda
 opam update
-opam install dune ctypes containers sexplib yojson ppx_deriving z3
+opam install dune ctypes containers containers-data sexplib yojson ppx_deriving z3
 ```
 
 Then go to the repository of Taype drivers and follow the instructions there to
