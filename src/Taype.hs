@@ -96,11 +96,10 @@ opts = do
       long "no-files"
         <> short 'n'
         <> help "Do not generate files"
-  optQuiet <-
+  warning <-
     switch $
-      long "quiet"
-        <> short 'q'
-        <> help "No warnings"
+      long "warning"
+        <> help "Show warnings"
   optFlagNoOptimization <-
     switch $
       long "fno-opt"
@@ -214,5 +213,6 @@ opts = do
         optFlagNoGuardReshape = optFlagNoGuardReshape || optFlagNoOptimization,
         optFlagNoSum = not optFlagSum || optFlagNoOptimization,
         optNoSolverLog = optNoSolverLog || optNoFiles,
+        optQuiet = not warning,
         ..
       }
