@@ -117,10 +117,10 @@ opts = do
     switch $
       long "fno-memo"
         <> help "Disable memoization optimization"
-  optFlagNoGuardReshape <-
+  optFlagNoReshapeGuard <-
     switch $
-      long "fno-guard-reshape"
-        <> help "Disable guarding reshape instances"
+      long "fno-reshape-guard"
+        <> help "Disable reshape guard optimization"
   optFlagSum <-
     switch $
       long "fsum-opt"
@@ -211,7 +211,7 @@ opts = do
         optFlagNoSimplify = optFlagNoSimplify || optFlagNoOptimization,
         optFlagNoInline = optFlagNoInline || optFlagNoOptimization,
         optFlagNoMemo = optFlagNoMemo || optFlagNoOptimization,
-        optFlagNoGuardReshape = optFlagNoGuardReshape || optFlagNoOptimization,
+        optFlagNoReshapeGuard = optFlagNoReshapeGuard || optFlagNoOptimization,
         optFlagNoSum = not optFlagSum || optFlagNoOptimization,
         optNoSolverLog = optNoSolverLog || optNoFiles,
         ..

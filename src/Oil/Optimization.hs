@@ -37,7 +37,7 @@ optimize options@Options {..} defs =
               then defs
               else memo defs
           defs2 =
-            if optFlagNoGuardReshape
+            if optFlagNoReshapeGuard
               then defs1
               else guardReshape defs1
           defs' = defs2
