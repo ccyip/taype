@@ -15,7 +15,6 @@ copyright:           2022-2023 Qianchuan Ye
 category:            Language
 build-type:          Simple
 extra-doc-files:     README.md
-                     CHANGELOG.md
 tested-with:         GHC == 9.4.7
 
 source-repository head
