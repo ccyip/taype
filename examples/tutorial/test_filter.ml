@@ -17,7 +17,7 @@ let () =
 
   collect_stat ();
 
-  let res = obliv_insert y xs in
+  let res = obliv_filter xs y in
 
   record_stat ();
 

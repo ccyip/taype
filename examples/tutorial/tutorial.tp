@@ -19,18 +19,23 @@ fn elem : int -> list -> bool = \y xs =>
   | Cons x xs' => if x = y then true else elem y xs'
   end
 
-// Here is an insertion function that inserts a new element to the right place
-// of a sorted list.
-fn insert : int -> list -> list = \x xs =>
+// Here is a filter function that drops all elements in a list above a certain
+// bound. Taype does support higher-order functions, but we use this specialized
+// version for the tutorial. A more standard, higher-order filter function can
+// be found in [examples/list/list.tp].
+fn filter : list -> int -> list = \xs y =>
   match xs with
-  | Nil => Cons x Nil
-  | Cons y xs' => if x <= y then Cons x xs else Cons y (insert x xs')
+  | Nil => Nil
+  | Cons x xs' =>
+    if x <= y then Cons x (filter xs' y) else filter xs' y
   end
 
 // Now let's implement a corresponding oblivious list. By convention, we prefix
 // the oblivious type with "~". The name after the prefix should start with a
 // lower-case letter. All builtin oblivious operations are also prefixed by "~".
-// Here the public view [k] is the maximum length of the list.
+// An oblivious type takes a public view (the public information of a data
+// shared by all parties) and returns a private representation. Here the public
+// view [k] is the maximum length of the list.
 obliv ~list (k : uint) =
   if k = 0
   // If the maximum length is 0, the list can only be a Nil (with no
@@ -61,18 +66,18 @@ fn ~list#s : (k : uint) -> list -> ~list k = \k xs =>
 
 // This is the retraction instance of [~list]. The keyword [fn'] indicates that
 // this function is unsafe, i.e. it may disclose private information. The type
-// system of taype ensures this kind of leaky functions do not interfere the
+// system of Taype ensures this kind of leaky functions do not interfere the
 // oblivious computation; retraction functions can only be used in the reveal
 // phase to disclose the output of the oblivious computation.
 fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
-  // Note that, unlike [~list#s], we have to do pattern matching and return a
-  // function inside, instead of pattern matching in a lambda abstraction. This
-  // is a well-known trick we apply to please the dependent type checker (and
-  // the only trick we need in all our examples), so that the type of the
-  // function argument [~list k] can take the condition [k = 0] into account.
-  // For example, the type of argument [xs] in the second branch is equivalent
-  // to [unit ~+ ~int ~* ~list (k-1)], only under the assumption that [k = 0]
-  // is [false].
+  // Note that, unlike [~list#s], we have to do pattern matching on the public
+  // view first and return a function inside, instead of pattern matching after
+  // introducing the oblivious list argument. This is a well-known trick to
+  // please the dependent type checker (and the only trick we need in all our
+  // examples), so that the type of the function argument [~list k] can take the
+  // condition [k = 0] into account. For example, the type of argument [xs] in
+  // the second branch is equivalent to [unit ~+ ~int ~* ~list (k-1)], only
+  // under the assumption that [k = 0] is [false].
   if k = 0
   // In this case, the list can only be a [Nil].
   then \_ => Nil
@@ -85,7 +90,7 @@ fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
               | ~inr ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
               end
 
-// In order to convert the plaintext programs, such as [elem], to the oblivious
+// In order to convert the standard programs, such as [elem], to the oblivious
 // counterparts, we need to define a few boilerplate functions that help the
 // lifting procedure. Some of them can potentially be synthesized from the
 // section and retraction functions, to levitate the user burden; we leave it as
@@ -93,11 +98,12 @@ fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
 
 // The following two functions are the constructor instances of [~list]. They
 // take a single argument, corresponding to the parameters of this constructor,
-// and return the *Psi* type of [~list]. Psi type is essentially a restricted
+// and return the *Psi-type* of [~list]. Psi type is essentially a restricted
 // dependent pair (a.k.a. dependent sum type, sigma type, or existential type),
 // packing an oblivious value and its public view together. For example,
 // [#~list] consists of the public view ([int]) of [~list], [k], and an
-// oblivious value of type [~list k].
+// oblivious value of type [~list k]. A Psi-type is introduced by a syntax
+// similar to pair: [#(_, _)].
 
 // This is the [Nil] constructor instance of [~list]. [Nil] takes nothing, so
 // the argument is [unit].
@@ -116,9 +122,9 @@ fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
 
 // Similar to constructors (the introduction form of an ADT), we also need to
 // define the "destructor", i.e. the elimination form, which corresponds to
-// pattern matching this ADT. It takes the Psi type of [~list] and then a list
+// pattern matching this ADT. It takes the Psi-type of [~list] and then a list
 // of functions, corresponding to the alternatives of the [match] expression.
-// Like constructor instances, the argument of the alternative functions should
+// Like constructor instances, the arguments of the alternative functions should
 // be compatible with the corresponding constructor parameters. The alternative
 // functions and this match instance return a parametric type variable ['a], as
 // pattern matching can eliminate the ADT to an arbitrary type. Note that taype
@@ -131,21 +137,21 @@ fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
     (if k = 0
      then \_ => f1 ()
      else \xs =>
-       // Implicitly, the type variable ['a] needs to be *mergeable*, if we
-       // use [~if] or [~match] expressions that return this ['a]. Roughly
-       // speaking, a Psi type is mergeable if it has a join structure, and
-       // oblivious types are mergeable. For example, [#~list] is mergeable
-       // because it has a join structure that is defined below, and [~bool]
-       // and [~int] are mergeable. When the lifting procedure resolves the
-       // match instance, it will require the type unified with ['a] to be
-       // mergeable, or the lifting procedure will fail.
+       // Implicitly, the type variable ['a] needs to be *mergeable*, if we use
+       // [~if] or [~match] expressions that return this ['a]. Roughly speaking,
+       // a Psi-type is mergeable if it has a join structure, and other
+       // primitive oblivious types are trivially mergeable. For example,
+       // [#~list] is mergeable because it has a join structure that is defined
+       // below, and [~bool] and [~int] are mergeable. When the lifting
+       // procedure resolves the match instance, it will require the type
+       // unified with ['a] to be mergeable, or the lifting procedure will fail.
        ~match xs with
        | ~inl _ => f1 ()
        | ~inr ~(x, xs') => f2 (x, #(k-1, xs'))
        end : ~list k -> 'a) xs
 
 // A view instance maps the ADT to one of its valid public views of the OADT,
-// preferably a "minimal" one. We can coerce a public ADT to a Psi type, e.g.,
+// preferably a "minimal" one. We can coerce a public ADT to a Psi-type, e.g.,
 // from [list] to [#~list], if it has a view instance. In this case, the view
 // instance is simply the length function.
 fn ~list#view : list -> uint = \xs =>
@@ -155,10 +161,10 @@ fn ~list#view : list -> uint = \xs =>
   end
 
 // An OADT can be optionally equipped with a join structure, consisting of a
-// join function and a reshape function. A Psi type (or more precisely its
-// underlying OADT) with a join structure can be the return type of an oblivious
-// conditional or oblivious sum elimination (or a match instance that uses these
-// two). Apparently, not all OADTs have a join structure.
+// join function and a reshape function. A Psi-type with a join structure can be
+// the return type of an oblivious conditional or oblivious sum elimination (or
+// a match instance, e.g., [~list#match], that uses these two). Not all OADTs
+// have a join structure.
 
 // A join instance of an OADT returns the join, i.e. supremum or least upper
 // bound, of its two public views. In this case, it is the maximum of the two
@@ -180,15 +186,15 @@ fn ~list#reshape : (k : uint) -> (k' : uint) -> ~list k -> ~list k' = \k k' =>
 
 // If we have other oblivious list types, we may define coercion instances that
 // convert one to another, which can be used by the lifting procedure. For
-// example, if we have a oblivious list type with the exact length as the public
-// view [~list_eq], we can define a function called [~list_eq#~list#coerce] of
-// type [#~list_eq -> #~list].
+// example, if we have an oblivious list type with the exact length as the
+// public view [~list_eq], we can define a function called
+// [~list_eq#~list#coerce] of type [#~list_eq -> #~list].
 
 // Finally, we can simply lift the public functions to the oblivious
-// counterparts, using the [%lift] preprocessor that invokes the lifting
-// procedure. The type of these functions are essentially the privacy policy.
+// counterparts, using the [%lift] macro that invokes the lifting procedure. The
+// type of these functions are essentially the privacy policy.
 fn ~elem : ~int -> #~list -> ~bool = %lift elem
-fn ~insert : ~int -> #~list -> #~list = %lift insert
+fn ~filter : #~list -> ~int -> #~list = %lift filter
 
 // All these functions will be compiled to an OCaml library eventually, with
 // functions of the same names and prefix "~" translated to "obliv_" and "#"
@@ -196,7 +202,6 @@ fn ~insert : ~int -> #~list -> #~list = %lift insert
 // to perform oblivious membership query. Two functions, "Conceal.obliv_list_s"
 // and "Reveal.obliv_list_r", are exposed in the OCaml library for the conceal
 // and reveal phases. The former is used by the party owning the list to turn
-// their private list into an oblivious one (unlike [obliv_list_s] which only
-// "encrypts" a public list). The latter is used to actually "decrypt" an
-// oblivious list. See "test_tutorial.ml" for an example of how the generated
+// their private list into an oblivious one. The latter is used to "decrypt" an
+// oblivious list. See "test_elem.ml" for an example of how the generated
 // library can be used.
