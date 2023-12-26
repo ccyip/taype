@@ -1,10 +1,14 @@
-# Taype
+# Taypsi
 
 [![GitHub CI](https://github.com/ccyip/taype/workflows/CI/badge.svg)](https://github.com/ccyip/taype/actions)
 [![Hackage](https://img.shields.io/hackage/v/taype.svg?logo=haskell)](https://hackage.haskell.org/package/taype)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A policy-agnostic language for oblivious computation with algebraic data types.
+
+Taypsi is an extension of the language Taype, with Ψ-type and static enforcement
+of policies. We keep the compiler and source code name Taype, as Taypsi is
+considered a new version of Taype.
 
 ## Build instructions
 
