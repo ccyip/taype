@@ -96,7 +96,7 @@ data Options = Options
     optFlagNoSimplify :: Bool,
     optFlagNoInline :: Bool,
     optFlagNoMemo :: Bool,
-    optFlagNoGuardReshape :: Bool,
+    optFlagNoReshapeGuard :: Bool,
     optFlagNoSum :: Bool,
     optFlagStrictCoerce :: Bool,
     optReverseCost :: Bool,
