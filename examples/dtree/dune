@@ -1,6 +1,5 @@
 (executables
  (names
-   "gen_tree"
    "test_dtree_all"
    "test_dtree_spineF"
    "test_dtree_spine"
