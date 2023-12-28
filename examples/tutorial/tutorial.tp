@@ -1,4 +1,4 @@
-// This file introduces the basic of the Taype language.
+// This file introduces the basic of the Taypsi language.
 
 // Here is a standard list definition with integer payload. We do not support
 // type polymorphism at the moment.
