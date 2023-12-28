@@ -1,8 +1,10 @@
 #!/bin/bash
 
+ROUND="${1:-5}"
+
 set -euo pipefail
 
 cabal run shake
 
-cabal run shake -- --round=5 --out-dir=examples/output-old run/list
-cabal run shake -- --round=5 --out-dir=examples/output-old run/tree
+cabal run shake -- --round=$ROUND --out-dir=examples/output-old run/list
+cabal run shake -- --round=$ROUND --out-dir=examples/output-old run/tree
