@@ -1,4 +1,4 @@
-// This file introduces the basic of the taype language.
+// This file introduces the basic of the Taype language.
 
 // Here is a standard list definition with integer payload. We do not support
 // type polymorphism at the moment.
@@ -20,9 +20,9 @@ fn elem : int -> list -> bool = \y xs =>
   end
 
 // Here is a filter function that drops all elements in a list above a certain
-// bound. Taype does support higher-order functions, but we use this specialized
-// version for the tutorial. A more standard, higher-order filter function can
-// be found in [examples/list/list.tp].
+// bound. The language does support higher-order functions, but we use this
+// specialized version for the tutorial. A more standard, higher-order filter
+// function can be found in [examples/list/list.tp].
 fn filter : list -> int -> list = \xs y =>
   match xs with
   | Nil => Nil
@@ -66,9 +66,9 @@ fn ~list#s : (k : uint) -> list -> ~list k = \k xs =>
 
 // This is the retraction instance of [~list]. The keyword [fn'] indicates that
 // this function is unsafe, i.e. it may disclose private information. The type
-// system of Taype ensures this kind of leaky functions do not interfere the
-// oblivious computation; retraction functions can only be used in the reveal
-// phase to disclose the output of the oblivious computation.
+// system ensures this kind of leaky functions do not interfere the oblivious
+// computation; retraction functions can only be used in the reveal phase to
+// disclose the output of the oblivious computation.
 fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
   // Note that, unlike [~list#s], we have to do pattern matching on the public
   // view first and return a function inside, instead of pattern matching after
@@ -82,9 +82,9 @@ fn' ~list#r : (k : uint) -> ~list k -> list = \k =>
   // In this case, the list can only be a [Nil].
   then \_ => Nil
   // In this case, we return [Nil] or [Cons] depending on if the oblivious sum
-  // is left or right injection. Taype supports some *limited* form of general
-  // pattern matching, so we can simply destruct the oblivious product type in
-  // place. But don't expect too much from it.
+  // is left or right injection. The language supports some *limited* form of
+  // general pattern matching, so we can simply destruct the oblivious product
+  // type in place. But don't expect too much from it.
   else \xs => ~match xs with
               | ~inl _ => Nil
               | ~inr ~(x, xs') => Cons (~int#r x) (~list#r (k-1) xs')
@@ -127,9 +127,9 @@ fn ~list#Cons : ~int * #~list -> #~list = \(x, #(k, xs)) =>
 // Like constructor instances, the arguments of the alternative functions should
 // be compatible with the corresponding constructor parameters. The alternative
 // functions and this match instance return a parametric type variable ['a], as
-// pattern matching can eliminate the ADT to an arbitrary type. Note that taype
-// does not support parametric type polymorphism yet; this use of parametric
-// type is limited to match instance, and has a few restrictions.
+// pattern matching can eliminate the ADT to an arbitrary type. Note that the
+// language does not support parametric type polymorphism yet; this use of
+// parametric type is limited to match instance, and has a few restrictions.
 fn ~list#match : #~list -> (unit -> 'a) -> (~int * #~list -> 'a) -> 'a =
   \#(k, xs) f1 f2 =>
     // Again, we use this trick of returning functions inside pattern matching
@@ -184,17 +184,68 @@ fn ~list#reshape : (k : uint) -> (k' : uint) -> ~list k -> ~list k' = \k k' =>
       | ~inr ~(x, xs') => ~inr ~(x, ~list#reshape (k-1) (k'-1) xs')
       end
 
-// If we have other oblivious list types, we may define coercion instances that
-// convert one to another, which can be used by the lifting procedure. For
-// example, if we have an oblivious list type with the exact length as the
-// public view [~list_eq], we can define a function called
-// [~list_eq#~list#coerce] of type [#~list_eq -> #~list].
+// We can define another oblivious list type whose public view is the exact
+// length of the list. The definitions of its structures are analogous to the
+// ones of [~list].
+obliv ~list_eq (k : uint) =
+  if k = 0
+  then unit
+  else ~int ~* ~list_eq (k-1)
+
+fn ~list_eq#s : (k : uint) -> list -> ~list_eq k = \k xs =>
+  if k = 0
+  then ()
+  else match xs with
+       // [~~] returns an arbitrary oblivious value (of the corresponding type).
+       // We use it here because [xs] is never [Nil] when its exact length [k]
+       // is not 0.
+       | Nil => ~~
+       | Cons x xs' => ~(~int#s x, ~list_eq#s (k-1) xs')
+       end
+
+fn' ~list_eq#r : (k : uint) -> ~list_eq k -> list = \k =>
+  if k = 0
+  then \_ => Nil
+  else \~(x, xs') => Cons (~int#r x) (~list_eq#r (k-1) xs')
+
+fn ~list_eq#Nil : unit -> #~list_eq = \_ => #(0, ())
+
+fn ~list_eq#Cons : ~int * #~list_eq -> #~list_eq = \(x, #(k, xs)) =>
+  #(k+1, ~(x, xs))
+
+fn ~list_eq#match : #~list_eq -> (unit -> 'a) -> (~int * #~list_eq -> 'a) -> 'a =
+  \#(k, xs) f1 f2 =>
+    (if k = 0
+     then \_ => f1 ()
+     else \~(x, xs') => f2 (x, #(k-1, xs')) : ~list_eq k -> 'a) xs
+
+// The view of [~list_eq] is the same as that of [~list].
+fn ~list_eq#view : list -> uint = ~list#view
+
+// This coercion instance converts a [~list_eq] to an equivalent [~list].
+fn ~list_eq#~list#coerce : #~list_eq -> #~list = \pxs =>
+  // We can implement it using typed macros. In fact, most typed macros
+  // presented in the paper for the lifting algorithm are also available in the
+  // source syntax. [%match] here is resolved to [~list_eq#match] with the
+  // polymorphic return type ['a] set to [#~list]. We unfortunately cannot
+  // directly use [~list_eq#match] here because the language has very limited
+  // support for type polymorphism at the moment. If we do not want to use typed
+  // macro, we can instead reimplement a specialized [~list_eq#match] here, of
+  // course.
+  %match #~list_eq #~list pxs
+    (\_ => ~list#Nil ())
+    (\(x, xs') => ~list#Cons (x, ~list_eq#~list#coerce xs'))
 
 // Finally, we can simply lift the public functions to the oblivious
 // counterparts, using the [%lift] macro that invokes the lifting procedure. The
 // type of these functions are essentially the privacy policy.
 fn ~elem : ~int -> #~list -> ~bool = %lift elem
 fn ~filter : #~list -> ~int -> #~list = %lift filter
+
+// We can lift these two functions against other types (i.e. privacy policies)
+// too. For example, we can use [~list_eq] instead, or even public types
+// (policies that are infeasible or insecure will get rejected, of course). Left
+// as exercises!
 
 // All these functions will be compiled to an OCaml library eventually, with
 // functions of the same names and prefix "~" translated to "obliv_" and "#"
