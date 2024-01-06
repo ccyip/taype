@@ -99,6 +99,12 @@ architecture. We provide images for amd64 (i.e. x86-64) and arm64 (e.g., for
 Apple Silicon Mac). You need around 14 GB of storage space to load
 these images, and 8 GB of RAM for the container to run the experiments.
 
+Before executing any docker commands, make sure that the docker daemon is
+running: if you see `Cannot connect to the Docker daemon` in the output of
+command `docker version`, then you need to start the daemon first. Check the
+docker official documentation for instructions according to your operating
+system and docker version.
+
 Now you can load and run the downloaded docker image. The following commands
 create an image called `taypsi-image`, and start a container called `taypsi`. We
 expose the port `8080` for accessing the code-server.
