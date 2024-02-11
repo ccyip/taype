@@ -367,9 +367,15 @@ eraseName = (erasePrefix <>)
 memoName :: Text -> Text
 memoName = (<> "_memo")
 
+bInfixes :: [Text]
+bInfixes = ["&&", "||"]
+
+iInfixes :: [Text]
+iInfixes = ["<=", "+", "-", "*", "/"]
+
 -- | The infix operators
 infixes :: [Text]
-infixes = ["<=", "+", "-", "*", "/", "&&", "||"]
+infixes = bInfixes <> iInfixes
 
 -- | The oblivious infix operators
 oblivInfixes :: [Text]
@@ -377,7 +383,7 @@ oblivInfixes = oblivName <$> ("=" : infixes)
 
 -- | All infix operators
 allInfixes :: [Text]
-allInfixes = infixes <> oblivInfixes
+allInfixes = infixes <> (unsignedName <$> iInfixes) <> oblivInfixes
 
 isInfix :: Text -> Bool
 isInfix x = x == "=" || x `elem` allInfixes
