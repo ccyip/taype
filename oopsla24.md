@@ -41,7 +41,8 @@ Mac.
 # Getting Started Guide
 
 This artifact is a docker image, which contains:
-- This README file, located at `~/README.md`.
+- This README file, located at `~/README.md`. A rendered version is also
+  [available online](https://ccyip.github.io/taype/oopsla24).
 - The docker file used to generate the docker images, located at `~/Dockerfile`.
 - The implementation of the Taypsi type checker and compiler, based on [Taype
   (PLDI23)](https://doi.org/10.1145/3591261), located at `~/taypsi`. ([Github
@@ -50,11 +51,9 @@ This artifact is a docker image, which contains:
   used in our evaluation, located at
   `~/taype-pldi`. This includes the additional benchmarks used in our comparison. ([Github
   repository](https://github.com/ccyip/taype/tree/tape))
-- An extended version of Taype that includes Taypsi's
-  smart array optimization, located at `~/taype-sa`. This version of
-  Taype is used to provide a fairer comparison with Taypsi. Note that
-  the results of this experiment are not in the current submission,
-  but will be included in the final version of the paper. ([Github
+- An extended version of Taype that includes Taypsi's smart array optimization,
+  located at `~/taype-sa`. This version of Taype is used to provide a fairer
+  comparison with Taypsi. ([Github
   repository](https://github.com/ccyip/taype/tree/tape-sa))
 - All examples and experiments from the paper, located at `~/taypsi/examples`
   (correspondingly `~/taype-pldi/examples` and `~/taype-sa/examples`).
@@ -77,7 +76,7 @@ This artifact is a docker image, which contains:
   + Taype: for reading Taypsi source code. This extension provides basic syntax
     highlighting for Taypsi and its intermediate language OIL. (The name of this
     extension reflects that Taypsi is based on and is an extension of
-    Taype.)
+    Taype)
   + Haskell: for reading source code of the Taypsi type checker and compiler,
     which is implemented in Haskell.
   + OCaml: for reading source code of the generated OCaml programs, test cases
@@ -91,7 +90,7 @@ This artifact is a docker image, which contains:
 
 All the implementations in the docker image have been pre-compiled. The clean
 version of the source code, this README file and the docker file are also
-available on [Zenodo](https://doi.org/10.5281/zenodo.10443796).
+available on [Zenodo](https://doi.org/10.5281/zenodo.10701642).
 
 To evaluate this artifact, first install [docker](https://www.docker.com/), and
 then download one of our docker images from Zenodo, depending on your machine's
@@ -131,10 +130,9 @@ docker exec -d taypsi code-server
 
 Now you can open the URL [localhost:8080](http://localhost:8080) (or
 [127.0.0.1:8080](http://127.0.0.1:8080)) in a browser to access VS Code. Note
-that some functionality may not work if you are using private mode or incognito mode.
-You may read this markdown file (`~/README.md`) with a nicely rendered preview.
-We did not pre-install the Haskell language server or the OCaml language server
-in the docker image; the [next section](#step-by-step-instructions)
+that some functionality may not work if you are using private mode or incognito
+mode. We did not pre-install the Haskell language server or the OCaml language
+server in the docker image; the [next section](#step-by-step-instructions)
 includes instructions on how to do so.
 
 To access the container shell, run
@@ -202,24 +200,29 @@ of Taype.
 
 | In paper | In artifact | Comment |
 | -------- | ----------- | ------- |
-| Fig. 1 | `list` and `filter` in `taypsi/examples/tutorial/tutorial.tp` | |
+| Fig. 1 | `list` and `filter` in `taypsi/examples/tutorial/tutorial.tp` | See Note 1 |
 | Fig. 2 | `~list` and `~list_eq` in `taypsi/examples/tutorial/tutorial.tp` | |
-| Fig. 3 | `~list#s`, `~list#r`, `~list#view`, `~list#Nil`, `~list#Cons`, `~list#match`, `~list#join` and `~list#reshape` in `taypsi/examples/tutorial/tutorial.tp` | |
+| Fig. 4 | `~list#s`, `~list#r`, `~list#view`, `~list#Nil`, `~list#Cons`, `~list#match`, `~list#join` and `~list#reshape` in `taypsi/examples/tutorial/tutorial.tp` | |
 | Figures and theorems in Section 3 | See [Coq formalization of the core calculus](#coq-formalization-of-the-core-calculus) | |
-| Fig. 13 | `liftDefs` in `taypsi/src/Taype/Lift.hs` | See Note 1 |
-| Fig. 14 | `Ppx` in `taypsi/src/Taype/Syntax.hs` and `elabPpx` in `taypsi/src/Taype/TypeChecker.hs` | Typed macros are called preprocessors (ppx) in source code |
-| Fig. 15 | `Constraint` in `taypsi/src/Taype/Lift.hs` | |
-| Fig. 16 | `liftExpr` in `taypsi/src/Taype/Lift.hs` | |
-| Compilation and optimizations in Section 6 | Source code in `taypsi` and `taype-drivers` | See Note 2 |
+| Fig. 14 | `liftDefs` in `taypsi/src/Taype/Lift.hs` | See Note 2 |
+| Fig. 15 | `Ppx` in `taypsi/src/Taype/Syntax.hs` and `elabPpx` in `taypsi/src/Taype/TypeChecker.hs` | Typed macros are called preprocessors (ppx) in source code |
+| Fig. 16 | `Constraint` in `taypsi/src/Taype/Lift.hs` | |
+| Fig. 17 | `liftExpr` in `taypsi/src/Taype/Lift.hs` | |
+| Compilation and optimizations in Section 6 | Source code in `taypsi` and `taype-drivers` | See Note 3 |
 | Figures in Section 6 | See [Reproducing the experimental results](#reproducing-the-experimental-results) | |
 
 Notes:
-1. While the entry point of the lifting algorithm is `liftDefs` in
+1. The Implementation distinguishes between oblivious product (whose components
+   must be oblivious) and normal product (whose components can be any types),
+   similar to Ye and Delaware (PLDI23). The style in the Taypsi paper is closer
+   to Ye and Delaware (POPL22), which includes only one product former that can
+   connect any types, for presentation purposes.
+2. While the entry point of the lifting algorithm is `liftDefs` in
    `taypsi/src/Taype/Lift.hs`, some subroutines are implemented in other files:
    the source of our constraint solver can be found in `taypsi/solver/bin/solver.ml` and
    `taypsi/solver/lib/solver.ml`, and the elaborator of typed macros
    is the `elabPpx` function in  `taypsi/src/Taype/TypeChecker.hs`.
-2. The source code of the bidirectional type checker is in
+3. The source code of the bidirectional type checker is in
    `taypsi/src/Taype/TypeChecker.hs`, the lifting procedure is in
    `taypsi/src/Taype/Lift.hs`, and the translation to OIL is in
    `taypsi/src/Oil/Translation.hs`. The smart array optimization is defined in
@@ -241,13 +244,15 @@ between the Taypsi source code and the listings in the paper.
 | `𝔹` | `bool` | Boolean type |
 | `ℤ` | `int` | Integer type |
 | `ℕ` | `uint` | Unsigned integer (natural number) type |
-| `×` | `*` | Product type former |
+| `×` | `*` or `~*` | Product type former and oblivious product type former |
+| `unsafe fn` | `fn'` | Keyword for defining unsafe functions, i.e. retractions |
+| Name with hat | Prefixed by `~` | e.g., `~list` for `list` with hat |
+| Primitive sections and retractions | `~bool#s`, `~bool#r`, `~int#s` and `~int#r` | |
 | `Ψ` | `#` | Ψ-type, e.g., `#~list` for `Ψlist` with hat |
 | `⟨_,_⟩` | `#(_,_)` | Ψ-type pair |
 | `𝜆` | `\` | Lambda abstraction, e.g., `\x => ...` for `𝜆x => ...` |
-| Name with hat | Prefixed by `~` | e.g., `~list` for `list` with hat |
-| Primitive sections and retractions | `~bool#s`, `~bool#r`, `~int#s` and `~int#r` | |
 | `match _ with _` | `match _ with _ end` | Pattern matching |
+| `mux` | `~if` | Oblivious conditional; `mux` in the paper is more consistent with the literatures, but `~if` is more consistent with other oblivious operations in Taypsi|
 
 ## Coq formalization of the core calculus
 
@@ -268,8 +273,8 @@ context`. These are generated from the file
 `taypsi-theories/theories/lang_taypsi/metatheories.v`, indicating that both of
 the key theorems have been proved without any axioms.
 
-The Coq formalization can also be found
-[online](https://ccyip.github.io/oadt/taypsi); this version includes a
+The Coq formalization is also available
+[online](https://ccyip.github.io/oadt/taypsi); this online version includes a
 nicely rendered documentation.
 
 The following table summarizes the correspondence between the paper and the Coq
@@ -277,10 +282,10 @@ formalization:
 
 | In paper | In artifact | Notations |
 | -------- | ----------- | --------- |
-| Fig. 4 | `expr`, `gdef`, `otval`, `oval` and `val` in `taypsi-theories/theories/lang_taypsi/syntax.v` | Defined in the `expr_notations` module in the same file |
-| Fig. 5 | `step` and `ectx` in `taypsi-theories/theories/lang_taypsi/semantics.v` | `e -->! e'` (or `Σ ⊨ e -->! e'`) for `step` |
-| Fig. 6 | `typing` and `kinding` in `taypsi-theories/theories/lang_taypsi/typing.v` | `Γ ⊢ e : τ` (or `Σ; Γ ⊢ e : τ`) for `typing` and `Γ ⊢ τ :: κ` (or `Σ; Γ ⊢ τ :: κ`) for `kinding` |
-| Fig. 7 | `gdef_typing` in `taypsi-theories/theories/lang_taypsi/typing.v` | `Σ ⊢₁ D` |
+| Fig. 5 | `expr`, `gdef`, `otval`, `oval` and `val` in `taypsi-theories/theories/lang_taypsi/syntax.v` | Defined in the `expr_notations` module in the same file |
+| Fig. 6 | `step` and `ectx` in `taypsi-theories/theories/lang_taypsi/semantics.v` | `e -->! e'` (or `Σ ⊨ e -->! e'`) for `step` |
+| Fig. 7 | `typing` and `kinding` in `taypsi-theories/theories/lang_taypsi/typing.v` | `Γ ⊢ e : τ` (or `Σ; Γ ⊢ e : τ`) for `typing` and `Γ ⊢ τ :: κ` (or `Σ; Γ ⊢ τ :: κ`) for `kinding` |
+| Fig. 8 | `gdef_typing` in `taypsi-theories/theories/lang_taypsi/typing.v` | `Σ ⊢₁ D` |
 | Theorem 3.1 (Obliviousness) | `obliviousness` in `taypsi-theories/theories/lang_taypsi/metatheories.v` | |
 
 The `soundness` theorem is also available in
@@ -288,28 +293,27 @@ The `soundness` theorem is also available in
 
 For simplicity, our mechanization of the core calculus differs slightly from the
 one presented in the paper:
-- The mechanization includes `fold` and `unfold` operations for recursive ADTs,
-  similar to Ye and Delaware (POPL22), instead of the ML-style ADTs in the
-  paper. The equivalence between these two styles is well-known (cf. Chapter 20
-  of "Types and Programming Languages").
-- The mechanization distinguishes between oblivious product (whose components
-  must be oblivious) and normal product (whose components can be any types),
-  similar to Ye and Delaware (PLDI23). The style in the Taypsi paper is closer
-  to Ye and Delaware (POPL22), which includes only one product former that can
-  connect any types, for presentation purposes.
-- The mechanization uses distinct projections for product and Ψ-type, while the
-  paper abuses the notation for presentation.
+- The mechanization includes `fold` and `unfold` operations for recursive ADTs
+  (`EFold` and `EUnfold` at `syntax.v`), similar to Ye and Delaware (POPL22),
+  instead of the ML-style ADTs in the paper. The equivalence between these two
+  styles is well-known (cf. Chapter 20 of "Types and Programming Languages").
+- Similar to the implementation, the mechanization includes oblivious product
+  and normal product (`EProd` at `syntax.v`, with an `olabel` argument to
+  distinguish them), while the paper has only one product type former for
+  presentation purposes.
+- The mechanization uses distinct projections for product and Ψ-type (`EProj`
+  and `EPsiProj` at `syntax.v`), while the paper abuses the notation for
+  presentation.
 - The mechanization uses *locally nameless representation* for
   binders.
 - There are some notational differences which should be easy to disambiguate: we
-  use `case .. of ..` instead of `match .. with ..`, and `mux` instead of `~if`
-  (oblivious conditional), for example.
+  use `case .. of ..` instead of `match .. with ..`, for example.
 
 
 ## Reproducing the experimental results
 
-To reproduce Figs. 17, 18 and 19 in the paper, you can simply invoke
-the script to runs all our benchmarks.
+To reproduce Figs. 18, 19 and 20 in the paper, you can simply invoke
+the script that runs all our benchmarks.
 
 ``` sh
 # At home directory '~'
@@ -343,20 +347,11 @@ for the appendix.
 
 | In paper | In artifact |
 | -------- | ----------- |
-| First half (list) of Fig. 17 | `taypsi/examples/figs/list-bench-full.tex` |
-| Second half (tree) of Fig. 17 | `taypsi/examples/figs/tree-bench-full.tex` |
-| First half (list) of Fig. 18 | `taypsi/examples/figs/list-opt-full.tex` |
-| Second half (tree) of Fig. 18 | `taypsi/examples/figs/tree-opt-full.tex` |
-| Fig. 19 | `taypsi/examples/figs/compile-stats-full.tex` |
-
-Note that, compared to Fig. 17 in the submission,
-`taypsi/example/figs/list-bench-full.tex` and `tree-bench-full.tex` generate an
-extra column (Taype-SA), which reports the performance numbers of the version of
-Taype with smart array optimization. The column (Taypsi) also includes the
-percentage of running time relative to this version of Taype. The goal is to
-compare Taype (PLDI23) and Taypsi in a fairer way, by having comparable
-optimizations in both approaches to maximize their potential. This result will
-be included in the final version of the paper.
+| First half (list) of Fig. 18 | `taypsi/examples/figs/list-bench-full.tex` |
+| Second half (tree) of Fig. 18 | `taypsi/examples/figs/tree-bench-full.tex` |
+| First half (list) of Fig. 19 | `taypsi/examples/figs/list-opt-full.tex` |
+| Second half (tree) of Fig. 19 | `taypsi/examples/figs/tree-opt-full.tex` |
+| Fig. 20 | `taypsi/examples/figs/compile-stats-full.tex` |
 
 The performance of our benchmarks can vary due to a number of factors, e.g., the
 specs of the underlying hardware, the cryptographic instructions supported by
@@ -364,14 +359,6 @@ the CPU, and the overhead of running them in a docker container, so you will
 most likely not see the exact numbers reported in the paper. Nevertheless, you
 should observe similar comparative results: Taypsi performs significantly better
 than Taype on many benchmarks, while doing roughly as well on the remainder.
-
-For the additional column (Taype-SA), all benchmarks that fail in Taype should
-also fail in Taype-SA, except for `path_16`, and you should observe comparable
-or better performance numbers of Taypsi over Taype-SA for other benchmarks. In
-addition, we have optimized the constraint solver since the submission, so all
-benchmark suites in Fig. 19 should be compiled under a few seconds (e.g.,
-K-means should take only 2 seconds now, instead of 12 seconds in the
-submission).
 
 If you are interested in how the tests are implemented, see [The implementation
 of test cases](#the-implementation-of-test-cases).
@@ -407,17 +394,17 @@ The following tables provide links to the source code of benchmark suites.
 | `bind_8` | `~bind` |
 | `collect_8` | `~test_collect` |
 
-| Suite in Fig. 19 | In artifact |
+| Suite in Fig. 20 | In artifact |
 | ---------------- | ----------- |
 | List | `taypsi/examples/list` |
 | Tree | `taypsi/examples/tree` |
+| List (stress) | `taypsi/examples/stress-solver` |
 | Dating | `taypsi/examples/dating` |
-| Medical Data | `taypsi/examples/record` |
-| Calculator DSL | `taypsi/examples/calculator` |
+| Medical Records | `taypsi/examples/record` |
+| Secure Calculator | `taypsi/examples/calculator` |
 | Decision Tree | `taypsi/examples/dtree` |
 | K-means | `taypsi/examples/kmeans` |
 | Miscellaneous | `taypsi/examples/misc` |
-| List (stress) | `taypsi/examples/stress-solver` |
 
 ## The compilation pipeline
 
@@ -440,8 +427,8 @@ This command will generate a few files in the `examples/tutorial` directory:
   been expanded, and the lifting procedure has not been invoked yet.
 - `tutorial.lifted.tpc`: lifted programs generated by the lifting algorithm.
   These programs still contain typed macros and type variables, corresponding to
-  the "lifted functions with macros & type var." block in Fig. 13.
-- `tutorial.constraints.sexp`: constraints (Fig. 15) generated by the lifting
+  the "lifted functions with macros & type var." block in Fig. 14.
+- `tutorial.constraints.sexp`: constraints (Fig. 16) generated by the lifting
   algorithm, in S-expression format.
 - `tutorial.solver.input.sexp`: input to the constraint solver. The constraints
   generated in the previous step have been lowered to formulas in qualifier-free
@@ -453,10 +440,10 @@ This command will generate a few files in the `examples/tutorial` directory:
   the type variable assignments for each lifted function.
 - `tutorial.stage1.tpc`: lifted programs with type variables instantiated. These
   programs still contain typed macros, corresponding to the "lifted functions
-  with macros" block in Fig. 13.
+  with macros" block in Fig. 14.
 - `tutorial.stage2.tpc`: final Taypsi programs. All typed macros are fully
   elaborated, corresponding to the "well-typed and correct lifted functions"
-  block in Fig. 13.
+  block in Fig. 14.
 - `tutorial.oil`: translated OIL programs.
 - `tutorial.ml`: translated OCaml programs.
 
